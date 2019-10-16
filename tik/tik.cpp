@@ -40,6 +40,7 @@ cl::opt<Filetype> InputType("t", cl::desc("Choose input file type"),
                             cl::init(LLVM));
 cl::opt<string> OutputType("f", cl::desc("Specify output file format. Can be either JSON or LLVM"), cl::value_desc("format"));
 cl::opt<bool> ASCIIFormat("S", cl::desc("output json as human-readable ASCII text"));
+cl::opt<bool> PrintPretty("p", cl::desc("If enabled, pretty-print the output JSON with an indentation of 4"));
 
 int main(int argc, char *argv[])
 {
@@ -198,7 +199,11 @@ int main(int argc, char *argv[])
         if (OutputType == "JSON")
         {
             ofstream oStream(OutputFile);
-            oStream << finalJson;
+            if (PrintPretty) {
+                oStream << finalJson.dump(4);
+            } else {
+                oStream << finalJson;
+            }
             oStream.close();
         }
         else

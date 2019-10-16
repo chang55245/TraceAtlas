@@ -11,6 +11,9 @@ target_link_libraries(tik PRIVATE ${llvm_libs} nlohmann_json nlohmann_json::nloh
 target_compile_definitions(tik PRIVATE ${LLVM_DEFINITIONS})
 target_include_directories(tik PRIVATE ${LLVM_INCLUDE_DIRS} "include/")
 
+#target_compile_options(tik "-O0 -ggdb")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb")
+
 if(${ENABLE_TESTING})
     add_subdirectory(tests)
 endif()
