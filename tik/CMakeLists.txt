@@ -13,6 +13,9 @@ target_include_directories(tik PRIVATE ${LLVM_INCLUDE_DIRS} "include" ${DEP_INC}
 
 option(BUILD_TIK_APPS "Build tik test applications" OFF)
 
+#target_compile_options(tik "-O0 -ggdb")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb")
+
 if(${BUILD_TIK_APPS})
     add_subdirectory(TestApplications)
 endif()

@@ -46,3 +46,21 @@ set_target_properties(bow
 )
 
 install(TARGETS bow RUNTIME DESTINATION bin)
+
+add_executable(kwrap KernelWrapper.cpp)
+
+set_target_properties(kwrap PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+target_compile_definitions(kwrap PUBLIC ${LLVM_DEFINITIONS})
+target_link_libraries(kwrap ${llvm_libs})
+target_include_directories(kwrap PRIVATE ${DEP_INC} ${LLVM_INCLUDE_DIRS})
+
+install(TARGETS kwrap RUNTIME DESTINATION bin)
+
+add_executable(fatBinDump FatBinDump.cpp)
+
+set_target_properties(fatBinDump PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+target_compile_definitions(fatBinDump PUBLIC ${LLVM_DEFINITIONS})
+target_link_libraries(fatBinDump ${llvm_libs})
+target_include_directories(fatBinDump PRIVATE ${DEP_INC} ${LLVM_INCLUDE_DIRS})
+
+install(TARGETS fatBinDump RUNTIME DESTINATION bin)

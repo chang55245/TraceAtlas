@@ -29,6 +29,7 @@ cl::opt<Filetype> InputType("t", cl::desc("Choose input file type"),
                                 clEnumVal(LLVM, "LLVM IR"),
                                 clEnumVal(DPDA, "DPDA DSL")),
                             cl::init(LLVM));
+cl::opt<bool> PrintPretty("p", cl::desc("If enabled, pretty-print the output JSON with an indentation of 4"));
 
 int main(int argc, char *argv[])
 {
@@ -140,7 +141,11 @@ int main(int argc, char *argv[])
     }
 
     ofstream oStream(KernelFile);
-    oStream << finalJson;
+    if (PrintPretty) {
+        oStream << finalJson.dump(4);
+    } else {
+        oStream << finalJson;
+    }
     oStream.close();
     return 0;
 }
