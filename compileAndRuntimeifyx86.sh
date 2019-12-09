@@ -18,7 +18,7 @@ clang++-8 -static -fuse-ld=lld-8 output-${1%.c}-opt.ll $TRACEHOME/build/lib/libD
 # Perform trace analysis and tik extraction
 python $TRACEHOME/Python/KernelDetector/main.py -i raw.trc -j kernel-${1%.c}.json
 
-$TRACEHOME/build/bin/tik -p -j kernel-${1%.c}.json -o kernel-${1%.c}-tik.json -t LLVM ./output-${1%.c}.ll
+$TRACEHOME/build/bin/tik -p -j kernel-${1%.c}.json -S -f LLVM -o kernel-${1%.c}-tik.ll -t LLVM ./output-${1%.c}.ll
 $TRACEHOME/build/bin/dagExtractor -t raw.trc -k kernel-${1%.c}.json -o kernel-${1%.c}-dagExtractor.json
 
 # Perform inlining of memory functions
@@ -28,4 +28,4 @@ opt-8 -inline -S -o ./kernel-${1%.c}-tik-inline.ll ./kernel-${1%.c}-tik.ll
 #$TRACEHOME/build/bin/fatBinDump -i output-${1%.c}.ll -k kernel-${1%.c}.json -t kernel-${1%.c}-tik.json -d kernel-${1%.c}-dagExtractor.json -o output-${1%.c}-bindump.ll -o2 output-${1%.c}-application-x86.json
 #sed -i "s/output-${1%.c}.so/output-${1%.c}-x86.so/g" output-${1%.c}-application-x86.json
 #clang++-8 -shared -fPIC -fuse-ld=lld-8 output-${1%.c}-bindump.ll -o output-${1%.c}-x86.so
-clang++-8 -shared -fPIC -fuse-ld=lld-8 ./kernel-${1%.c}-tik-inline.ll -o output-${1%.c}-x86.so
+#clang++-8 -shared -fPIC -fuse-ld=lld-8 ./kernel-${1%.c}-tik-inline.ll -o output-${1%.c}-x86.so
