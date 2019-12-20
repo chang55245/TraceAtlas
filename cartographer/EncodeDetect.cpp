@@ -9,8 +9,6 @@
 #include <iostream>
 #include <zlib.h>
 
-#define BLOCK_SIZE 4096
-
 using namespace std;
 
 std::ifstream::pos_type filesize(std::string filename)
@@ -60,7 +58,7 @@ std::vector<std::set<int>> DetectKernels(std::string sourceFile, float thresh, i
     std::string priorLine = "";
     bool notDone = true;
     // Shows whether we've seen the first block ID yet
-    bool seenFirst, seenLast;
+    bool seenFirst;
     while (notDone)
     {
         // read a block size of the trace
@@ -105,16 +103,11 @@ std::vector<std::set<int>> DetectKernels(std::string sourceFile, float thresh, i
             if (it == split.front() && !seenFirst)
             {
                 it = priorLine + it;
-                //std::cout << "This is its complete version" << std::endl;
-                //std::cout << it << std::endl;
                 seenFirst = true;
             }
             else if (splitIndex == split.size() - 1 && bufferString.back() != '\n')
             {
-                //std::cout << "This is the last incomplete line" << std::endl;
-                //std::cout << split.back() << std::endl;
                 break;
-                seenLast = true;
             }
             // split it by the colon between the instruction and value
             std::stringstream itstream(it);

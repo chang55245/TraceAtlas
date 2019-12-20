@@ -9,17 +9,23 @@
 #include <sstream>
 #include <zlib.h>
 
-#define BLOCK_SIZE 4096
-
 std::map<int, std::vector<int>> ExtractKernels(std::string sourceFile, std::vector<std::set<int>> kernels, bool newline)
 {
-    /* Data structures for grouping kernels */
+    /* Data structures for grouping kernels 
     // Dictionary for holding the first blockID for each kernel
     std::map<int, int> kernStart;
     // Dictionary the final set of kernels, [kernelID] -> [blockIDs]
     std::map<int, std::set<int>> finalBlocks;
     // Vector for holding blocks not belonging to a type 1 kernel
-    std::map<int, std::set<int>> blocks;
+    std::map<int, std::set<int>> blocks;*/
+	std::vector<kernelBlock*> kernVec;
+	for( int i = 0; i < kernels.size(); i++ )
+	{
+		kernVec.push_back(new kernelBlock);
+		kernVec[i]->blocks;// = new std::set<int>;
+		kernVec[i]->finalBlocks;// = new std::set<int>;
+		kernVec[i]->kernel = &(kernels[i]);
+	}
 
     /* Read the Trace */
     // Compute # of blocks in the trace
@@ -121,28 +127,27 @@ std::map<int, std::vector<int>> ExtractKernels(std::string sourceFile, std::vect
             if (key == "BasicBlock")
             {
                 long int block = stoi(value, 0, 0);
-                for (int i = 0; i < kernels.size(); i++)
+                for (int i = 0; i < kernVec.size(); i++)
                 {
-                    std::set<int> *kernel = &(kernels[i]);
-                    if ((kernStart.find(i) != kernStart.end()) && (block == kernStart[i])) //check if i is a key and if we are the start //only second half is needed
+                    if (kernVec[i]->kernStart == block) //check if this is our start
                     {
-                        blocks[i].clear();
+                        kernVec[i]->blocks->clear();
                     }
                     else
                     {
-                        blocks[i].insert(block);
-                        if (kernel->find(block) != kernel->end()) //block is a part of kernel
+                        kernVec[i]->blocks->insert(block);
+                        if (kernVec[i]->kernel->find(block) != kernVec[i]->kernel->end()) //block is a part of kernel
                         {
-                            if (kernStart.find(i) == kernStart.end()) //we haven't seen the start before ..so assign it
+                            if (kernVec[i]->kernStart == -1) // we haven't seen the start before.. so assign it
                             {
-                                kernStart[i] = block;
-                                finalBlocks[i].insert(block);
+                                kernVec[i]->kernStart = block;
+                                kernVec[i]->finalBlocks->insert(block);
                             }
                             else
                             {
-                                finalBlocks[i].merge(blocks[i]);
+                                kernVec[i]->finalBlocks->merge( *(kernVec[i]->blocks) );
                             }
-                            blocks[i].clear();
+                            kernVec[i]->blocks->clear();
                         }
                     }
                 }
@@ -184,17 +189,16 @@ std::map<int, std::vector<int>> ExtractKernels(std::string sourceFile, std::vect
     }
 
     std::vector<std::set<int>> checker;
-    for (int i = 0; i < kernels.size(); i++)
+    for (int i = 0; i < kernVec.size(); i++)
     {
-        if (std::find(checker.begin(), checker.end(), finalBlocks[i]) == checker.end())
+        if (std::find(checker.begin(), checker.end(), *(kernVec[i]->finalBlocks) ) == checker.end())
         {
-            checker.push_back(finalBlocks[i]);
+            checker.push_back( *(kernVec[i]->finalBlocks) );
         }
     }
     std::map<int, std::vector<int>> finalMap;
     for (int i = 0; i < checker.size(); i++)
     {
-        //std::sort( checker[i].begin(), checker[i].end() );
         std::vector<int> v(checker[i].begin(), checker[i].end());
         finalMap[i] = v;
     }
