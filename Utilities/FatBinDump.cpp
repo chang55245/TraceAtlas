@@ -15,7 +15,7 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Transforms/Utils/Cloning.h"
-#include "json.hpp"
+#include <nlohmann/json.hpp>
 
 using namespace llvm;
 using json = nlohmann::json;
