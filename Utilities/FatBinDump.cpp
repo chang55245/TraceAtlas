@@ -1,169 +1,574 @@
-#include <map>
-#include <vector>
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Type.h"
+#include <llvm/IR/AssemblyAnnotationWriter.h>
+#include "llvm/IRReader/IRReader.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Transforms/Utils/Cloning.h"
+#include <llvm/Transforms/Utils/CodeExtractor.h>
+
+#include <algorithm>
 #include <fstream>
 #include <iostream>
-#include <algorithm>
-#include <unordered_map>
-#include "llvm/IR/Module.h"
-#include "llvm/IRReader/IRReader.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/Support/SourceMgr.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/Type.h"
-#include "llvm/IR/Instruction.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/Verifier.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Transforms/Utils/Cloning.h"
+#include <map>
 #include <nlohmann/json.hpp>
+#include <set>
+#include <vector>
 
 using namespace llvm;
 using json = nlohmann::json;
 using namespace std;
 
-cl::opt<std::string> InputFilename("i", cl::desc("Specify input LLVM"), cl::value_desc("llvm filename"), cl::Required);
+cl::opt<std::string> AnnotateFilename("a", cl::desc("Specify original input LLVM with annotated BBs"), cl::value_desc("llvm filename"), cl::Required);
 cl::opt<std::string> KernelFilename("k", cl::desc("Specify kernel json"), cl::value_desc("kernel filename"), cl::Required);
-cl::opt<std::string> TikFilename("t", cl::desc("Specify tik json"), cl::value_desc("tik filename"), cl::Required);
-//cl::opt<std::string> DagFilename("d", cl::desc("Specify DAG json"), cl::value_desc("dag filename"), cl::Required);
-cl::opt<std::string> OutputLLVMFilename("o", cl::desc("Specify output bitcode"), cl::value_desc("output llvm filename"));
+cl::opt<std::string> DagFilename("d", cl::desc("Specify DAG json"), cl::value_desc("dag filename"), cl::Required);
+cl::opt<std::string> AppName("n", cl::desc("Specify name of generated application"), cl::value_desc("name"), cl::Required);
+
+cl::opt<std::string> OutputLLVMFilename("o", cl::desc("Specify output LLVM"), cl::value_desc("output llvm filename"));
 cl::opt<std::string> OutputJSONFilename("o2", cl::desc("Specify output JSON"), cl::value_desc("output json filename"));
 
-static int UID = 0;
-static int FUNC_ID = 0;
+static int BB_UID = 0;
+static int VAR_UID = 0;
+static int NODE_UID = 0;
 
-static int valueId = 0;
+class runtime_variable {
+public:
+    runtime_variable() = default;
+
+    runtime_variable(std::string name_str) {
+        name = name_str;
+        byteVal = std::vector<uint8_t>();
+    }
+
+    std::string name;
+    uint64_t size_in_bytes = 0;
+    std::vector<uint8_t> byteVal;
+    bool isPtrType = false;
+    uint64_t ptr_alloc_bytes = 0;
+};
+
+StoreInst* findFirstStoreUser(Instruction* II) {
+    if (auto *SI = dyn_cast<StoreInst>(II)) {
+        return SI;
+    }
+    if (II->getNumUses() == 0) {
+        return nullptr;
+    }
+    // First pass, check if any users directly are StoreInst. Needed for a breadth-first approach
+    for (auto *itr : II->users()) {
+        if (auto *storeInst = dyn_cast<StoreInst>(itr)) {
+            return storeInst;
+        }
+    }
+    // Then, check recursively only if the breadth-first check failed
+    for (auto *itr : II->users()) {
+        StoreInst* inst = findFirstStoreUser(dyn_cast<Instruction>(itr));
+        if (inst != nullptr) {
+            return inst;
+        }
+    }
+    return nullptr;
+}
+
+uint64_t findBytesConstForMemoryAlloc(Value* val) {
+    if (val == nullptr) {
+        return 0;
+    }
+    if (auto *constant = dyn_cast<Constant>(val)) {
+        if (auto *i_const = dyn_cast<ConstantInt>(constant)) {
+            return i_const->getZExtValue();
+        }
+    }
+    if (auto *storeInst = dyn_cast<StoreInst>(val)) {
+        return findBytesConstForMemoryAlloc(storeInst->getValueOperand());
+    }
+    // Note: it is, in general, very bad to assume that memory is unchanged between a store and a load.
+    // In this instance, it makes sense, however.
+    if (auto *loadInst = dyn_cast<LoadInst>(val)) {
+        // This makes a very strong assumption that the first store user of a load instruction's pointer operand will provide the value that would have been loaded.
+        // Seeing as we're primarily applying this analysis only within the first basic block, hopefully it holds for a reasonable number of programs
+        return findBytesConstForMemoryAlloc(findFirstStoreUser(dyn_cast<Instruction>(loadInst->getPointerOperand())));
+    }
+    if (auto *binOp = dyn_cast<BinaryOperator>(val)) {
+        uint64_t op1_val = findBytesConstForMemoryAlloc(binOp->getOperand(0));
+        uint64_t op2_val = findBytesConstForMemoryAlloc(binOp->getOperand(1));
+        switch (binOp->getOpcode()) {
+            case Instruction::Mul:
+                return op1_val * op2_val;
+            case Instruction::Add:
+                return op1_val + op2_val;
+            case Instruction::Sub:
+                return op1_val - op2_val;
+            default:
+                errs() << "Encountered unknown binary operator " << binOp->getOpcodeName() << " (opcode " << binOp->getOpcode() << ")\n";
+        }
+    }
+    return 0;
+}
 
 int main(int argc, char **argv)
 {
     cl::ParseCommandLineOptions(argc, argv);
     LLVMContext context;
     SMDiagnostic smerror;
-    std::unique_ptr<Module> mptr = parseIRFile(InputFilename, smerror, context);
-    Module *M = mptr.get();
-
-    LLVMContext outContext;
-    Module *OutM;
-    if (OutputLLVMFilename != "") {
-        OutM = new Module(OutputLLVMFilename, outContext);
-    } else {
-        OutM = new Module("test", outContext);
-    }
-
-    raw_fd_ostream *file = nullptr;
-    if (OutputLLVMFilename != "")
-    {
-        std::error_code errorCode;
-        file = new raw_fd_ostream(OutputLLVMFilename, errorCode);
-    }
+    std::unique_ptr<Module> annotate_ptr = parseIRFile(AnnotateFilename, smerror, context);
+    Module *base_module = annotate_ptr.get();
 
     ifstream kernelIfstream(KernelFilename);
     nlohmann::json kernelJson;
     kernelIfstream >> kernelJson;
     kernelIfstream.close();
 
-    ifstream tikIfstream(TikFilename);
-    nlohmann::json tikJson;
-    tikIfstream >> tikJson;
-    tikIfstream.close();
+    ifstream dagIfstream(DagFilename);
+    nlohmann::json dagJson;
+    dagIfstream >> dagJson;
+    dagIfstream.close();
 
-//    ifstream dagIfstream(DagFilename);
-//    nlohmann::json dagJsonIn;
-//    dagIfstream >> dagJsonIn;
-//    dagIfstream.close();
-
-    map<int, BasicBlock *> blockMap;
-    for (Module::iterator F = M->begin(), E = M->end(); F != E; ++F)
+    map<int, BasicBlock *> base_blockMap;
+    for (Module::iterator F = base_module->begin(), E = base_module->end(); F != E; ++F)
     {
         for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB)
         {
             BasicBlock *b = cast<BasicBlock>(BB);
-            blockMap[UID++] = b;
+            base_blockMap[BB_UID++] = b;
         }
     }
 
-    IRBuilder<> builder(OutM->getContext());
+    map<string, vector<uint32_t>> kernel_block_map;
+    vector<vector<uint32_t>> kernel_blocks;
     for (auto &[key, value] : kernelJson.items())
     {
-        vector<int> blocks = value;
-        std::sort(blocks.begin(), blocks.end());
+        string index = key;
+        vector<uint32_t> kernel = value;
+        kernel_block_map[index] = kernel;
+        kernel_blocks.push_back(kernel);
+    }
+    std::sort(std::begin(kernel_blocks), std::end(kernel_blocks), [](auto &el1, auto &el2) -> bool {
+        return el1.at(0) < el2.at(0);
+    });
 
-        std::vector<Type*> arg_types = { Type::getInt8PtrTy(M->getContext()) };
-        FunctionType *ftype = FunctionType::get(Type::getVoidTy(OutM->getContext()), arg_types,false);
-        Function *func = Function::Create(ftype, GlobalValue::LinkageTypes::ExternalLinkage, "_KernelFunc_" + std::string(key), *OutM);
-//        BasicBlock *funcEntry = BasicBlock::Create(OutM->getContext(), "_BB_entry", func);
-
-        BasicBlock *initBlk = BasicBlock::Create(OutM->getContext(), "_BB_0", func);
-        //builder.SetInsertPoint(initBlk);
-
-        /*
-        // Method built around tik to at least grab the kernel initialization block
-        for (std::string allocInstr : tikJson["Kernels"]["Kernel_" + key]["Init"]) {
-            //std::cout << allocInstr << std::endl;
-            if (allocInstr.find("alloca i32") != std::string::npos) {
-                auto *alloc = builder.CreateAlloca(Type::getInt32Ty(OutM->getContext()));
-                builder.CreateStore(ConstantInt::get(Type::getInt32Ty(OutM->getContext()), 0), alloc);
-//                (new AllocaInst(Type::getInt32Ty(OutM->getContext()), 0, "", initBlk));
-                //initBlk->getInstList().push_back(builder.CreateAlloca(Type::getInt32Ty(OutM->getContext())));
-            } else {
-                std::cerr << "Unsupported allocation in kernel initialization: " << allocInstr << std::endl;
+    // Determine which basic blocks were not classified as kernels
+    vector<uint32_t> non_kernel_blocks;
+    bool is_in_kernel;
+    for (uint32_t i = 0; i < BB_UID; i++) {
+        is_in_kernel = false;
+        for (const auto& kernel_elt : kernel_block_map) {
+            auto kern_indices = kernel_elt.second;
+            if (std::find(kern_indices.begin(), kern_indices.end(), i) != kern_indices.end()) {
+                is_in_kernel = true;
+                break;
             }
         }
-        */
+        if (!is_in_kernel){
+            non_kernel_blocks.push_back(i);
+        }
+    }
 
+    outs() << "These blocks are not present in any kernel: ";
+    for (auto block : non_kernel_blocks) {
+        outs() << block << " ";
+    }
+    outs() << "\n";
 
-        // In this method, we instead assume that important variable allocations are happening in the first block of our source function
-        blocks.insert(blocks.begin(), 0);
+    // Group them into contiguous ranges
+    vector<vector<uint32_t>> grouped_blocks;
+    if (!non_kernel_blocks.empty()) {
+        grouped_blocks.emplace_back();
+        grouped_blocks.back().push_back(non_kernel_blocks.at(0));
+        bool new_group;
+        for (auto i = 1; i < non_kernel_blocks.size(); i++) {
+            auto block = non_kernel_blocks.at(i);
+            new_group = (block-1) != grouped_blocks.back().back();
+            if (new_group) {
+                grouped_blocks.emplace_back();
+            }
+            grouped_blocks.back().push_back(block);
+        }
+    }
 
-        for (int block : blocks)
-        {
-            BasicBlock *sourceBlock = blockMap[block];
-            BasicBlock *prevBB = &(func->back());
-//            if (!func->empty()) {
-//                prevBB = &(func->back());
+    outs() << "Grouped into contiguous ranges, they look like this: \n";
+    for (const auto& group : grouped_blocks) {
+        for (auto block : group) {
+            outs() << block << " ";
+        }
+        outs() << "\n";
+    }
+
+    // Interleave the kernels and these blocks
+    vector<pair<vector<uint32_t>, bool>> interleaved_groups;
+    uint32_t idx1 = 0;
+    uint32_t idx2 = 0;
+    const vector<uint32_t> poison_pill{std::numeric_limits<uint32_t>::max()};
+    while (idx1 < kernel_blocks.size() || idx2 < grouped_blocks.size()) {
+        vector<uint32_t> kernel_block = (idx1 < kernel_blocks.size()) ? kernel_blocks.at(idx1) : poison_pill;
+        vector<uint32_t> grouped_block = (idx2 < grouped_blocks.size()) ? grouped_blocks.at(idx2) : poison_pill;
+        if (kernel_block.at(0) <= grouped_block.at(0)) {
+            interleaved_groups.emplace_back(kernel_block, true);
+            idx1++;
+        } else {
+            interleaved_groups.emplace_back(grouped_block, false);
+            idx2++;
+        }
+    }
+
+    // Check if BB 0 is in its own unique region or not
+    // If it's not, we need to make it so
+    // Its AllocaInsts mess up the rest of the program when it comes time to do code extraction currently
+//    if (interleaved_groups.at(0).first.size() > 2) {
+//        vector<uint32_t> alloca_block{1};
+//        interleaved_groups.at(0).first.erase(interleaved_groups.at(0).first.begin());
+//        interleaved_groups.insert(interleaved_groups.begin(), pair<vector<uint32_t>, bool>{alloca_block, false});
+//    }
+    if (interleaved_groups.at(0).first.size() > 1) {
+        vector<uint32_t> alloca_block{0};
+        interleaved_groups.at(0).first.erase(interleaved_groups.at(0).first.begin());
+        interleaved_groups.insert(interleaved_groups.begin(), pair<vector<uint32_t>, bool>{alloca_block, false});
+    }
+
+    outs() << "Now, we have interleaved the kernel blocks with the non-kernel blocks, and the program structure looks like this:\n";
+    for (const auto& group : interleaved_groups) {
+        if (group.second) {
+            outs() << "Kernel: ";
+        } else {
+            outs() << "Non-kernel: ";
+        }
+        for (auto block : group.first) {
+            outs() << block << " ";
+        }
+        outs() << "\n";
+    }
+
+    // Determine the memory requirements for all variables in this application by iterating over all the allocas
+    // Only search within the first basic block, though
+    map<AllocaInst*, runtime_variable*> alloca_map;
+    for (BasicBlock::iterator II = base_blockMap[0]->begin(); II != base_blockMap[0]->end(); ++II) {
+        if (auto *AI = dyn_cast<AllocaInst>(II)) {
+            outs() << "Found AllocaInst:" << *AI << "\n";
+            alloca_map[AI] = new runtime_variable("_var_" + to_string(VAR_UID++));
+            Optional<uint64_t> bits = AI->getAllocationSizeInBits(base_module->getDataLayout());
+            if (bits.hasValue()) {
+                if (bits.getValue() % 8 != 0) {
+                    outs() << "\tThis AllocaInst requires a non-whole number of bytes. Rounding up to the nearest byte\n";
+                    alloca_map[AI]->size_in_bytes = (uint64_t) std::ceil((1.0f * bits.getValue()) / 8);
+                } else {
+                    alloca_map[AI]->size_in_bytes = (uint64_t) bits.getValue() / 8;
+                }
+            } else {
+                errs() << "\tThis AllocaInst that requires an unknown number of bits\n";
+            }
+            for (auto *user : AI->users()) {
+                if (auto* SI = dyn_cast<StoreInst>(user)) {
+                    if (SI->getParent() == AI->getParent()) {
+                        if (auto *CONST = dyn_cast<Constant>(SI->getValueOperand())) {
+                            if (auto *I_CONST = dyn_cast<ConstantInt>(CONST)) {
+                                uint64_t intConst = I_CONST->getSExtValue();
+                                std::vector<uint8_t> bytes;
+                                for (uint64_t i = 0; i < alloca_map[AI]->size_in_bytes; i++) {
+                                    bytes.push_back((uint8_t)(intConst >> (i * 8)));
+                                }
+                                alloca_map[AI]->byteVal = bytes;
+                            }
+                            else if (auto *F_CONST = dyn_cast<ConstantFP>(CONST)) {
+                                uint64_t intConst = F_CONST->getValueAPF().bitcastToAPInt().getSExtValue();
+                                std::vector<uint8_t> bytes;
+                                for (uint64_t i = 0; i < alloca_map[AI]->size_in_bytes; i++) {
+                                    bytes.push_back((uint8_t)(intConst >> (i * 8)));
+                                }
+                                alloca_map[AI]->byteVal = bytes;
+                            }
+                            else {
+                                errs() << "\tThis AllocaInst is assigned a constant value, but it's of a type that I am unable to handle :(\n";
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+//    for (Module::iterator F = base_module->begin(); F != base_module->end(); ++F) {
+//        for (Function::iterator BB = F->begin(); BB != F->end(); ++BB) {
+//            for (BasicBlock::iterator II = BB->begin(); II != BB->end(); II++) {
+//
 //            }
-            BasicBlock *bb = BasicBlock::Create(OutM->getContext(), "_BB_" + std::to_string(block), func);
-//            if (!func->empty()) {
-            builder.SetInsertPoint(prevBB);
-            builder.CreateBr(bb);
+//        }
+//    }
+
+    // Next, iterate and find all calloc/malloc calls
+    // Associate the amount they're allocating (assuming it's constant or can be found to be sorta-ish constant) with this variable
+    for (BasicBlock::iterator II = base_blockMap[0]->begin(); II != base_blockMap[0]->end(); ++II) {
+        if (auto *CI = dyn_cast<CallInst>(II)) {
+            uint64_t bytesToAllocate = 0;
+            Function* calledFunc = CI->getCalledFunction();
+            bool isMallocOrCalloc = false;
+
+            if (calledFunc->getName() == "calloc") {
+                isMallocOrCalloc = true;
+                uint64_t numElements = 0, sizeOfElement = 0;
+                if (auto *numElConst = dyn_cast<ConstantInt>(CI->getOperand(0))) {
+                    numElements = numElConst->getZExtValue();
+                } else {
+                    errs() << "I found a call to calloc, but the first argument wasn't an integer constant. Let's see if we can find a constant to propagate...\n";
+                    if (auto *binOp = dyn_cast<BinaryOperator>(CI->getOperand(0))) {
+                        numElements = findBytesConstForMemoryAlloc(binOp);
+                        errs() << "I think this calloc wants " << numElements << " elements allocated\n";
+                    } else {
+                        errs() << "Nope, I give up! For reference, this is the operand provided to calloc: ";
+                        CI->getOperand(0)->print(errs());
+                        errs() << "\n";
+                    }
+                }
+
+                if (auto *sizeElConst = dyn_cast<ConstantInt>(CI->getOperand(1))) {
+                    sizeOfElement = sizeElConst->getZExtValue();
+                } else {
+                    errs() << "I found a call to calloc, but the second argument wasn't an integer constant. Let's see if we can find a constant to propagate...\n";
+                    if (auto *binOp = dyn_cast<BinaryOperator>(CI->getOperand(1))) {
+                        sizeOfElement = findBytesConstForMemoryAlloc(binOp);
+                        errs() << "I think this calloc wants each element to have a size of " << sizeOfElement << " bytes\n";
+                    } else {
+                        errs() << "Nope, I give up! For reference, this is the operand provided to malloc: ";
+                        CI->getOperand(0)->print(errs());
+                        errs() << "\n";
+                    }
+                }
+
+                if (numElements != 0 && sizeOfElement != 0) {
+                    bytesToAllocate = numElements * sizeOfElement;
+                }
+            }
+            else if (calledFunc->getName() == "malloc") {
+                isMallocOrCalloc = true;
+
+                uint64_t numBytes = 0;
+                if (auto *numBytesConst = dyn_cast<ConstantInt>(CI->getOperand(0))) {
+                    numBytes = numBytesConst->getZExtValue();
+                } else {
+                    errs() << "I found a call to malloc, but the first argument wasn't an integer constant. Let's see if we can find a constant to propagate...\n";
+                    if (auto *binOp = dyn_cast<BinaryOperator>(CI->getOperand(0))) {
+                        numBytes = findBytesConstForMemoryAlloc(binOp);
+                        errs() << "I think this malloc wants " << numBytes << " bytes\n";
+                    } else {
+                        errs() << "Nope, I give up! For reference, this is the operand provided to malloc: ";
+                        CI->getOperand(0)->print(errs());
+                        errs() << "\n";
+                    }
+                }
+
+                if (numBytes != 0) {
+                    bytesToAllocate = numBytes;
+                }
+            }
+
+            if (isMallocOrCalloc) {
+                StoreInst *storeInst = findFirstStoreUser(dyn_cast<Instruction>(II));
+                if (storeInst != nullptr) {
+                    if (auto *AI = dyn_cast<AllocaInst>(storeInst->getPointerOperand())) {
+                        if (AI->getAllocatedType()->isPointerTy()) {
+                            alloca_map[AI]->isPtrType = true;
+                            alloca_map[AI]->ptr_alloc_bytes = bytesToAllocate;
+                        }
+                    }
+                }
+            }
+        }
+    }
+//    for (Module::iterator F = base_module->begin(); F != base_module->end(); ++F) {
+//        for (Function::iterator BB = F->begin(); BB != F->end(); ++BB) {
+//            for (BasicBlock::iterator II = BB->begin(); II != BB->end(); II++) {
+//
 //            }
-            ValueToValueMapTy vmap;
-            for (Instruction &I : *sourceBlock) {
-                if (auto *br = dyn_cast<BranchInst>(&I)) {
+//        }
+//    }
+
+    for (auto &[key, val] : alloca_map) {
+        outs() << "AllocaInst: ";
+        key->print(outs());
+        outs() << "\n";
+        outs() << "Was determined to be a variable with the following attributes: {\n";
+        outs() << "\tname: " << val->name << "\n";
+        outs() << "\tsize_in_bytes: " << val->size_in_bytes << "\n";
+        outs() << "\tval_bytes: [";
+        for (auto i = 0; i < val->byteVal.size(); i++) {
+            if (i == val->byteVal.size()-1) {
+                fprintf(stdout, "%hhx", val->byteVal.at(i));
+                fflush(stdout);
+            } else {
+                fprintf(stdout, "%hhx, ", val->byteVal.at(i));
+                fflush(stdout);
+            }
+        }
+        outs() << "]\n";
+        outs() << "\tis_ptr: " << (val->isPtrType ? "true" : "false") << "\n";
+        outs() << "\tptr_alloc_bytes: " << val->ptr_alloc_bytes << "\n";
+    }
+
+    // Use the CodeExtractor to extract each snippet into a "node" function
+    bool successful;
+    map<string, Function*> outlined_functions;
+    deque<Function*> outlined_functions_deque;
+    //vector<Function*> outlined_functions;
+    for (std::size_t i = 0; i < interleaved_groups.size(); i++) {
+        successful = false;
+        const auto& group = interleaved_groups.at(i);
+        vector<BasicBlock*> blocks;
+        for (auto idx : group.first) {
+            blocks.push_back(base_blockMap[idx]);
+        }
+        CodeExtractor CE(ArrayRef<BasicBlock *>(blocks), nullptr, false, nullptr, nullptr, nullptr, false, false, "Node_" + to_string(NODE_UID));
+        SetVector<Value *> Inputs, Outputs, Sinks;
+        CE.findInputsOutputs(Inputs, Outputs, Sinks);
+
+        outs() << "Attempting to outline " << blocks.size() << " blocks\n";
+        Function *OrigF = blocks.at(0)->getParent();
+        if (Function *OutF = CE.extractCodeRegion()) {
+            OutF->setLinkage(GlobalValue::LinkageTypes::ExternalLinkage);
+            User *U = *OutF->user_begin();
+            CallInst *CI = cast<CallInst>(U);
+            CallSite CS(CI);
+            CI->setIsNoInline();
+
+            successful = true;
+            NODE_UID++;
+
+            outlined_functions[OutF->getName()] = OutF;
+            outlined_functions_deque.push_back(OutF);
+        }
+        if (successful) {
+            outs() << "Successfully outlined region\n";
+        } else {
+            outs() << "Failed to extract region\n";
+        }
+    }
+
+//    uint32_t graph_level = 0;
+//    map<uint32_t, vector<Function*>> dag_level_map;
+//    dag_level_map[graph_level] = vector<Function*>();
+//    while (!outlined_functions_deque.empty()) {
+//        Function* func = outlined_functions_deque.front();
+//        if (dag_level_map[graph_level].empty()) {
+//            dag_level_map[graph_level].push_back(func);
+//            outlined_functions_deque.pop_front();
+//        }
+//        for (auto *otherFunc : dag_level_map[graph_level]) {
+//            for (std::size_t thisOpNum = 0; thisOpNum < func->getNumOperands(); thisOpNum++) {
+//                for (std::size_t otherOpNum = 0; otherOpNum < otherFunc->getNumOperands(); otherOpNum++) {
+//                    if
+//                }
+//            }
+//        }
+//    }
+
+    nlohmann::json outputJson;
+    outputJson["AppName"] = AppName;
+    outputJson["SharedObject"] = AppName + ".so";
+
+    nlohmann::json outputVariablesJson = json::object();
+    for (auto &[key, val] : alloca_map) {
+        nlohmann::json varJson = json::object();
+        varJson["bytes"] = val->size_in_bytes;
+        varJson["val"] = json::array();
+        for (uint8_t i : val->byteVal) {
+            varJson["val"].push_back((uint32_t)i);
+        }
+        varJson["is_ptr"] = val->isPtrType;
+        varJson["ptr_alloc_bytes"] = val->ptr_alloc_bytes;
+        outputVariablesJson[val->name] = varJson;
+    }
+    // Add a placeholder for main's return value since it isn't found as an AllocaInst for whatever reason
+    outputVariablesJson["_var_ret"] = json::object();
+    outputVariablesJson["_var_ret"]["bytes"] = 4;
+    outputVariablesJson["_var_ret"]["val"] = json::array();
+    outputVariablesJson["_var_ret"]["is_ptr"] = false;
+    outputVariablesJson["_var_ret"]["ptr_alloc_bytes"] = 0;
+
+    nlohmann::json outputDagJson = json::object();
+    Function* main_func = base_module->getFunction("main");
+
+    unsigned int call_idx = 0;
+    bool hasReturnArg = false;
+    for (auto & BB : *main_func) {
+        for (BasicBlock::iterator II = BB.begin(); II != BB.end(); ++II) {
+            if (auto* CI = dyn_cast<CallInst>(II)) {
+                if (outlined_functions.find(CI->getCalledFunction()->getName()) == outlined_functions.end()) {
+                    errs() << "Just so you know, there was a function call to " << CI->getCalledFunction()->getName() << " that I don't have in my map of extracted functions\n";
                     continue;
                 }
-                Instruction *I2 = I.clone();
-                vmap[&I] = I2;
-//                std::cerr << "Looking at an instruction with operands: ";
-//                for (unsigned int i = 0; i < I2->getNumOperands(); i++) {
-//                    //std::cerr << I2->getOperand(i)->getValueName()->getKey().str() << ", ";
-//                    std::cerr << I2->getOperand(i)->getName().str() << ", ";
-//                    std::cerr << I2->getOperand(i)->getValueName() << ", ";
-//                    sourceBlock->getValueSymbolTable();
-//                    std::cerr << I2->getOperand(i)->getValueID();
-//                    std::cerr << std::endl << "For reference, the instruction is: ";
-//                    I2->getOperand(i)->print(errs(), true);
-//                }
-//                std::cerr << std::endl;
-                bb->getInstList().push_back(I2);
-                RemapInstruction(I2, vmap);
+
+                auto *val = CI->getCalledFunction();
+                nlohmann::json nodeJson = json::object();
+                nodeJson["arguments"] = json::array();
+                nodeJson["predecessors"] = json::array();
+                nodeJson["successors"] = json::array();
+                nodeJson["platforms"] = json::array();
+
+                // Note: the last operand is always a reference to the function being called. We can ignore it
+                for (size_t opNum = 0; opNum < CI->getNumOperands()-1; opNum++) {
+                    auto *arg = CI->getOperand(opNum);
+                    if (auto* AI = dyn_cast<AllocaInst>(arg)) {
+                        if (alloca_map.find(AI) == alloca_map.end()) {
+                            errs() << "Encountered an alloca instruction that I don't have in my map. Assuming it's the return value\n";
+                            nodeJson["arguments"].push_back("_var_ret");
+                            hasReturnArg = true;
+                        } else {
+                            nodeJson["arguments"].push_back(alloca_map[AI]->name);
+                        }
+                    } else {
+                        errs() << "Encountered a function with a non-alloca operand. Function: " << val->getName() << ", Operand: ";
+                        arg->print(errs());
+                        errs() << "\n";
+                    }
+                }
+
+                if (call_idx > 0) {
+                    nlohmann::json predJson = json::object();
+                    predJson["name"] = "FuncCall_" + to_string(call_idx-1);
+                    predJson["edgecost"] = 10;
+                    nodeJson["predecessors"].push_back(predJson);
+                }
+                if (!hasReturnArg) {
+                    nlohmann::json succJson = json::object();
+                    succJson["name"] = "FuncCall_" + to_string(call_idx+1);
+                    succJson["edgecost"] = 10;
+                    nodeJson["successors"].push_back(succJson);
+                }
+                nlohmann::json plat = json::object();
+                plat["name"] = "cpu";
+                plat["nodecost"] = 10;
+                plat["runfunc"] = val->getName();
+                nodeJson["platforms"].push_back(plat);
+                outputDagJson["FuncCall_" + to_string(call_idx)] = nodeJson;
+                call_idx++;
             }
         }
-        builder.SetInsertPoint(&(func->back()));
-        builder.CreateRetVoid();
-        verifyFunction(*func, &outs());
     }
+//    for (inst_iterator I = inst_begin(main_func); I != inst_end(main_func); ++I) {
+//
+//    }
 
-//    FunctionType *ftype = FunctionType::get(Type::getVoidTy(OutM->getContext()),false);
-//    Function::Create(ftype, GlobalValue::LinkageTypes::ExternalLinkage, "_DASH_FFT_", *OutM);
+//    for (size_t i = 0; i < outlined_functions_deque.size(); i++) { //auto &[key, val] : outlined_functions) {
+//        auto *val = outlined_functions_deque.at(i);
+//
+//    }
 
-    verifyModule(*OutM, &outs());
+    outputJson["Variables"] = outputVariablesJson;
+    outputJson["DAG"] = outputDagJson;
 
-    if (file != nullptr) {
-        OutM->print(*file, nullptr);
-        file->close();
-    } else {
-        OutM->print(outs(), nullptr);
-    }
+    ofstream ostream(OutputJSONFilename);
+    ostream << outputJson.dump(4);
+    ostream.close();
 
-    return 0;
+    // print human readable module to file
+    AssemblyAnnotationWriter *write = new llvm::AssemblyAnnotationWriter();
+    std::string str;
+    llvm::raw_string_ostream rso(str);
+    std::filebuf f0;
+    f0.open(OutputLLVMFilename, std::ios::out);
+    base_module->print(rso, write);
+    std::ostream readableStream(&f0);
+    readableStream << str;
+    f0.close();
 }
