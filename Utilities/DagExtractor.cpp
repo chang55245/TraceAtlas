@@ -184,7 +184,6 @@ int main(int argc, char **argv)
         }
 
         notDone = (ret != Z_STREAM_END);// && (status <= (size / BLOCK_SIZE));
-	cout << "status is " << status << ".\n";
         if(status > (size / BLOCK_SIZE))
         {
             notDone = false;

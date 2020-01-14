@@ -18,7 +18,6 @@ llvm::cl::opt<string> kernelFile("k", llvm::cl::desc("Specify output json name")
 int main(int argc, char **argv)
 {
     cl::ParseCommandLineOptions(argc, argv);
-    char sourceFile[] = "./testing/bubbleSort_0_0.trc";
     std::vector<std::set<int>> type1Kernels;
     type1Kernels = DetectKernels(inputTrace, threshold, hotThreshold, false);
     std::cout << "Detected " << type1Kernels.size() << " type 1 kernels." << std::endl;
