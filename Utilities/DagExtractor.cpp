@@ -190,9 +190,10 @@ int main(int argc, char **argv)
         }
         if (status % 100 == 0)
         {
-            std::cout << "Currently reading block " << to_string(status) << " of " << to_string(size / BLOCK_SIZE) << "\n";
+            std::cout << "Currently reading block " << to_string(status) << " of " << to_string(size / BLOCK_SIZE) << "\r" << std::flush;
         }
     }
+    std::cout << std::endl;
     //trace is now fully read
     inflateEnd(&strm);
     inputTrace.close();

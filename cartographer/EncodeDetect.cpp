@@ -157,6 +157,7 @@ std::vector<std::set<int>> DetectKernels(std::string sourceFile, float thresh, i
             }
             else
             {
+                std::cout << "Encountered key: " << key << std::endl;
                 throw 2;
             }
             splitIndex++;
@@ -178,9 +179,10 @@ std::vector<std::set<int>> DetectKernels(std::string sourceFile, float thresh, i
         }
         if (index % 1000 == 1)
         {
-            std::cout << "Currently reading block " << index << " of " << blocks << ".\n";
+            std::cout << "Currently reading block " << index << " of " << blocks << ".\r" << std::flush;
         }
     } // while( notDone )
+    std::cout << std::endl;
 
     // assign to every index of every list value in blockMap a normalized amount
     std::map<int, std::vector<std::pair<int, float>>> fBlockMap; //really this is a matrix of floats

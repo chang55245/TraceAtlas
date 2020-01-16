@@ -179,9 +179,10 @@ std::map<int, std::vector<int>> ExtractKernels(std::string sourceFile, std::vect
         }
         if (index % 1000 == 1)
         {
-            std::cout << "Currently reading block " << index << " of " << totalBlocks << ".\n";
+            std::cout << "Currently reading block " << index << " of " << totalBlocks << ".\r" << std::flush;
         }
     }
+    std::cout << std::endl;
 
     std::vector<std::set<int>> checker;
     for (int i = 0; i < kernels.size(); i++)
