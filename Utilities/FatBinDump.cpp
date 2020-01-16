@@ -182,7 +182,7 @@ int main(int argc, char **argv)
         bool new_group;
         for (auto i = 1; i < non_kernel_blocks.size(); i++) {
             auto block = non_kernel_blocks.at(i);
-            new_group = (block-1) != grouped_blocks.back().back();
+            new_group = (block-1) != grouped_blocks.back().back() || (base_blockMap[block-1]->getParent() != base_blockMap[grouped_blocks.back().back()]->getParent());
             if (new_group) {
                 grouped_blocks.emplace_back();
             }
@@ -422,7 +422,11 @@ int main(int argc, char **argv)
         SetVector<Value *> Inputs, Outputs, Sinks;
         CE.findInputsOutputs(Inputs, Outputs, Sinks);
 
-        outs() << "Attempting to outline " << blocks.size() << " blocks\n";
+        outs() << "Attempting to outline blocks ";
+        for (auto idx : group.first) {
+            outs() << idx << " ";
+        }
+        outs() << (group.second ? "(kernel)\n" : "(non-kernel)\n");
         Function *OrigF = blocks.at(0)->getParent();
         if (Function *OutF = CE.extractCodeRegion()) {
             OutF->setLinkage(GlobalValue::LinkageTypes::ExternalLinkage);
