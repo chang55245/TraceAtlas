@@ -23,17 +23,13 @@ using namespace llvm;
 using json = nlohmann::json;
 using namespace std;
 
-cl::opt<std::string> AnnotateFilename("a", cl::desc("Specify original input LLVM with annotated BBs"), cl::value_desc("llvm filename"), cl::Required);
-cl::opt<std::string> KernelFilename("k", cl::desc("Specify kernel json"), cl::value_desc("kernel filename"), cl::Required);
-cl::opt<std::string> DagFilename("d", cl::desc("Specify DAG json"), cl::value_desc("dag filename"), cl::Required);
-cl::opt<std::string> AppName("n", cl::desc("Specify name of generated application"), cl::value_desc("name"), cl::Required);
-
-cl::opt<std::string> OutputLLVMFilename("o", cl::desc("Specify output LLVM"), cl::value_desc("output llvm filename"));
-cl::opt<std::string> OutputJSONFilename("o2", cl::desc("Specify output JSON"), cl::value_desc("output json filename"));
-
 static int BB_UID = 0;
 static int VAR_UID = 0;
 static int NODE_UID = 0;
+
+const std::map<uint64_t, std::string> knownKernels = {
+    {8198735040366344323, "fft511"}
+};
 
 class runtime_variable {
 public:
@@ -109,6 +105,64 @@ uint64_t findBytesConstForMemoryAlloc(Value* val) {
     }
     return 0;
 }
+
+uint64_t hashBasicBlocks(std::vector<BasicBlock*> &blocks) {
+    std::sort(blocks.begin(), blocks.end());
+    vector<string> blockStrings;
+    hash<string> hasher;
+    uint32_t valueId;
+    for (BasicBlock* toConvert : blocks)
+    {
+        valueId = 0;
+        string blockStr;
+        vector<Value *> namedVals;
+        for (BasicBlock::iterator BI = toConvert->begin(), BE = toConvert->end(); BI != BE; ++BI)
+        {
+            auto *inst = cast<Instruction>(BI);
+            unsigned int ops = inst->getNumOperands();
+            for (int i = 0; i < ops; i++)
+            {
+                Value *op = inst->getOperand(i);
+                op->setName("v_" + to_string(valueId++));
+                namedVals.push_back(op);
+            }
+            if (std::find(namedVals.begin(), namedVals.end(), inst) == namedVals.end())
+            {
+                inst->setName("v_" + to_string(valueId++));
+                namedVals.push_back(inst);
+            }
+            std::string str;
+            llvm::raw_string_ostream rso(str);
+            inst->print(rso);
+            blockStr += str + "\n";
+        }
+        for (Value *v : namedVals)
+        {
+            v->setName("");
+        }
+        namedVals.clear();
+        blockStr += "\n";
+        blockStrings.push_back(blockStr);
+    }
+
+    std::sort(blockStrings.begin(), blockStrings.begin());
+
+    string toHash;
+    for (const auto& str : blockStrings)
+    {
+        toHash += str + "\n";
+    }
+
+    return hasher(toHash);
+}
+
+cl::opt<std::string> AnnotateFilename("a", cl::desc("Specify original input LLVM with annotated BBs"), cl::value_desc("llvm filename"), cl::Required);
+cl::opt<std::string> KernelFilename("k", cl::desc("Specify kernel json"), cl::value_desc("kernel filename"), cl::Required);
+cl::opt<std::string> DagFilename("d", cl::desc("Specify DAG json"), cl::value_desc("dag filename"), cl::Required);
+cl::opt<std::string> AppName("n", cl::desc("Specify name of generated application"), cl::value_desc("name"), cl::Required);
+
+cl::opt<std::string> OutputLLVMFilename("o", cl::desc("Specify output LLVM"), cl::value_desc("output llvm filename"));
+cl::opt<std::string> OutputJSONFilename("o2", cl::desc("Specify output JSON"), cl::value_desc("output json filename"));
 
 int main(int argc, char **argv)
 {
@@ -384,31 +438,31 @@ int main(int argc, char **argv)
 //        }
 //    }
 
-    for (auto &[key, val] : alloca_map) {
-        outs() << "AllocaInst: ";
-        key->print(outs());
-        outs() << "\n";
-        outs() << "Was determined to be a variable with the following attributes: {\n";
-        outs() << "\tname: " << val->name << "\n";
-        outs() << "\tsize_in_bytes: " << val->size_in_bytes << "\n";
-        outs() << "\tval_bytes: [";
-        for (auto i = 0; i < val->byteVal.size(); i++) {
-            if (i == val->byteVal.size()-1) {
-                fprintf(stdout, "%hhx", val->byteVal.at(i));
-                fflush(stdout);
-            } else {
-                fprintf(stdout, "%hhx, ", val->byteVal.at(i));
-                fflush(stdout);
-            }
-        }
-        outs() << "]\n";
-        outs() << "\tis_ptr: " << (val->isPtrType ? "true" : "false") << "\n";
-        outs() << "\tptr_alloc_bytes: " << val->ptr_alloc_bytes << "\n";
-    }
+//    for (auto &[key, val] : alloca_map) {
+//        outs() << "AllocaInst: ";
+//        key->print(outs());
+//        outs() << "\n";
+//        outs() << "Was determined to be a variable with the following attributes: {\n";
+//        outs() << "\tname: " << val->name << "\n";
+//        outs() << "\tsize_in_bytes: " << val->size_in_bytes << "\n";
+//        outs() << "\tval_bytes: [";
+//        for (auto i = 0; i < val->byteVal.size(); i++) {
+//            if (i == val->byteVal.size()-1) {
+//                fprintf(stdout, "%hhx", val->byteVal.at(i));
+//                fflush(stdout);
+//            } else {
+//                fprintf(stdout, "%hhx, ", val->byteVal.at(i));
+//                fflush(stdout);
+//            }
+//        }
+//        outs() << "]\n";
+//        outs() << "\tis_ptr: " << (val->isPtrType ? "true" : "false") << "\n";
+//        outs() << "\tptr_alloc_bytes: " << val->ptr_alloc_bytes << "\n";
+//    }
 
     // Use the CodeExtractor to extract each snippet into a "node" function
     bool successful;
-    map<string, Function*> outlined_functions;
+    map<string, pair<Function*, vector<BasicBlock*>>> outlined_functions;
     deque<Function*> outlined_functions_deque;
     //vector<Function*> outlined_functions;
     for (std::size_t i = 0; i < interleaved_groups.size(); i++) {
@@ -426,7 +480,8 @@ int main(int argc, char **argv)
         for (auto idx : group.first) {
             outs() << idx << " ";
         }
-        outs() << (group.second ? "(kernel)\n" : "(non-kernel)\n");
+        outs() << (group.second ? "(kernel" : "(non-kernel");
+        outs() << ", hash: " << hashBasicBlocks(blocks) << ")\n";
         Function *OrigF = blocks.at(0)->getParent();
         if (Function *OutF = CE.extractCodeRegion()) {
             OutF->setLinkage(GlobalValue::LinkageTypes::ExternalLinkage);
@@ -438,7 +493,7 @@ int main(int argc, char **argv)
             successful = true;
             NODE_UID++;
 
-            outlined_functions[OutF->getName()] = OutF;
+            outlined_functions[OutF->getName()] = {OutF, blocks};
             outlined_functions_deque.push_back(OutF);
         }
         if (successful) {
@@ -494,6 +549,7 @@ int main(int argc, char **argv)
 
     unsigned int call_idx = 0;
     bool hasReturnArg = false;
+    bool knownKernelReplaced = false;
     for (auto & BB : *main_func) {
         for (BasicBlock::iterator II = BB.begin(); II != BB.end(); ++II) {
             if (auto* CI = dyn_cast<CallInst>(II)) {
@@ -502,7 +558,10 @@ int main(int argc, char **argv)
                     continue;
                 }
 
+                knownKernelReplaced = false;
                 auto *val = CI->getCalledFunction();
+                auto &called_blocks = outlined_functions.at(val->getName()).second;
+                uint64_t hash = hashBasicBlocks(called_blocks);
                 nlohmann::json nodeJson = json::object();
                 nodeJson["arguments"] = json::array();
                 nodeJson["predecessors"] = json::array();
@@ -540,10 +599,35 @@ int main(int argc, char **argv)
                     nodeJson["successors"].push_back(succJson);
                 }
                 nlohmann::json plat = json::object();
-                plat["name"] = "cpu";
-                plat["nodecost"] = 10;
-                plat["runfunc"] = val->getName();
-                nodeJson["platforms"].push_back(plat);
+                if (knownKernels.find(hash) != knownKernels.end()) {
+                    const string& knownKernel = knownKernels.at(hash);
+                    outs() << "Recognized kernel " << knownKernel << ", attempting to swap in optimized implementation\n";
+                    if (knownKernel == "fft511") {
+                        plat["name"] = "cpu";
+                        plat["nodecost"] = 10;
+                        plat["runfunc"] = "fft511_cpu";
+                        plat["shared_object"] = "DASH_FFT.so";
+                        nodeJson["platforms"].push_back(plat);
+                        nlohmann::json plat2 = json::object();
+                        plat2["name"] = "fft";
+                        plat2["nodecost"] = 5;
+                        plat2["runfunc"] = "fft511_accel";
+                        plat2["shared_object"] = "DASH_FFT.so";
+                        nodeJson["platforms"].push_back(plat2);
+                        knownKernelReplaced = true;
+                        outs() << "Successfully augmented JSON with fft511 platform invocations\n";
+                    } else {
+                        errs() << "I recognized this kernel, but I don't know how to optimize it. Falling back to standard processing\n";
+                    }
+                } else {
+//                    errs() << "No known kernel found\n";
+                }
+                if (!knownKernelReplaced) {
+                    plat["name"] = "cpu";
+                    plat["nodecost"] = 10;
+                    plat["runfunc"] = val->getName();
+                    nodeJson["platforms"].push_back(plat);
+                }
                 outputDagJson["FuncCall_" + to_string(call_idx)] = nodeJson;
                 call_idx++;
             }

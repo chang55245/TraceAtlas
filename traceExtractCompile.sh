@@ -111,6 +111,7 @@ while (( "$#" )); do
       ;;
     -*|--*)
       echo "Error: Unsupported flag $1" >&2
+      print_usage
       exit 1
       ;;
     *)
