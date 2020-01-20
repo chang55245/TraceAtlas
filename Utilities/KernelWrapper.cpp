@@ -4,6 +4,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
+#include "llvm/IR/IRBuilder.h"
 #include <llvm/IR/AssemblyAnnotationWriter.h>
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/CommandLine.h"
@@ -28,7 +29,8 @@ static int VAR_UID = 0;
 static int NODE_UID = 0;
 
 const std::map<uint64_t, std::string> knownKernels = {
-    {8198735040366344323, "fft511"}
+    //{(uint64_t) 4168845590472268746, "fft256"},
+    //{(uint64_t) 516142931972860765, "fft256"}
 };
 
 class runtime_variable {
@@ -106,6 +108,7 @@ uint64_t findBytesConstForMemoryAlloc(Value* val) {
     return 0;
 }
 
+// TODO: Figure out how to properly restore the name of each piece of the block after the blockStr is computed
 uint64_t hashBasicBlocks(std::vector<BasicBlock*> &blocks) {
     std::sort(blocks.begin(), blocks.end());
     vector<string> blockStrings;
@@ -123,23 +126,23 @@ uint64_t hashBasicBlocks(std::vector<BasicBlock*> &blocks) {
             for (int i = 0; i < ops; i++)
             {
                 Value *op = inst->getOperand(i);
-                op->setName("v_" + to_string(valueId++));
+//                op->setName("v_" + to_string(valueId++));
                 namedVals.push_back(op);
             }
-            if (std::find(namedVals.begin(), namedVals.end(), inst) == namedVals.end())
-            {
-                inst->setName("v_" + to_string(valueId++));
+//            if (std::find(namedVals.begin(), namedVals.end(), inst) == namedVals.end())
+//            {
+//                inst->setName("v_" + to_string(valueId++));
                 namedVals.push_back(inst);
-            }
+//            }
             std::string str;
             llvm::raw_string_ostream rso(str);
             inst->print(rso);
             blockStr += str + "\n";
         }
-        for (Value *v : namedVals)
-        {
-            v->setName("");
-        }
+//        for (Value *v : namedVals)
+//        {
+//            v->setName("");
+//        }
         namedVals.clear();
         blockStr += "\n";
         blockStrings.push_back(blockStr);
@@ -222,11 +225,11 @@ int main(int argc, char **argv)
         }
     }
 
-    outs() << "These blocks are not present in any kernel: ";
-    for (auto block : non_kernel_blocks) {
-        outs() << block << " ";
-    }
-    outs() << "\n";
+//    outs() << "These blocks are not present in any kernel: ";
+//    for (auto block : non_kernel_blocks) {
+//        outs() << block << " ";
+//    }
+//    outs() << "\n";
 
     // Group them into contiguous ranges
     vector<vector<uint32_t>> grouped_blocks;
@@ -244,13 +247,13 @@ int main(int argc, char **argv)
         }
     }
 
-    outs() << "Grouped into contiguous ranges, they look like this: \n";
-    for (const auto& group : grouped_blocks) {
-        for (auto block : group) {
-            outs() << block << " ";
-        }
-        outs() << "\n";
-    }
+//    outs() << "Grouped into contiguous ranges, they look like this: \n";
+//    for (const auto& group : grouped_blocks) {
+//        for (auto block : group) {
+//            outs() << block << " ";
+//        }
+//        outs() << "\n";
+//    }
 
     // Interleave the kernels and these blocks
     vector<pair<vector<uint32_t>, bool>> interleaved_groups;
@@ -283,25 +286,25 @@ int main(int argc, char **argv)
         interleaved_groups.insert(interleaved_groups.begin(), pair<vector<uint32_t>, bool>{alloca_block, false});
     }
 
-    outs() << "Now, we have interleaved the kernel blocks with the non-kernel blocks, and the program structure looks like this:\n";
-    for (const auto& group : interleaved_groups) {
-        if (group.second) {
-            outs() << "Kernel: ";
-        } else {
-            outs() << "Non-kernel: ";
-        }
-        for (auto block : group.first) {
-            outs() << block << " ";
-        }
-        outs() << "\n";
-    }
+//    outs() << "Now, we have interleaved the kernel blocks with the non-kernel blocks, and the program structure looks like this:\n";
+//    for (const auto& group : interleaved_groups) {
+//        if (group.second) {
+//            outs() << "Kernel: ";
+//        } else {
+//            outs() << "Non-kernel: ";
+//        }
+//        for (auto block : group.first) {
+//            outs() << block << " ";
+//        }
+//        outs() << "\n";
+//    }
 
     // Determine the memory requirements for all variables in this application by iterating over all the allocas
     // Only search within the first basic block, though
     map<AllocaInst*, runtime_variable*> alloca_map;
     for (BasicBlock::iterator II = base_blockMap[0]->begin(); II != base_blockMap[0]->end(); ++II) {
         if (auto *AI = dyn_cast<AllocaInst>(II)) {
-            outs() << "Found AllocaInst:" << *AI << "\n";
+            //outs() << "Found AllocaInst:" << *AI << "\n";
             alloca_map[AI] = new runtime_variable("_var_" + to_string(VAR_UID++));
             Optional<uint64_t> bits = AI->getAllocationSizeInBits(base_module->getDataLayout());
             if (bits.hasValue()) {
@@ -480,8 +483,8 @@ int main(int argc, char **argv)
         for (auto idx : group.first) {
             outs() << idx << " ";
         }
-        outs() << (group.second ? "(kernel" : "(non-kernel");
-        outs() << ", hash: " << hashBasicBlocks(blocks) << ")\n";
+        outs() << (group.second ? "(kernel)\n" : "(non-kernel)\n");
+//        outs() << ", hash: " << hashBasicBlocks(blocks) << ")\n";
         Function *OrigF = blocks.at(0)->getParent();
         if (Function *OutF = CE.extractCodeRegion()) {
             OutF->setLinkage(GlobalValue::LinkageTypes::ExternalLinkage);
@@ -497,7 +500,7 @@ int main(int argc, char **argv)
             outlined_functions_deque.push_back(OutF);
         }
         if (successful) {
-            outs() << "Successfully outlined region\n";
+            outs() << "Successfully outlined region as " << outlined_functions_deque.back()->getName() << "\n";
         } else {
             outs() << "Failed to extract region\n";
         }
@@ -602,25 +605,25 @@ int main(int argc, char **argv)
                 if (knownKernels.find(hash) != knownKernels.end()) {
                     const string& knownKernel = knownKernels.at(hash);
                     outs() << "Recognized " << val->getName() << " as kernel " << knownKernel << ", attempting to swap in optimized implementation\n";
-                    if (knownKernel == "fft511") {
+                    if (knownKernel == "fft256") {
                         plat["name"] = "cpu";
                         plat["nodecost"] = 10;
-                        plat["runfunc"] = "fft511_cpu";
-                        plat["shared_object"] = "DASH_FFT.so";
+                        plat["runfunc"] = knownKernel + "_cpu";
+                        plat["shared_object"] = "fft.so";
                         nodeJson["platforms"].push_back(plat);
                         nlohmann::json plat2 = json::object();
                         plat2["name"] = "fft";
                         plat2["nodecost"] = 5;
-                        plat2["runfunc"] = "fft511_accel";
-                        plat2["shared_object"] = "DASH_FFT.so";
+                        plat2["runfunc"] = knownKernel + "_accel";
+                        plat2["shared_object"] = "fft.so";
                         nodeJson["platforms"].push_back(plat2);
                         knownKernelReplaced = true;
-                        outs() << "Successfully augmented JSON with fft511 platform invocations\n";
+                        outs() << "Successfully augmented JSON with " << knownKernel << " platform invocations\n";
                     } else {
                         errs() << "I recognized this kernel, but I don't know how to optimize it. Falling back to standard processing\n";
                     }
                 } else {
-//                    errs() << "No known kernel found\n";
+                    errs() << "No known kernel found for call to " << val->getName() << " (hash: " << hash << ")\n";
                 }
                 if (!knownKernelReplaced) {
                     plat["name"] = "cpu";

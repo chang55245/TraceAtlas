@@ -157,7 +157,7 @@ std::vector<std::set<int>> DetectKernels(std::string sourceFile, float thresh, i
             }
             else
             {
-                std::cout << "Encountered key: " << key << std::endl;
+                std::cout << std::endl << "Encountered key: " << key << std::endl;
                 throw 2;
             }
             splitIndex++;
