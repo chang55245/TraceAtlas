@@ -144,7 +144,7 @@ IFS=' ' read -r -a LIBS <<< "$LIBS"
 if [ "$SKIP_TRACE" = false ]; then
   echo "Stage: Initial compilation"
   # Note: Using -fPIC here can sometimes kill cartographer during kernel detection
-  clang-9 -S -flto -static ${C_FILE} -o output-${C_FILE%.c}.ll
+  clang-9 -S -flto -fPIC -static -fuse-ld=lld-9 ${C_FILE} -o output-${C_FILE%.c}.ll
   # Note: this stage might need all necessary functions to have the "always inline" attribute
   if [ "$INLINE" = true ]; then
     echo "Stage: Inlining function calls"
@@ -152,16 +152,21 @@ if [ "$SKIP_TRACE" = false ]; then
   fi
   echo "Stage: Encoded annotation"
   opt-9 -load $TRACEHOME/lib/AtlasPasses.so -EncodedAnnotate output-${C_FILE%.c}.ll -S -o output-${C_FILE%.c}-annotate.ll
-  echo "Stage: Encoded trace instrumentation"
-  opt-9 -load $TRACEHOME/lib/AtlasPasses.so -EncodedTrace output-${C_FILE%.c}.ll -S -o output-${C_FILE%.c}-opt.ll
-  echo "Stage: Tracer binary compilation"
-  clang++-9 -static -fuse-ld=lld-9 -lpthread -lz ${LIBS[@]} $TRACEHOME/lib/libAtlasBackend.a ${DEPS[@]} output-${C_FILE%.c}-opt.ll -o ${C_FILE%.c}-tracer.out
-
-  echo "Stage: Trace collection"
-  ./${C_FILE%.c}-tracer.out
 fi
 
 if [ "$SKIP_KERNEL_DETECTION" = false ]; then
+  echo "Stage: Encoded trace instrumentation"
+  opt-9 -load $TRACEHOME/lib/AtlasPasses.so -EncodedTrace output-${C_FILE%.c}.ll -S -o output-${C_FILE%.c}-opt.ll
+  # ${LIBS[@]}
+  echo "Stage: Tracer binary compilation"
+  clang++-9 -static -fuse-ld=lld-9 \
+            -lpthread -lz $TRACEHOME/lib/libAtlasBackend.a \
+            ${DEPS[@]} output-${C_FILE%.c}-opt.ll \
+            -o ${C_FILE%.c}-tracer.out
+
+  echo "Stage: Trace collection"
+  ./${C_FILE%.c}-tracer.out
+
   if [ -f outfile.txt ]; then
     echo "Removing previous outfile.txt"
     rm outfile.txt
@@ -176,6 +181,10 @@ if [ "$SKIP_FINAL_COMPILATION" = false ]; then
   echo "Stage: Application refactoring/region outlining"
   $TRACEHOME/bin/kwrap -a output-${C_FILE%.c}-annotate.ll -k kernel-${C_FILE%.c}.json -d kernel-${C_FILE%.c}-dagExtractor.json -n ${C_FILE%.c}-${ARCH} -o output-${C_FILE%.c}-extracted.ll -o2 ${C_FILE%.c}-${ARCH}.json
   echo "Stage: Shared object compilation"
-  clang++-9 ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} output-${C_FILE%.c}-extracted.ll -o ${C_FILE%.c}-${ARCH}.so
+  if [ "$ARCH" = "x86" ]; then
+    clang++-9 ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE%.c}-extracted.ll -o ${C_FILE%.c}-${ARCH}.so
+  else
+    clang++-9 ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} output-${C_FILE%.c}-extracted.ll -o ${C_FILE%.c}-${ARCH}.so
+  fi
 fi
 echo "Complete!"
