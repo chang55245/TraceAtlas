@@ -29,8 +29,8 @@ static int VAR_UID = 0;
 static int NODE_UID = 0;
 
 const std::map<uint64_t, std::string> knownKernels = {
-    //{(uint64_t) 4168845590472268746, "fft256"},
-    //{(uint64_t) 516142931972860765, "fft256"}
+    {(uint64_t) 4168845590472268746, "fft256"},
+    {(uint64_t) 516142931972860765, "fft256"}
 };
 
 class runtime_variable {
@@ -163,6 +163,7 @@ cl::opt<std::string> AnnotateFilename("a", cl::desc("Specify original input LLVM
 cl::opt<std::string> KernelFilename("k", cl::desc("Specify kernel json"), cl::value_desc("kernel filename"), cl::Required);
 cl::opt<std::string> DagFilename("d", cl::desc("Specify DAG json"), cl::value_desc("dag filename"), cl::Required);
 cl::opt<std::string> AppName("n", cl::desc("Specify name of generated application"), cl::value_desc("name"), cl::Required);
+cl::opt<bool> SemanticOpt("semantic-opt", cl::desc("Enable \"semantic optimization\" of recognized kernels"), cl::Optional);
 
 cl::opt<std::string> OutputLLVMFilename("o", cl::desc("Specify output LLVM"), cl::value_desc("output llvm filename"));
 cl::opt<std::string> OutputJSONFilename("o2", cl::desc("Specify output JSON"), cl::value_desc("output json filename"));
@@ -602,28 +603,30 @@ int main(int argc, char **argv)
                     nodeJson["successors"].push_back(succJson);
                 }
                 nlohmann::json plat = json::object();
-                if (knownKernels.find(hash) != knownKernels.end()) {
-                    const string& knownKernel = knownKernels.at(hash);
-                    outs() << "Recognized " << val->getName() << " as kernel " << knownKernel << ", attempting to swap in optimized implementation\n";
-                    if (knownKernel == "fft256") {
-                        plat["name"] = "cpu";
-                        plat["nodecost"] = 10;
-                        plat["runfunc"] = knownKernel + "_cpu";
-                        plat["shared_object"] = "fft.so";
-                        nodeJson["platforms"].push_back(plat);
-                        nlohmann::json plat2 = json::object();
-                        plat2["name"] = "fft";
-                        plat2["nodecost"] = 5;
-                        plat2["runfunc"] = knownKernel + "_accel";
-                        plat2["shared_object"] = "fft.so";
-                        nodeJson["platforms"].push_back(plat2);
-                        knownKernelReplaced = true;
-                        outs() << "Successfully augmented JSON with " << knownKernel << " platform invocations\n";
+                if (SemanticOpt) {
+                    if (knownKernels.find(hash) != knownKernels.end()) {
+                        const string& knownKernel = knownKernels.at(hash);
+                        outs() << "Recognized " << val->getName() << " as kernel " << knownKernel << ", attempting to swap in optimized implementation\n";
+                        if (knownKernel == "fft256") {
+                            plat["name"] = "cpu";
+                            plat["nodecost"] = 10;
+                            plat["runfunc"] = knownKernel + "_cpu";
+                            plat["shared_object"] = "fft.so";
+                            nodeJson["platforms"].push_back(plat);
+                            nlohmann::json plat2 = json::object();
+                            plat2["name"] = "fft";
+                            plat2["nodecost"] = 5;
+                            plat2["runfunc"] = knownKernel + "_accel";
+                            plat2["shared_object"] = "fft.so";
+                            nodeJson["platforms"].push_back(plat2);
+                            knownKernelReplaced = true;
+                            outs() << "Successfully augmented JSON with " << knownKernel << " platform invocations\n";
+                        } else {
+                            errs() << "I recognized this kernel, but I don't know how to optimize it. Falling back to standard processing\n";
+                        }
                     } else {
-                        errs() << "I recognized this kernel, but I don't know how to optimize it. Falling back to standard processing\n";
+                        errs() << "No known kernel found for call to " << val->getName() << " (hash: " << hash << ")\n";
                     }
-                } else {
-                    errs() << "No known kernel found for call to " << val->getName() << " (hash: " << hash << ")\n";
                 }
                 if (!knownKernelReplaced) {
                     plat["name"] = "cpu";
