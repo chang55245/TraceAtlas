@@ -3,9 +3,12 @@
 PROG_NAME=`basename "$0"`
 C_FILE=""
 INLINE=false
+SEM_OPT=false
 SKIP_TRACE=false
 SKIP_KERNEL_DETECTION=false
 SKIP_FINAL_COMPILATION=false
+COMP_LEVEL=9
+TRC_NAME="raw.trc"
 TRACEHOME=/localhome/jmack2545/rcl/DASH-SoC/TraceAtlas/build
 COMPILERRT=/localhome/jmack2545/rcl/DASH-SoC/llvm/llvm-project/compiler-rt/build/lib/linux/libclang_rt.builtins-aarch64.a
 
@@ -27,15 +30,21 @@ cat << EOF
     Options:
       [-i|--inline]
         Attempt to inline all functions from the original source file before tracing
-      [--no-trace]
+      [--semantic-opt]
+        Attempt to utilize "semantic optimization" substitutions in the final binary creation
+      [--skip-trace]
         Skip the trace instrumentation and trace collection steps
-      [--no-kernel-detection]
+      [--skip-kernel-detection]
         Skip the trace processing and kernel detection/DAG extraction steps
-      [--no-final-processing]
+      [--skip-final-processing]
         Skip the application refactoring and final shared object compilation steps
       [-l<lib_suffix>]
         Add a library that is required to compile this application for tracing and in shared object creation
         Ex: -lm for libmath
+      [--trace-compression <level>]
+        Set the trace compression level to be used as an integer between 0 and 9. The default is 9.
+      [--trace-name <name>]
+        Set the name to be used for the trace file. Default is raw.trc.
       [-d|--dependency <dep_file>]
         Add a source file dependency that is required for compilation for tracing and in shared object creation
       [-t|--trace-home <TraceAtlasDir>]
@@ -51,21 +60,33 @@ while (( "$#" )); do
       INLINE=true
       shift 1
       ;;
-    --no-trace)
+    --semantic-opt)
+      SEM_OPT=true
+      shift 1
+      ;;
+    --skip-trace)
       SKIP_TRACE=true
       shift 1
       ;;
-    --no-kernel-detection)
+    --skip-kernel-detection)
       SKIP_KERNEL_DETECTION=true
       shift 1
       ;;
-    --no-final-processing)
+    --skip-final-processing)
       SKIP_FINAL_COMPILATION=true
       shift 1
       ;;
     -l*)
       LIBS="$LIBS $1"
       shift 1
+      ;;
+    --trace-compression)
+      COMP_LEVEL=$2
+      shift 2
+      ;;
+    --trace-name)
+      TRC_NAME="$2" 
+      shift 2
       ;;
     -d|--dependency)
       DEPS="$DEPS $2"
@@ -143,7 +164,6 @@ IFS=' ' read -r -a LIBS <<< "$LIBS"
 
 if [ "$SKIP_TRACE" = false ]; then
   echo "Stage: Initial compilation"
-  # Note: Using -fPIC here can sometimes kill cartographer during kernel detection
   clang-9 -S -flto -fPIC -static -fuse-ld=lld-9 ${C_FILE} -o output-${C_FILE%.c}.ll
   # Note: this stage might need all necessary functions to have the "always inline" attribute
   if [ "$INLINE" = true ]; then
@@ -152,34 +172,33 @@ if [ "$SKIP_TRACE" = false ]; then
   fi
   echo "Stage: Encoded annotation"
   opt-9 -load $TRACEHOME/lib/AtlasPasses.so -EncodedAnnotate output-${C_FILE%.c}.ll -S -o output-${C_FILE%.c}-annotate.ll
+  echo "Stage: Encoded trace instrumentation"
+  opt-9 -load $TRACEHOME/lib/AtlasPasses.so -EncodedTrace output-${C_FILE%.c}.ll -S -o output-${C_FILE%.c}-opt.ll
 fi
 
 if [ "$SKIP_KERNEL_DETECTION" = false ]; then
-  echo "Stage: Encoded trace instrumentation"
-  opt-9 -load $TRACEHOME/lib/AtlasPasses.so -EncodedTrace output-${C_FILE%.c}.ll -S -o output-${C_FILE%.c}-opt.ll
-  # ${LIBS[@]}
   echo "Stage: Tracer binary compilation"
   clang++-9 -static -fuse-ld=lld-9 \
-            -lpthread -lz $TRACEHOME/lib/libAtlasBackend.a \
+            -lpthread -lz ${LIBS[@]} $TRACEHOME/lib/libAtlasBackend.a \
             ${DEPS[@]} output-${C_FILE%.c}-opt.ll \
             -o ${C_FILE%.c}-tracer.out
 
   echo "Stage: Trace collection"
-  ./${C_FILE%.c}-tracer.out
+  TRACE_NAME=${TRC_NAME} TRACE_COMPRESSION=${COMP_LEVEL} ./${C_FILE%.c}-tracer.out
 
   if [ -f outfile.txt ]; then
     echo "Removing previous outfile.txt"
     rm outfile.txt
   fi
   echo "Stage: Kernel extraction"
-  $TRACEHOME/bin/cartographer -i raw.trc -k kernel-${C_FILE%.c}.json
+  $TRACEHOME/bin/cartographer -i ${TRC_NAME} -k kernel-${C_FILE%.c}.json
   echo "Stage: DAG extraction"
-  $TRACEHOME/bin/dagExtractor -t raw.trc -k kernel-${C_FILE%.c}.json -o kernel-${C_FILE%.c}-dagExtractor.json
+  $TRACEHOME/bin/dagExtractor -t ${TRC_NAME} -k kernel-${C_FILE%.c}.json -o kernel-${C_FILE%.c}-dagExtractor.json
 fi
 
 if [ "$SKIP_FINAL_COMPILATION" = false ]; then
   echo "Stage: Application refactoring/region outlining"
-  $TRACEHOME/bin/kwrap -a output-${C_FILE%.c}-annotate.ll -k kernel-${C_FILE%.c}.json -d kernel-${C_FILE%.c}-dagExtractor.json -n ${C_FILE%.c}-${ARCH} -o output-${C_FILE%.c}-extracted.ll -o2 ${C_FILE%.c}-${ARCH}.json
+  $TRACEHOME/bin/kwrap -semantic-opt=${SEM_OPT} -a output-${C_FILE%.c}-annotate.ll -k kernel-${C_FILE%.c}.json -d kernel-${C_FILE%.c}-dagExtractor.json -n ${C_FILE%.c}-${ARCH} -o output-${C_FILE%.c}-extracted.ll -o2 ${C_FILE%.c}-${ARCH}.json
   echo "Stage: Shared object compilation"
   if [ "$ARCH" = "x86" ]; then
     clang++-9 ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE%.c}-extracted.ll -o ${C_FILE%.c}-${ARCH}.so

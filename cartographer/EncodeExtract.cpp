@@ -158,6 +158,7 @@ std::map<int, std::vector<int>> ExtractKernels(std::string sourceFile, std::vect
             }
             else
             {
+                std::cerr << std::endl << "Encountered unknown key: " << key << std::endl;
                 throw 2;
             }
             splitIndex++;

@@ -99,6 +99,16 @@ void OpenFile(char *test)
     strm_DashTracer.zalloc = Z_NULL;
     strm_DashTracer.zfree = Z_NULL;
     strm_DashTracer.opaque = Z_NULL;
+    char *tcl = getenv("TRACE_COMPRESSION");
+    if (tcl != NULL)
+    {
+        int l = atoi(tcl);
+        TraceCompressionLevel = l;
+    }
+    else
+    {
+        TraceCompressionLevel = 9;
+    }
     int ret = deflateInit(&strm_DashTracer, TraceCompressionLevel);
     assert(ret == Z_OK);
     char *tfn = getenv("TRACE_NAME");
@@ -109,17 +119,6 @@ void OpenFile(char *test)
     else
     {
         TraceFilename = "raw.trc";
-    }
-
-    char *tcl = getenv("TRACE_COMPRESSION");
-    if (tcl != NULL)
-    {
-        int l = atoi(tcl);
-        TraceCompressionLevel = l;
-    }
-    else
-    {
-        TraceCompressionLevel = 9;
     }
 
     myfile = fopen(TraceFilename, "w");
