@@ -164,7 +164,7 @@ IFS=' ' read -r -a LIBS <<< "$LIBS"
 
 if [ "$SKIP_TRACE" = false ]; then
   echo "Stage: Initial compilation"
-  clang-9 -S -flto -fPIC -static -fuse-ld=lld-9 ${C_FILE} -o output-${C_FILE%.c}.ll
+  clang-9 -S -flto -fPIC -static ${C_FILE} -o output-${C_FILE%.c}.ll
   # Note: this stage might need all necessary functions to have the "always inline" attribute
   if [ "$INLINE" = true ]; then
     echo "Stage: Inlining function calls"

@@ -1,3 +1,5 @@
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instruction.h"
@@ -30,7 +32,11 @@ static int NODE_UID = 0;
 
 const std::map<uint64_t, std::string> knownKernels = {
     {(uint64_t) 4168845590472268746, "fft256"},
-    {(uint64_t) 516142931972860765, "fft256"}
+    {(uint64_t) 516142931972860765, "fft256"},
+    {(uint64_t) 15922181170781114631, "fft256"},
+    {(uint64_t) 16328073116492969661, "fft256"},
+    {(uint64_t) 8874214564474425628, "fft256"},
+    {(uint64_t) 4236372767260402077, "fft256"}
 };
 
 class runtime_variable {
@@ -175,6 +181,7 @@ int main(int argc, char **argv)
     SMDiagnostic smerror;
     std::unique_ptr<Module> annotate_ptr = parseIRFile(AnnotateFilename, smerror, context);
     Module *base_module = annotate_ptr.get();
+    Function* main_func = base_module->getFunction("main");
 
     ifstream kernelIfstream(KernelFilename);
     nlohmann::json kernelJson;
@@ -240,7 +247,7 @@ int main(int argc, char **argv)
         bool new_group;
         for (auto i = 1; i < non_kernel_blocks.size(); i++) {
             auto block = non_kernel_blocks.at(i);
-            new_group = (block-1) != grouped_blocks.back().back() || (base_blockMap[block-1]->getParent() != base_blockMap[grouped_blocks.back().back()]->getParent());
+            new_group = (block-1) != grouped_blocks.back().back() || (base_blockMap[block]->getParent() != base_blockMap[grouped_blocks.back().back()]->getParent());
             if (new_group) {
                 grouped_blocks.emplace_back();
             }
@@ -310,7 +317,7 @@ int main(int argc, char **argv)
             Optional<uint64_t> bits = AI->getAllocationSizeInBits(base_module->getDataLayout());
             if (bits.hasValue()) {
                 if (bits.getValue() % 8 != 0) {
-                    outs() << "\tThis AllocaInst requires a non-whole number of bytes. Rounding up to the nearest byte\n";
+                    errs() << "\tThis AllocaInst requires a non-whole number of bytes. Rounding up to the nearest byte\n";
                     alloca_map[AI]->size_in_bytes = (uint64_t) std::ceil((1.0f * bits.getValue()) / 8);
                 } else {
                     alloca_map[AI]->size_in_bytes = (uint64_t) bits.getValue() / 8;
@@ -341,6 +348,12 @@ int main(int argc, char **argv)
                             else {
                                 errs() << "\tThis AllocaInst is assigned a constant value, but it's of a type that I am unable to handle :(\n";
                             }
+                        } else {
+                            errs() << "This AllocaInst\n";
+                            AI->print(errs());
+                            errs() << "\nhas a value stored into it in the first basic block that I can't handle :(\n";
+                            SI->print(errs());
+                            errs() << "\nAdd support for propagating this value or move it outside the first basic block\n";
                         }
                     }
                 }
@@ -434,13 +447,6 @@ int main(int argc, char **argv)
             }
         }
     }
-//    for (Module::iterator F = base_module->begin(); F != base_module->end(); ++F) {
-//        for (Function::iterator BB = F->begin(); BB != F->end(); ++BB) {
-//            for (BasicBlock::iterator II = BB->begin(); II != BB->end(); II++) {
-//
-//            }
-//        }
-//    }
 
 //    for (auto &[key, val] : alloca_map) {
 //        outs() << "AllocaInst: ";
@@ -464,6 +470,88 @@ int main(int argc, char **argv)
 //        outs() << "\tptr_alloc_bytes: " << val->ptr_alloc_bytes << "\n";
 //    }
 
+    DominatorTreeAnalysis dtAnalysis;
+    FunctionAnalysisManager funcAnalysisManager;
+    DominatorTree dominatorTree = dtAnalysis.run(*main_func, funcAnalysisManager);
+//    errs() << "Here is the baseline dominator tree analysis of main:\n\t";
+//    dominatorTree.print(errs());
+//    errs() << "\n";
+
+    LoopInfo loopInfo(dominatorTree);
+    SmallVector<BasicBlock*, 8> latchVec;
+    for (auto *loop : loopInfo.getLoopsInPreorder()) {
+        errs() << "I found a loop (loop " << loop->getName() << "):\n";
+        loop->getLoopLatches(latchVec);
+        errs() << "It has " << latchVec.size() << " loop latches:\n";
+        for (auto *latch : latchVec) {
+            errs() << "\t" << latch->getName() << "\n";
+        }
+        latchVec.clear();
+    }
+
+    bool changed = false;
+    for (auto &group : interleaved_groups) {
+        if (group.second) {
+            // Don't modify kernels
+            continue;
+        }
+        errs() << "I am processing group with blocks: ";
+        for (auto block : group.first) {
+            errs() << block << " ";
+        }
+        errs() << "\n";
+        changed = false;
+        latchVec.clear();
+        Loop* loop;
+        for (auto idx : group.first) {
+            loop = loopInfo.getLoopFor(base_blockMap[idx]);
+            if (loop != nullptr) {
+                break;
+            }
+        }
+//        Loop* loop = loopInfo.getLoopFor(base_blockMap[group.first.front()]);
+        if (loop != nullptr) {
+            loop->getLoopLatches(latchVec);
+            BasicBlock* furthestLatch = latchVec.front();
+            for (auto *latch : latchVec) {
+                if (furthestLatch->getName() < latch->getName()) {
+                    furthestLatch = latch;
+                }
+            }
+            auto currentEndBlock = group.first.back();
+            auto latchBoxIdx = group.first.back();
+            try {
+                latchBoxIdx = std::stoi(furthestLatch->getName().str().substr(7));
+            } catch(exception &err) {
+                errs() << "oh no this block wasn't in the form BB_UID_### :((((\n";
+            }
+            for (auto idx = currentEndBlock+1; idx <= latchBoxIdx; idx++) {
+                changed = true;
+                group.first.push_back(idx);
+                for (auto &other_group : interleaved_groups) {
+                    if (other_group == group) {
+                        continue;
+                    }
+                    for (auto other_idx = other_group.first.begin(), other_end = other_group.first.end(); other_idx != other_end;) {
+                        if (*other_idx == idx) {
+                            other_group.first.erase(other_idx);
+                            break;
+                        } else {
+                            other_idx++;
+                        }
+                    }
+                }
+            }
+        }
+        if (changed) {
+            errs() << "I expanded this group to be blocks: ";
+            for (auto block : group.first) {
+                errs() << block << " ";
+            }
+            errs() << "\n";
+        }
+    }
+
     // Use the CodeExtractor to extract each snippet into a "node" function
     bool successful;
     map<string, pair<Function*, vector<BasicBlock*>>> outlined_functions;
@@ -472,10 +560,14 @@ int main(int argc, char **argv)
     for (std::size_t i = 0; i < interleaved_groups.size(); i++) {
         successful = false;
         const auto& group = interleaved_groups.at(i);
+        if (group.first.empty() || base_blockMap[group.first.front()]->getParent()->getName() != main_func->getName()) {
+            continue;
+        }
         vector<BasicBlock*> blocks;
         for (auto idx : group.first) {
             blocks.push_back(base_blockMap[idx]);
         }
+        //CodeExtractor CE(ArrayRef<BasicBlock *>(blocks), &dominatorTree, false, nullptr, nullptr, nullptr, false, false, "Node_" + to_string(NODE_UID));
         CodeExtractor CE(ArrayRef<BasicBlock *>(blocks), nullptr, false, nullptr, nullptr, nullptr, false, false, "Node_" + to_string(NODE_UID));
         SetVector<Value *> Inputs, Outputs, Sinks;
         CE.findInputsOutputs(Inputs, Outputs, Sinks);
@@ -525,6 +617,25 @@ int main(int argc, char **argv)
 //        }
 //    }
 
+    unsigned int call_idx = 0;
+    bool hasReturnArg = false;
+    bool knownKernelReplaced = false;
+    bool kernelsAreParallelizable = false;
+
+//    vector<vector<CallInst*>> callInsts;
+//    for (auto & BB : *main_func) {
+//        for (BasicBlock::iterator II = BB.begin(); II != BB.end(); ++II) {
+//            if (auto* CI = dyn_cast<CallInst>(II)) {
+//                if (outlined_functions.find(CI->getCalledFunction()->getName()) == outlined_functions.end()) {
+//                    errs() << "Just so you know, there was a function call to " << CI->getCalledFunction()->getName() << " that I don't have in my map of extracted functions\n";
+//                    continue;
+//                }
+//
+//
+//            }
+//        }
+//    }
+
     nlohmann::json outputJson;
     outputJson["AppName"] = AppName;
     outputJson["SharedObject"] = AppName + ".so";
@@ -549,11 +660,11 @@ int main(int argc, char **argv)
     outputVariablesJson["_var_ret"]["ptr_alloc_bytes"] = 0;
 
     nlohmann::json outputDagJson = json::object();
-    Function* main_func = base_module->getFunction("main");
 
-    unsigned int call_idx = 0;
-    bool hasReturnArg = false;
-    bool knownKernelReplaced = false;
+    call_idx = 0;
+    hasReturnArg = false;
+    knownKernelReplaced = false;
+
     for (auto & BB : *main_func) {
         for (BasicBlock::iterator II = BB.begin(); II != BB.end(); ++II) {
             if (auto* CI = dyn_cast<CallInst>(II)) {
