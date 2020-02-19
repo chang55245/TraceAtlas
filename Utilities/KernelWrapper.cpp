@@ -170,6 +170,7 @@ cl::opt<std::string> KernelFilename("k", cl::desc("Specify kernel json"), cl::va
 cl::opt<std::string> DagFilename("d", cl::desc("Specify DAG json"), cl::value_desc("dag filename"), cl::Required);
 cl::opt<std::string> AppName("n", cl::desc("Specify name of generated application"), cl::value_desc("name"), cl::Required);
 cl::opt<bool> SemanticOpt("semantic-opt", cl::desc("Enable \"semantic optimization\" of recognized kernels"), cl::Optional);
+cl::opt<bool> RelaxLoops("relax-loops", cl::desc("Enable loop relaxation to help fix split loops at the cost of degraded optimization opportunities"), cl::Optional);
 
 cl::opt<std::string> OutputLLVMFilename("o", cl::desc("Specify output LLVM"), cl::value_desc("output llvm filename"));
 cl::opt<std::string> OutputJSONFilename("o2", cl::desc("Specify output JSON"), cl::value_desc("output json filename"));
@@ -473,82 +474,102 @@ int main(int argc, char **argv)
     DominatorTreeAnalysis dtAnalysis;
     FunctionAnalysisManager funcAnalysisManager;
     DominatorTree dominatorTree = dtAnalysis.run(*main_func, funcAnalysisManager);
-//    errs() << "Here is the baseline dominator tree analysis of main:\n\t";
-//    dominatorTree.print(errs());
-//    errs() << "\n";
 
-    LoopInfo loopInfo(dominatorTree);
-    SmallVector<BasicBlock*, 8> latchVec;
-    for (auto *loop : loopInfo.getLoopsInPreorder()) {
-        errs() << "I found a loop (loop " << loop->getName() << "):\n";
-        loop->getLoopLatches(latchVec);
-        errs() << "It has " << latchVec.size() << " loop latches:\n";
-        for (auto *latch : latchVec) {
-            errs() << "\t" << latch->getName() << "\n";
-        }
-        latchVec.clear();
-    }
+    if (RelaxLoops)
+    {
+        LoopInfo loopInfo(dominatorTree);
+        SmallVector<BasicBlock *, 8> latchVec;
+        //    for (auto *loop : loopInfo.getLoopsInPreorder()) {
+        //        errs() << "I found a loop (loop " << loop->getName() << "):\n";
+        //        loop->getLoopLatches(latchVec);
+        //        errs() << "It has " << latchVec.size() << " loop latches:\n";
+        //        for (auto *latch : latchVec) {
+        //            errs() << "\t" << latch->getName() << "\n";
+        //        }
+        //        latchVec.clear();
+        //    }
 
-    bool changed = false;
-    for (auto &group : interleaved_groups) {
-        if (group.second) {
-            // Don't modify kernels
-            continue;
-        }
-        errs() << "I am processing group with blocks: ";
-        for (auto block : group.first) {
-            errs() << block << " ";
-        }
-        errs() << "\n";
-        changed = false;
-        latchVec.clear();
-        Loop* loop;
-        for (auto idx : group.first) {
-            loop = loopInfo.getLoopFor(base_blockMap[idx]);
-            if (loop != nullptr) {
-                break;
+        bool changed = false;
+        for (auto &group : interleaved_groups)
+        {
+            if (group.second)
+            {
+                // Don't modify kernels
+                continue;
             }
-        }
-//        Loop* loop = loopInfo.getLoopFor(base_blockMap[group.first.front()]);
-        if (loop != nullptr) {
-            loop->getLoopLatches(latchVec);
-            BasicBlock* furthestLatch = latchVec.front();
-            for (auto *latch : latchVec) {
-                if (furthestLatch->getName() < latch->getName()) {
-                    furthestLatch = latch;
+            errs() << "I am processing group with blocks: ";
+            for (auto block : group.first)
+            {
+                errs() << block << " ";
+            }
+            errs() << "\n";
+            changed = false;
+            latchVec.clear();
+            Loop *loop;
+            for (auto idx : group.first)
+            {
+                loop = loopInfo.getLoopFor(base_blockMap[idx]);
+                if (loop != nullptr)
+                {
+                    break;
                 }
             }
-            auto currentEndBlock = group.first.back();
-            auto latchBoxIdx = group.first.back();
-            try {
-                latchBoxIdx = std::stoi(furthestLatch->getName().str().substr(7));
-            } catch(exception &err) {
-                errs() << "oh no this block wasn't in the form BB_UID_### :((((\n";
-            }
-            for (auto idx = currentEndBlock+1; idx <= latchBoxIdx; idx++) {
-                changed = true;
-                group.first.push_back(idx);
-                for (auto &other_group : interleaved_groups) {
-                    if (other_group == group) {
-                        continue;
+            //        Loop* loop = loopInfo.getLoopFor(base_blockMap[group.first.front()]);
+            if (loop != nullptr)
+            {
+                loop->getLoopLatches(latchVec);
+                BasicBlock *furthestLatch = latchVec.front();
+                for (auto *latch : latchVec)
+                {
+                    if (furthestLatch->getName() < latch->getName())
+                    {
+                        furthestLatch = latch;
                     }
-                    for (auto other_idx = other_group.first.begin(), other_end = other_group.first.end(); other_idx != other_end;) {
-                        if (*other_idx == idx) {
-                            other_group.first.erase(other_idx);
-                            break;
-                        } else {
-                            other_idx++;
+                }
+                auto currentEndBlock = group.first.back();
+                auto latchBoxIdx = group.first.back();
+                try
+                {
+                    latchBoxIdx = std::stoi(furthestLatch->getName().str().substr(7));
+                }
+                catch (exception &err)
+                {
+                    errs() << "oh no this block wasn't in the form BB_UID_### :((((\n";
+                }
+                for (auto idx = currentEndBlock + 1; idx <= latchBoxIdx; idx++)
+                {
+                    changed = true;
+                    group.first.push_back(idx);
+                    for (auto &other_group : interleaved_groups)
+                    {
+                        if (other_group == group)
+                        {
+                            continue;
+                        }
+                        for (auto other_idx = other_group.first.begin(), other_end = other_group.first.end(); other_idx != other_end;)
+                        {
+                            if (*other_idx == idx)
+                            {
+                                other_group.first.erase(other_idx);
+                                break;
+                            }
+                            else
+                            {
+                                other_idx++;
+                            }
                         }
                     }
                 }
             }
-        }
-        if (changed) {
-            errs() << "I expanded this group to be blocks: ";
-            for (auto block : group.first) {
-                errs() << block << " ";
+            if (changed)
+            {
+                errs() << "I expanded this group to be blocks: ";
+                for (auto block : group.first)
+                {
+                    errs() << block << " ";
+                }
+                errs() << "\n";
             }
-            errs() << "\n";
         }
     }
 
