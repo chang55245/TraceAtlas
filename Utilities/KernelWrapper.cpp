@@ -234,12 +234,6 @@ int main(int argc, char **argv)
         }
     }
 
-//    outs() << "These blocks are not present in any kernel: ";
-//    for (auto block : non_kernel_blocks) {
-//        outs() << block << " ";
-//    }
-//    outs() << "\n";
-
     // Group them into contiguous ranges
     vector<vector<uint32_t>> grouped_blocks;
     if (!non_kernel_blocks.empty()) {
@@ -255,14 +249,6 @@ int main(int argc, char **argv)
             grouped_blocks.back().push_back(block);
         }
     }
-
-//    outs() << "Grouped into contiguous ranges, they look like this: \n";
-//    for (const auto& group : grouped_blocks) {
-//        for (auto block : group) {
-//            outs() << block << " ";
-//        }
-//        outs() << "\n";
-//    }
 
     // Interleave the kernels and these blocks
     vector<pair<vector<uint32_t>, bool>> interleaved_groups;
@@ -492,9 +478,9 @@ int main(int argc, char **argv)
         bool changed = false;
         for (auto &group : interleaved_groups)
         {
-            if (group.second)
+            if (group.second || group.first.empty())
             {
-                // Don't modify kernels
+                // Don't modify kernels and don't try to expand empty groups
                 continue;
             }
             errs() << "I am processing group with blocks: ";
@@ -505,7 +491,7 @@ int main(int argc, char **argv)
             errs() << "\n";
             changed = false;
             latchVec.clear();
-            Loop *loop;
+            Loop *loop = nullptr;
             for (auto idx : group.first)
             {
                 loop = loopInfo.getLoopFor(base_blockMap[idx]);
@@ -578,18 +564,19 @@ int main(int argc, char **argv)
     map<string, pair<Function*, vector<BasicBlock*>>> outlined_functions;
     deque<Function*> outlined_functions_deque;
     //vector<Function*> outlined_functions;
+    vector<BasicBlock*> blocks;
     for (std::size_t i = 0; i < interleaved_groups.size(); i++) {
         successful = false;
         const auto& group = interleaved_groups.at(i);
         if (group.first.empty() || base_blockMap[group.first.front()]->getParent()->getName() != main_func->getName()) {
             continue;
         }
-        vector<BasicBlock*> blocks;
+        blocks.clear();
         for (auto idx : group.first) {
             blocks.push_back(base_blockMap[idx]);
         }
-        //CodeExtractor CE(ArrayRef<BasicBlock *>(blocks), &dominatorTree, false, nullptr, nullptr, nullptr, false, false, "Node_" + to_string(NODE_UID));
-        CodeExtractor CE(ArrayRef<BasicBlock *>(blocks), nullptr, false, nullptr, nullptr, nullptr, false, false, "Node_" + to_string(NODE_UID));
+        CodeExtractor CE(ArrayRef<BasicBlock *>(blocks), &dominatorTree, false, nullptr, nullptr, nullptr, false, false, "Node_" + to_string(NODE_UID));
+        //CodeExtractor CE(ArrayRef<BasicBlock *>(blocks), nullptr, false, nullptr, nullptr, nullptr, false, false, "Node_" + to_string(NODE_UID));
         SetVector<Value *> Inputs, Outputs, Sinks;
         CE.findInputsOutputs(Inputs, Outputs, Sinks);
 
