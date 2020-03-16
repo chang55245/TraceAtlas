@@ -171,6 +171,7 @@ cl::opt<std::string> DagFilename("d", cl::desc("Specify DAG json"), cl::value_de
 cl::opt<std::string> AppName("n", cl::desc("Specify name of generated application"), cl::value_desc("name"), cl::Required);
 cl::opt<bool> SemanticOpt("semantic-opt", cl::desc("Enable \"semantic optimization\" of recognized kernels"), cl::Optional);
 cl::opt<bool> RelaxLoops("relax-loops", cl::desc("Enable loop relaxation to help fix split loops at the cost of degraded optimization opportunities"), cl::Optional);
+cl::opt<bool> SingleNode("single-node", cl::desc("Produce an output file with only a single node for basic testing purposes"), cl::Optional);
 
 cl::opt<std::string> OutputLLVMFilename("o", cl::desc("Specify output LLVM"), cl::value_desc("output llvm filename"));
 cl::opt<std::string> OutputJSONFilename("o2", cl::desc("Specify output JSON"), cl::value_desc("output json filename"));
@@ -560,6 +561,18 @@ int main(int argc, char **argv)
         }
     }
 
+    if (SingleNode) {
+        interleaved_groups.clear();
+        std::vector<uint32_t> all_blocks;
+        std::size_t i = 1;
+        for (Function::iterator BB = main_func->begin(), E = main_func->end(); BB != E; ++BB)
+        {
+            all_blocks.push_back(i);
+            i++;
+        }
+        interleaved_groups.emplace_back(all_blocks, false);
+    }
+
     // Use the CodeExtractor to extract each snippet into a "node" function
     bool successful;
     map<string, pair<Function*, vector<BasicBlock*>>> outlined_functions;
@@ -685,12 +698,16 @@ int main(int argc, char **argv)
                 knownKernelReplaced = false;
                 auto *val = CI->getCalledFunction();
                 auto &called_blocks = outlined_functions.at(val->getName()).second;
-                uint64_t hash = hashBasicBlocks(called_blocks);
+                uint64_t hash;
                 nlohmann::json nodeJson = json::object();
                 nodeJson["arguments"] = json::array();
                 nodeJson["predecessors"] = json::array();
                 nodeJson["successors"] = json::array();
                 nodeJson["platforms"] = json::array();
+
+                if (SemanticOpt) {
+                    hash = hashBasicBlocks(called_blocks);
+                }
 
                 // Note: the last operand is always a reference to the function being called. We can ignore it
                 for (size_t opNum = 0; opNum < CI->getNumOperands()-1; opNum++) {

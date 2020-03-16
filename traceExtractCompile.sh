@@ -4,6 +4,7 @@ PROG_NAME=`basename "$0"`
 C_FILE=""
 INLINE=false
 SEM_OPT=false
+SINGLE_NODE=false
 RELAX_LOOPS=false
 SKIP_TRACE=false
 SKIP_KERNEL_DETECTION=false
@@ -33,6 +34,8 @@ cat << EOF
         Attempt to inline all functions from the original source file before tracing
       [--semantic-opt]
         Attempt to utilize "semantic optimization" substitutions in the final binary creation
+      [--single-node]
+        Produce an output testing binary with a single node consisting of all non-initialization basic blocks
       [--relax-loops]
         Utilize loop relaxation to repair split loops in final binary creation
       [--skip-trace]
@@ -65,6 +68,10 @@ while (( "$#" )); do
       ;;
     --semantic-opt)
       SEM_OPT=true
+      shift 1
+      ;;
+    --single-node)
+      SINGLE_NODE=true
       shift 1
       ;;
     --relax-loops)
@@ -205,7 +212,7 @@ fi
 
 if [ "$SKIP_FINAL_COMPILATION" = false ]; then
   echo "Stage: Application refactoring/region outlining"
-  $TRACEHOME/bin/kwrap -semantic-opt=${SEM_OPT} -relax-loops=${RELAX_LOOPS} -a output-${C_FILE%.c}-annotate.ll -k kernel-${C_FILE%.c}.json -d kernel-${C_FILE%.c}-dagExtractor.json -n ${C_FILE%.c}-${ARCH} -o output-${C_FILE%.c}-extracted.ll -o2 ${C_FILE%.c}-${ARCH}.json
+  $TRACEHOME/bin/kwrap -semantic-opt=${SEM_OPT} -single-node=${SINGLE_NODE} -relax-loops=${RELAX_LOOPS} -a output-${C_FILE%.c}-annotate.ll -k kernel-${C_FILE%.c}.json -d kernel-${C_FILE%.c}-dagExtractor.json -n ${C_FILE%.c}-${ARCH} -o output-${C_FILE%.c}-extracted.ll -o2 ${C_FILE%.c}-${ARCH}.json
   echo "Stage: Shared object compilation"
   if [ "$ARCH" = "x86" ]; then
     clang++-9 ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE%.c}-extracted.ll -o ${C_FILE%.c}-${ARCH}.so
