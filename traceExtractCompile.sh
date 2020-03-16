@@ -198,7 +198,7 @@ if [ "$SKIP_KERNEL_DETECTION" = false ]; then
     rm outfile.txt
   fi
   echo "Stage: Kernel extraction"
-  $TRACEHOME/bin/cartographer -i ${TRC_NAME} -k kernel-${C_FILE%.c}.json
+  $TRACEHOME/bin/cartographer -i ${TRC_NAME} -b output-${C_FILE%.c}-annotate.ll -k kernel-${C_FILE%.c}.json
   echo "Stage: DAG extraction"
   $TRACEHOME/bin/dagExtractor -t ${TRC_NAME} -k kernel-${C_FILE%.c}.json -o kernel-${C_FILE%.c}-dagExtractor.json
 fi

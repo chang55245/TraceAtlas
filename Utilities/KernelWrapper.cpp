@@ -188,6 +188,7 @@ int main(int argc, char **argv)
     nlohmann::json kernelJson;
     kernelIfstream >> kernelJson;
     kernelIfstream.close();
+    kernelJson = kernelJson["Kernels"];
 
     ifstream dagIfstream(DagFilename);
     nlohmann::json dagJson;
@@ -209,7 +210,7 @@ int main(int argc, char **argv)
     for (auto &[key, value] : kernelJson.items())
     {
         string index = key;
-        vector<uint32_t> kernel = value;
+        vector<uint32_t> kernel = value["Blocks"];
         kernel_block_map[index] = kernel;
         kernel_blocks.push_back(kernel);
     }
