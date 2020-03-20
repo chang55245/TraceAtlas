@@ -2,6 +2,7 @@
 
 PROG_NAME=`basename "$0"`
 C_FILE=""
+C_FILE_NO_EXT=""
 INLINE=false
 SEM_OPT=false
 SINGLE_NODE=false
@@ -9,6 +10,8 @@ RELAX_LOOPS=false
 SKIP_TRACE=false
 SKIP_KERNEL_DETECTION=false
 SKIP_FINAL_COMPILATION=false
+CPP=false
+CC=clang-9
 COMP_LEVEL=9
 TRC_NAME="raw.trc"
 TRACEHOME=/localhome/jmack2545/rcl/DASH-SoC/TraceAtlas/build
@@ -44,6 +47,8 @@ cat << EOF
         Skip the trace processing and kernel detection/DAG extraction steps
       [--skip-final-processing]
         Skip the application refactoring and final shared object compilation steps
+      [--cpp]
+        Process input files as with clang++ rather than clang
       [-l<lib_suffix>]
         Add a library that is required to compile this application for tracing and in shared object creation
         Ex: -lm for libmath
@@ -88,6 +93,11 @@ while (( "$#" )); do
       ;;
     --skip-final-processing)
       SKIP_FINAL_COMPILATION=true
+      shift 1
+      ;;
+    --cpp)
+      CC=clang++-9
+      CPP=true
       shift 1
       ;;
     -l*)
@@ -152,6 +162,11 @@ while (( "$#" )); do
     *)
       if [ -z "$C_FILE" ]; then
         C_FILE="$1"
+        if [ ${CPP} ]; then
+          C_FILE_NO_EXT="${1%.cpp}"
+        else
+          C_FILE_NO_EXT="${1%.c}"
+        fi
         shift 1
       else
         echo "Error: Only one C file can be passed as the target to be processed. Pass in other dependencies via -d/--dependency." >&2
@@ -178,46 +193,48 @@ IFS=' ' read -r -a LIBS <<< "$LIBS"
 
 if [ "$SKIP_TRACE" = false ]; then
   echo "Stage: Initial compilation"
-  clang-9 -S -flto -fPIC -static ${C_FILE} -o output-${C_FILE%.c}.ll
+  # -S -flto -fPIC -static
+  # -fuse-ld=lld-9 -Wl,--plugin-opt=emit-llvm
+  ${CC} -S -flto -fPIC -static ${C_FILE} -o output-${C_FILE_NO_EXT}.ll
   # Note: this stage might need all necessary functions to have the "always inline" attribute
   if [ "$INLINE" = true ]; then
     echo "Stage: Inlining function calls"
-    opt-9 -always-inline output-${C_FILE%.c}.ll -S -o output-${C_FILE%.c}.ll
+    opt-9 -always-inline output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}.ll
   fi
   echo "Stage: Encoded annotation"
-  opt-9 -load $TRACEHOME/lib/AtlasPasses.so -EncodedAnnotate output-${C_FILE%.c}.ll -S -o output-${C_FILE%.c}-annotate.ll
+  opt-9 -load $TRACEHOME/lib/AtlasPasses.so -EncodedAnnotate output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}-annotate.ll
   echo "Stage: Encoded trace instrumentation"
-  opt-9 -load $TRACEHOME/lib/AtlasPasses.so -EncodedTrace output-${C_FILE%.c}.ll -S -o output-${C_FILE%.c}-opt.ll
+  opt-9 -load $TRACEHOME/lib/AtlasPasses.so -EncodedTrace output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}-opt.ll
 fi
 
 if [ "$SKIP_KERNEL_DETECTION" = false ]; then
   echo "Stage: Tracer binary compilation"
-  clang++-9 -static -fuse-ld=lld-9 \
+  ${CC} -static -fuse-ld=lld-9 \
             -lpthread -lz ${LIBS[@]} $TRACEHOME/lib/libAtlasBackend.a \
-            ${DEPS[@]} output-${C_FILE%.c}-opt.ll \
-            -o ${C_FILE%.c}-tracer.out
+            ${DEPS[@]} output-${C_FILE_NO_EXT}-opt.ll \
+            -o ${C_FILE_NO_EXT}-tracer.out
 
   echo "Stage: Trace collection"
-  TRACE_NAME=${TRC_NAME} TRACE_COMPRESSION=${COMP_LEVEL} ./${C_FILE%.c}-tracer.out
+  TRACE_NAME=${TRC_NAME} TRACE_COMPRESSION=${COMP_LEVEL} ./${C_FILE_NO_EXT}-tracer.out
 
   if [ -f outfile.txt ]; then
     echo "Removing previous outfile.txt"
     rm outfile.txt
   fi
   echo "Stage: Kernel extraction"
-  $TRACEHOME/bin/cartographer -i ${TRC_NAME} -b output-${C_FILE%.c}-annotate.ll -k kernel-${C_FILE%.c}.json
+  $TRACEHOME/bin/cartographer -i ${TRC_NAME} -b output-${C_FILE_NO_EXT}-annotate.ll -k kernel-${C_FILE_NO_EXT}.json
   echo "Stage: DAG extraction"
-  $TRACEHOME/bin/dagExtractor -t ${TRC_NAME} -k kernel-${C_FILE%.c}.json -o kernel-${C_FILE%.c}-dagExtractor.json
+  $TRACEHOME/bin/dagExtractor -t ${TRC_NAME} -k kernel-${C_FILE_NO_EXT}.json -o kernel-${C_FILE_NO_EXT}-dagExtractor.json
 fi
 
 if [ "$SKIP_FINAL_COMPILATION" = false ]; then
   echo "Stage: Application refactoring/region outlining"
-  $TRACEHOME/bin/kwrap -semantic-opt=${SEM_OPT} -single-node=${SINGLE_NODE} -relax-loops=${RELAX_LOOPS} -a output-${C_FILE%.c}-annotate.ll -k kernel-${C_FILE%.c}.json -d kernel-${C_FILE%.c}-dagExtractor.json -n ${C_FILE%.c}-${ARCH} -o output-${C_FILE%.c}-extracted.ll -o2 ${C_FILE%.c}-${ARCH}.json
+  $TRACEHOME/bin/kwrap -semantic-opt=${SEM_OPT} -single-node=${SINGLE_NODE} -relax-loops=${RELAX_LOOPS} -a output-${C_FILE_NO_EXT}-annotate.ll -k kernel-${C_FILE_NO_EXT}.json -d kernel-${C_FILE_NO_EXT}-dagExtractor.json -n ${C_FILE_NO_EXT}-${ARCH} -o output-${C_FILE_NO_EXT}-extracted.ll -o2 ${C_FILE_NO_EXT}-${ARCH}.json
   echo "Stage: Shared object compilation"
   if [ "$ARCH" = "x86" ]; then
-    clang++-9 ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE%.c}-extracted.ll -o ${C_FILE%.c}-${ARCH}.so
+    ${CC} ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
   else
-    clang++-9 ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} output-${C_FILE%.c}-extracted.ll -o ${C_FILE%.c}-${ARCH}.so
+    ${CC} ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
   fi
 fi
 echo "Complete!"

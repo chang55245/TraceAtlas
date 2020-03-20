@@ -165,6 +165,18 @@ uint64_t hashBasicBlocks(std::vector<BasicBlock*> &blocks) {
     return hasher(toHash);
 }
 
+int64_t GetBlockID(llvm::BasicBlock *BB)
+{
+    int64_t result = -1;
+    Instruction *first = cast<Instruction>(BB->getFirstInsertionPt());
+    if (MDNode *node = first->getMetadata("BlockID"))
+    {
+        auto ci = cast<ConstantInt>(cast<ConstantAsMetadata>(node->getOperand(0))->getValue());
+        result = ci->getSExtValue();
+    }
+    return result;
+}
+
 cl::opt<std::string> AnnotateFilename("a", cl::desc("Specify original input LLVM with annotated BBs"), cl::value_desc("llvm filename"), cl::Required);
 cl::opt<std::string> KernelFilename("k", cl::desc("Specify kernel json"), cl::value_desc("kernel filename"), cl::Required);
 cl::opt<std::string> DagFilename("d", cl::desc("Specify DAG json"), cl::value_desc("dag filename"), cl::Required);
@@ -202,7 +214,8 @@ int main(int argc, char **argv)
         for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB)
         {
             BasicBlock *b = cast<BasicBlock>(BB);
-            base_blockMap[BB_UID++] = b;
+            base_blockMap[GetBlockID(b)] = b;
+            BB_UID = (GetBlockID(b) > BB_UID) ? GetBlockID(b) : BB_UID;
         }
     }
 
@@ -278,7 +291,9 @@ int main(int argc, char **argv)
 //        interleaved_groups.insert(interleaved_groups.begin(), pair<vector<uint32_t>, bool>{alloca_block, false});
 //    }
     if (interleaved_groups.at(0).first.size() > 1) {
-        vector<uint32_t> alloca_block{0};
+        //vector<uint32_t> alloca_block{0};
+        vector<uint32_t> alloca_block;
+        alloca_block.push_back(GetBlockID(&main_func->getBasicBlockList().front()));
         interleaved_groups.at(0).first.erase(interleaved_groups.at(0).first.begin());
         interleaved_groups.insert(interleaved_groups.begin(), pair<vector<uint32_t>, bool>{alloca_block, false});
     }
@@ -642,6 +657,7 @@ int main(int argc, char **argv)
     unsigned int call_idx = 0;
     bool hasReturnArg = false;
     bool knownKernelReplaced = false;
+    bool inLastBasicBlock = false;
     bool kernelsAreParallelizable = false;
 
 //    vector<vector<CallInst*>> callInsts;
@@ -685,9 +701,10 @@ int main(int argc, char **argv)
 
     call_idx = 0;
     hasReturnArg = false;
+    inLastBasicBlock = false;
     knownKernelReplaced = false;
 
-    for (auto & BB : *main_func) {
+    for (auto &BB : *main_func) {
         for (BasicBlock::iterator II = BB.begin(); II != BB.end(); ++II) {
             if (auto* CI = dyn_cast<CallInst>(II)) {
                 if (outlined_functions.find(CI->getCalledFunction()->getName()) == outlined_functions.end()) {
@@ -727,13 +744,19 @@ int main(int argc, char **argv)
                     }
                 }
 
+                if (&BB == main_func->back().getPrevNode()) {
+                    errs() << "Function call " << val->getName() << " is in the last basic block of main";
+                    inLastBasicBlock = true;
+                }
+
                 if (call_idx > 0) {
                     nlohmann::json predJson = json::object();
                     predJson["name"] = "FuncCall_" + to_string(call_idx-1);
                     predJson["edgecost"] = 10;
                     nodeJson["predecessors"].push_back(predJson);
                 }
-                if (!hasReturnArg) {
+                //if (!hasReturnArg) {
+                if (!inLastBasicBlock) {
                     nlohmann::json succJson = json::object();
                     succJson["name"] = "FuncCall_" + to_string(call_idx+1);
                     succJson["edgecost"] = 10;
