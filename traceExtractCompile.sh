@@ -11,11 +11,14 @@ SKIP_TRACE=false
 SKIP_KERNEL_DETECTION=false
 SKIP_FINAL_COMPILATION=false
 CPP=false
-CC=clang-9
+CC=clang
 COMP_LEVEL=9
 TRC_NAME="raw.trc"
 TRACEHOME=/localhome/jmack2545/rcl/DASH-SoC/TraceAtlas/build
 COMPILERRT=/localhome/jmack2545/rcl/DASH-SoC/llvm/llvm-project/compiler-rt/build/lib/linux/libclang_rt.builtins-aarch64.a
+
+#export PATH="/localhome/jmack2545/rcl/DASH-SoC/llvm/llvm-project/build-ninja/bin/:${PATH}"
+LLVM_HOME="/localhome/jmack2545/rcl/DASH-SoC/llvm/llvm-project/build-ninja/bin"
 
 ARCH=""
 ARCH_FLAGS=""
@@ -96,7 +99,7 @@ while (( "$#" )); do
       shift 1
       ;;
     --cpp)
-      CC=clang++-9
+      CC=clang++
       CPP=true
       shift 1
       ;;
@@ -195,21 +198,21 @@ if [ "$SKIP_TRACE" = false ]; then
   echo "Stage: Initial compilation"
   # -S -flto -fPIC -static
   # -fuse-ld=lld-9 -Wl,--plugin-opt=emit-llvm
-  ${CC} -S -flto -fPIC -static ${C_FILE} -o output-${C_FILE_NO_EXT}.ll
+  ${LLVM_HOME}/${CC} -S -flto -fPIC -static ${C_FILE} -o output-${C_FILE_NO_EXT}.ll
   # Note: this stage might need all necessary functions to have the "always inline" attribute
   if [ "$INLINE" = true ]; then
     echo "Stage: Inlining function calls"
-    opt-9 -always-inline output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}.ll
+    ${LLVM_HOME}/opt -always-inline output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}.ll
   fi
   echo "Stage: Encoded annotation"
-  opt-9 -load $TRACEHOME/lib/AtlasPasses.so -EncodedAnnotate output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}-annotate.ll
+  ${LLVM_HOME}/opt -load $TRACEHOME/lib/AtlasPasses.so -EncodedAnnotate output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}-annotate.ll
   echo "Stage: Encoded trace instrumentation"
-  opt-9 -load $TRACEHOME/lib/AtlasPasses.so -EncodedTrace output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}-opt.ll
+  ${LLVM_HOME}/opt -load $TRACEHOME/lib/AtlasPasses.so -EncodedTrace output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}-opt.ll
 fi
 
 if [ "$SKIP_KERNEL_DETECTION" = false ]; then
   echo "Stage: Tracer binary compilation"
-  ${CC} -static -fuse-ld=lld-9 \
+  ${LLVM_HOME}/${CC} -static -fuse-ld=lld-9 \
             -lpthread -lz ${LIBS[@]} $TRACEHOME/lib/libAtlasBackend.a \
             ${DEPS[@]} output-${C_FILE_NO_EXT}-opt.ll \
             -o ${C_FILE_NO_EXT}-tracer.out
@@ -232,9 +235,9 @@ if [ "$SKIP_FINAL_COMPILATION" = false ]; then
   $TRACEHOME/bin/kwrap -semantic-opt=${SEM_OPT} -single-node=${SINGLE_NODE} -relax-loops=${RELAX_LOOPS} -a output-${C_FILE_NO_EXT}-annotate.ll -k kernel-${C_FILE_NO_EXT}.json -d kernel-${C_FILE_NO_EXT}-dagExtractor.json -n ${C_FILE_NO_EXT}-${ARCH} -o output-${C_FILE_NO_EXT}-extracted.ll -o2 ${C_FILE_NO_EXT}-${ARCH}.json
   echo "Stage: Shared object compilation"
   if [ "$ARCH" = "x86" ]; then
-    ${CC} ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
+    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
   else
-    ${CC} ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
+    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
   fi
 fi
 echo "Complete!"

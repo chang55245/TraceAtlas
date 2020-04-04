@@ -26,7 +26,6 @@ using namespace llvm;
 using json = nlohmann::json;
 using namespace std;
 
-static int BB_UID = 0;
 static int VAR_UID = 0;
 static int NODE_UID = 0;
 
@@ -107,6 +106,8 @@ uint64_t findBytesConstForMemoryAlloc(Value* val) {
                 return op1_val + op2_val;
             case Instruction::Sub:
                 return op1_val - op2_val;
+            case Instruction::UDiv:
+                return op1_val / op2_val;
             default:
                 errs() << "Encountered unknown binary operator " << binOp->getOpcodeName() << " (opcode " << binOp->getOpcode() << ")\n";
         }
@@ -119,7 +120,7 @@ uint64_t hashBasicBlocks(std::vector<BasicBlock*> &blocks) {
     std::sort(blocks.begin(), blocks.end());
     vector<string> blockStrings;
     hash<string> hasher;
-    uint32_t valueId;
+    int64_t valueId;
     for (BasicBlock* toConvert : blocks)
     {
         valueId = 0;
@@ -208,23 +209,38 @@ int main(int argc, char **argv)
     dagIfstream >> dagJson;
     dagIfstream.close();
 
-    map<int, BasicBlock *> base_blockMap;
-    for (Module::iterator F = base_module->begin(), E = base_module->end(); F != E; ++F)
+    int64_t main_start, main_end;
+    map<int64_t, BasicBlock *> base_blockMap;
+
+//    for (Module::iterator F = base_module->begin(), E = base_module->end(); F != E; ++F)
+//    {
+//        for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB)
+//        {
+//            BasicBlock *b = cast<BasicBlock>(BB);
+//            int64_t blockID = GetBlockID(b);
+//            base_blockMap[blockID] = b;
+//            BB_UID = (blockID > BB_UID) ? blockID : BB_UID;
+//        }
+//    }
+
+    for (Function::iterator BB = main_func->begin(), E = main_func->end(); BB != E; ++BB)
     {
-        for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB)
-        {
-            BasicBlock *b = cast<BasicBlock>(BB);
-            base_blockMap[GetBlockID(b)] = b;
-            BB_UID = (GetBlockID(b) > BB_UID) ? GetBlockID(b) : BB_UID;
-        }
+        BasicBlock *b = cast<BasicBlock>(BB);
+        int64_t blockID = GetBlockID(b);
+        base_blockMap[blockID] = b;
     }
 
-    map<string, vector<uint32_t>> kernel_block_map;
-    vector<vector<uint32_t>> kernel_blocks;
+    main_start = GetBlockID(&main_func->front());
+    main_end = GetBlockID(&main_func->back());
+
+    errs() << "main starts with basic block number " << main_start << " and ends with block " << main_end << "\n";
+
+    map<string, vector<int64_t>> kernel_block_map;
+    vector<vector<int64_t>> kernel_blocks;
     for (auto &[key, value] : kernelJson.items())
     {
         string index = key;
-        vector<uint32_t> kernel = value["Blocks"];
+        vector<int64_t> kernel = value["Blocks"];
         kernel_block_map[index] = kernel;
         kernel_blocks.push_back(kernel);
     }
@@ -233,9 +249,9 @@ int main(int argc, char **argv)
     });
 
     // Determine which basic blocks were not classified as kernels
-    vector<uint32_t> non_kernel_blocks;
+    vector<int64_t> non_kernel_blocks;
     bool is_in_kernel;
-    for (uint32_t i = 0; i < BB_UID; i++) {
+    for (int64_t i = main_start; i <= main_end; i++) {
         is_in_kernel = false;
         for (const auto& kernel_elt : kernel_block_map) {
             auto kern_indices = kernel_elt.second;
@@ -250,7 +266,7 @@ int main(int argc, char **argv)
     }
 
     // Group them into contiguous ranges
-    vector<vector<uint32_t>> grouped_blocks;
+    vector<vector<int64_t>> grouped_blocks;
     if (!non_kernel_blocks.empty()) {
         grouped_blocks.emplace_back();
         grouped_blocks.back().push_back(non_kernel_blocks.at(0));
@@ -266,13 +282,13 @@ int main(int argc, char **argv)
     }
 
     // Interleave the kernels and these blocks
-    vector<pair<vector<uint32_t>, bool>> interleaved_groups;
-    uint32_t idx1 = 0;
-    uint32_t idx2 = 0;
-    const vector<uint32_t> poison_pill{std::numeric_limits<uint32_t>::max()};
+    vector<pair<vector<int64_t>, bool>> interleaved_groups;
+    int64_t idx1 = 0;
+    int64_t idx2 = 0;
+    const vector<int64_t> poison_pill{std::numeric_limits<int64_t>::max()};
     while (idx1 < kernel_blocks.size() || idx2 < grouped_blocks.size()) {
-        vector<uint32_t> kernel_block = (idx1 < kernel_blocks.size()) ? kernel_blocks.at(idx1) : poison_pill;
-        vector<uint32_t> grouped_block = (idx2 < grouped_blocks.size()) ? grouped_blocks.at(idx2) : poison_pill;
+        vector<int64_t> kernel_block = (idx1 < kernel_blocks.size()) ? kernel_blocks.at(idx1) : poison_pill;
+        vector<int64_t> grouped_block = (idx2 < grouped_blocks.size()) ? grouped_blocks.at(idx2) : poison_pill;
         if (kernel_block.at(0) <= grouped_block.at(0)) {
             interleaved_groups.emplace_back(kernel_block, true);
             idx1++;
@@ -282,39 +298,38 @@ int main(int argc, char **argv)
         }
     }
 
-    // Check if BB 0 is in its own unique region or not
+    // Check if main's first basic block is in its own unique region or not
     // If it's not, we need to make it so
     // Its AllocaInsts mess up the rest of the program when it comes time to do code extraction currently
+
 //    if (interleaved_groups.at(0).first.size() > 2) {
-//        vector<uint32_t> alloca_block{1};
+//        vector<int64_t> alloca_block{1};
 //        interleaved_groups.at(0).first.erase(interleaved_groups.at(0).first.begin());
-//        interleaved_groups.insert(interleaved_groups.begin(), pair<vector<uint32_t>, bool>{alloca_block, false});
+//        interleaved_groups.insert(interleaved_groups.begin(), pair<vector<int64_t>, bool>{alloca_block, false});
 //    }
     if (interleaved_groups.at(0).first.size() > 1) {
-        //vector<uint32_t> alloca_block{0};
-        vector<uint32_t> alloca_block;
-        alloca_block.push_back(GetBlockID(&main_func->getBasicBlockList().front()));
+        vector<int64_t> alloca_block{main_start};
         interleaved_groups.at(0).first.erase(interleaved_groups.at(0).first.begin());
-        interleaved_groups.insert(interleaved_groups.begin(), pair<vector<uint32_t>, bool>{alloca_block, false});
+        interleaved_groups.insert(interleaved_groups.begin(), pair<vector<int64_t>, bool>{alloca_block, false});
     }
 
-//    outs() << "Now, we have interleaved the kernel blocks with the non-kernel blocks, and the program structure looks like this:\n";
-//    for (const auto& group : interleaved_groups) {
-//        if (group.second) {
-//            outs() << "Kernel: ";
-//        } else {
-//            outs() << "Non-kernel: ";
-//        }
-//        for (auto block : group.first) {
-//            outs() << block << " ";
-//        }
-//        outs() << "\n";
-//    }
+    outs() << "Now, we have interleaved the kernel blocks with the non-kernel blocks, and the program structure looks like this:\n";
+    for (const auto& group : interleaved_groups) {
+        if (group.second) {
+            outs() << "Kernel: ";
+        } else {
+            outs() << "Non-kernel: ";
+        }
+        for (auto block : group.first) {
+            outs() << block << " ";
+        }
+        outs() << "\n";
+    }
 
     // Determine the memory requirements for all variables in this application by iterating over all the allocas
     // Only search within the first basic block, though
     map<AllocaInst*, runtime_variable*> alloca_map;
-    for (BasicBlock::iterator II = base_blockMap[0]->begin(); II != base_blockMap[0]->end(); ++II) {
+    for (BasicBlock::iterator II = base_blockMap[main_start]->begin(); II != base_blockMap[main_start]->end(); ++II) {
         if (auto *AI = dyn_cast<AllocaInst>(II)) {
             //outs() << "Found AllocaInst:" << *AI << "\n";
             alloca_map[AI] = new runtime_variable("_var_" + to_string(VAR_UID++));
@@ -364,17 +379,10 @@ int main(int argc, char **argv)
             }
         }
     }
-//    for (Module::iterator F = base_module->begin(); F != base_module->end(); ++F) {
-//        for (Function::iterator BB = F->begin(); BB != F->end(); ++BB) {
-//            for (BasicBlock::iterator II = BB->begin(); II != BB->end(); II++) {
-//
-//            }
-//        }
-//    }
 
     // Next, iterate and find all calloc/malloc calls
     // Associate the amount they're allocating (assuming it's constant or can be found to be sorta-ish constant) with this variable
-    for (BasicBlock::iterator II = base_blockMap[0]->begin(); II != base_blockMap[0]->end(); ++II) {
+    for (BasicBlock::iterator II = base_blockMap[main_start]->begin(); II != base_blockMap[main_start]->end(); ++II) {
         if (auto *CI = dyn_cast<CallInst>(II)) {
             uint64_t bytesToAllocate = 0;
             Function* calledFunc = CI->getCalledFunction();
@@ -578,14 +586,23 @@ int main(int argc, char **argv)
 
     if (SingleNode) {
         interleaved_groups.clear();
-        std::vector<uint32_t> all_blocks;
-        std::size_t i = 1;
-        for (Function::iterator BB = main_func->begin(), E = main_func->end(); BB != E; ++BB)
-        {
-            all_blocks.push_back(i);
-            i++;
+        std::vector<int64_t> all_blocks;
+        // Skip the first node of main
+        for (int64_t id = main_start+1; id <= main_end; id++) {
+            all_blocks.push_back(id);
         }
         interleaved_groups.emplace_back(all_blocks, false);
+    }
+
+    // Remove all CallInsts to KernelEnter/KernelExit
+    for (inst_iterator I = inst_begin(main_func), E = inst_end(main_func); I != E;) {
+        Instruction *inst = &*I; I++;
+        if (auto *CI = dyn_cast<CallInst>(inst)) {
+            if (CI->getCalledFunction()->getName() == "KernelEnter" || CI->getCalledFunction()->getName() == "KernelExit") {
+                errs() << "I am removing a call to " << CI->getCalledFunction()->getName() << "\n";
+                inst->eraseFromParent();
+            }
+        }
     }
 
     // Use the CodeExtractor to extract each snippet into a "node" function
@@ -636,8 +653,8 @@ int main(int argc, char **argv)
         }
     }
 
-//    uint32_t graph_level = 0;
-//    map<uint32_t, vector<Function*>> dag_level_map;
+//    int64_t graph_level = 0;
+//    map<int64_t, vector<Function*>> dag_level_map;
 //    dag_level_map[graph_level] = vector<Function*>();
 //    while (!outlined_functions_deque.empty()) {
 //        Function* func = outlined_functions_deque.front();
@@ -655,9 +672,7 @@ int main(int argc, char **argv)
 //    }
 
     unsigned int call_idx = 0;
-    bool hasReturnArg = false;
     bool knownKernelReplaced = false;
-    bool inLastBasicBlock = false;
     bool kernelsAreParallelizable = false;
 
 //    vector<vector<CallInst*>> callInsts;
@@ -700,9 +715,17 @@ int main(int argc, char **argv)
     nlohmann::json outputDagJson = json::object();
 
     call_idx = 0;
-    hasReturnArg = false;
-    inLastBasicBlock = false;
-    knownKernelReplaced = false;
+
+    CallInst *lastCallInst = nullptr;
+    for (auto &BB : *main_func) {
+        for (BasicBlock::iterator II = BB.begin(); II != BB.end(); ++II) {
+            if (auto *CI = dyn_cast<CallInst>(II)) {
+                if (outlined_functions.find(CI->getCalledFunction()->getName()) != outlined_functions.end()) {
+                    lastCallInst = CI;
+                }
+            }
+        }
+    }
 
     for (auto &BB : *main_func) {
         for (BasicBlock::iterator II = BB.begin(); II != BB.end(); ++II) {
@@ -733,7 +756,6 @@ int main(int argc, char **argv)
                         if (alloca_map.find(AI) == alloca_map.end()) {
                             errs() << "Encountered an alloca instruction that I don't have in my map. Assuming it's the return value\n";
                             nodeJson["arguments"].push_back("_var_ret");
-                            hasReturnArg = true;
                         } else {
                             nodeJson["arguments"].push_back(alloca_map[AI]->name);
                         }
@@ -744,19 +766,13 @@ int main(int argc, char **argv)
                     }
                 }
 
-                if (&BB == main_func->back().getPrevNode()) {
-                    errs() << "Function call " << val->getName() << " is in the last basic block of main";
-                    inLastBasicBlock = true;
-                }
-
                 if (call_idx > 0) {
                     nlohmann::json predJson = json::object();
                     predJson["name"] = "FuncCall_" + to_string(call_idx-1);
                     predJson["edgecost"] = 10;
                     nodeJson["predecessors"].push_back(predJson);
                 }
-                //if (!hasReturnArg) {
-                if (!inLastBasicBlock) {
+                if (CI != lastCallInst) {
                     nlohmann::json succJson = json::object();
                     succJson["name"] = "FuncCall_" + to_string(call_idx+1);
                     succJson["edgecost"] = 10;
