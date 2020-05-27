@@ -1,5 +1,6 @@
 #!/bin/sh
 
+#set -x
 PROG_NAME=`basename "$0"`
 C_FILE=""
 C_FILE_NO_EXT=""
@@ -7,6 +8,8 @@ INLINE=false
 SEM_OPT=false
 SINGLE_NODE=false
 RELAX_LOOPS=false
+UNROLL_NONKERNELS=false
+LOOP_PARTITION=false;
 SKIP_TRACE=false
 SKIP_KERNEL_DETECTION=false
 SKIP_FINAL_COMPILATION=false
@@ -17,8 +20,8 @@ TRC_NAME="raw.trc"
 TRACEHOME=/localhome/jmack2545/rcl/DASH-SoC/TraceAtlas/build
 COMPILERRT=/localhome/jmack2545/rcl/DASH-SoC/llvm/llvm-project/compiler-rt/build/lib/linux/libclang_rt.builtins-aarch64.a
 
-#export PATH="/localhome/jmack2545/rcl/DASH-SoC/llvm/llvm-project/build-ninja/bin/:${PATH}"
-LLVM_HOME="/localhome/jmack2545/rcl/DASH-SoC/llvm/llvm-project/build-ninja/bin"
+#LLVM_HOME="/localhome/jmack2545/rcl/DASH-SoC/llvm/llvm-project/build-ninja/bin"
+LLVM_HOME="/usr/lib/llvm-9/bin"
 
 ARCH=""
 ARCH_FLAGS=""
@@ -44,6 +47,10 @@ cat << EOF
         Produce an output testing binary with a single node consisting of all non-initialization basic blocks
       [--relax-loops]
         Utilize loop relaxation to repair split loops in final binary creation
+      [--unroll-nonkernels]
+        Attempt to unroll any loops that are not themselves kernels
+      [--loop-partition]
+        Partition the main function based on top level loops present. If a top level loop matches a kernel, it will be treated as such
       [--skip-trace]
         Skip the trace instrumentation and trace collection steps
       [--skip-kernel-detection]
@@ -55,12 +62,16 @@ cat << EOF
       [-l<lib_suffix>]
         Add a library that is required to compile this application for tracing and in shared object creation
         Ex: -lm for libmath
+      [-tl<lib_suffix>]
+        Add a library that is required to compile this application only for tracing, not shared object creation
       [--trace-compression <level>]
         Set the trace compression level to be used as an integer between 0 and 9. The default is 9.
       [--trace-name <name>]
         Set the name to be used for the trace file. Default is raw.trc.
       [-d|--dependency <dep_file>]
         Add a source file dependency that is required for compilation for tracing and in shared object creation
+      [-od|--output-dependency <dep_file>]
+        Add a source file dependency that is only required in shared object creation (i.e. arch specific libraries)
       [-t|--trace-home <TraceAtlasDir>]
         Define the build directory of TraceAtlas
       [--compiler-rt <compiler-rt lib>]
@@ -86,6 +97,14 @@ while (( "$#" )); do
       RELAX_LOOPS=true
       shift 1
       ;;
+    --unroll-nonkernels)
+      UNROLL_NONKERNELS=true
+      shift 1
+      ;;
+    --loop-partition)
+      LOOP_PARTITION=true
+      shift 1
+      ;;
     --skip-trace)
       SKIP_TRACE=true
       shift 1
@@ -107,6 +126,10 @@ while (( "$#" )); do
       LIBS="$LIBS $1"
       shift 1
       ;;
+    -tl*)
+      TRACE_LIBS="${TRACE_LIBS} `echo $1 | sed 's/-tl/-l/g'`"
+      shift 1
+      ;;
     --trace-compression)
       COMP_LEVEL=$2
       shift 2
@@ -117,6 +140,10 @@ while (( "$#" )); do
       ;;
     -d|--dependency)
       DEPS="$DEPS $2"
+      shift 2
+      ;;
+    -od|--output-dependency)
+      OUT_DEPS="${OUT_DEPS} $2"
       shift 2
       ;;
     -t|--trace-home)
@@ -144,7 +171,7 @@ while (( "$#" )); do
           ;;
         aarch64)
           ARCH="aarch64"
-          ARCH_FLAGS="-march=armv8-a -target aarch64-linux-gnu"
+          ARCH_FLAGS="-march=armv8-a -target aarch64-linux-gnu -I /usr/aarch64-linux-gnu/include/c++/7/aarch64-linux-gnu -I /usr/aarch64-linux-gnu/include"
           ;;
         *)
           echo "Error: unsupported architecture specified" >&2
@@ -165,7 +192,7 @@ while (( "$#" )); do
     *)
       if [ -z "$C_FILE" ]; then
         C_FILE="$1"
-        if [ ${CPP} ]; then
+        if [ ${CPP} = true ]; then
           C_FILE_NO_EXT="${1%.cpp}"
         else
           C_FILE_NO_EXT="${1%.c}"
@@ -192,13 +219,15 @@ if [ -z "$ARCH" ]; then
 fi
 
 IFS=' ' read -r -a DEPS <<< "$DEPS"
+IFS=' ' read -r -a OUT_DEPS <<< "${OUT_DEPS}"
 IFS=' ' read -r -a LIBS <<< "$LIBS"
+IFS=' ' read -r -a TRACE_LIBS <<< "${TRACE_LIBS}"
 
 if [ "$SKIP_TRACE" = false ]; then
   echo "Stage: Initial compilation"
   # -S -flto -fPIC -static
   # -fuse-ld=lld-9 -Wl,--plugin-opt=emit-llvm
-  ${LLVM_HOME}/${CC} -S -flto -fPIC -static ${C_FILE} -o output-${C_FILE_NO_EXT}.ll
+  ${LLVM_HOME}/${CC} -S -g -flto -fPIC -static ${C_FILE} -o output-${C_FILE_NO_EXT}.ll
   # Note: this stage might need all necessary functions to have the "always inline" attribute
   if [ "$INLINE" = true ]; then
     echo "Stage: Inlining function calls"
@@ -213,7 +242,7 @@ fi
 if [ "$SKIP_KERNEL_DETECTION" = false ]; then
   echo "Stage: Tracer binary compilation"
   ${LLVM_HOME}/${CC} -static -fuse-ld=lld-9 \
-            -lpthread -lz ${LIBS[@]} $TRACEHOME/lib/libAtlasBackend.a \
+            -lpthread -lz ${LIBS[@]} ${TRACE_LIBS[@]} $TRACEHOME/lib/libAtlasBackend.a \
             ${DEPS[@]} output-${C_FILE_NO_EXT}-opt.ll \
             -o ${C_FILE_NO_EXT}-tracer.out
 
@@ -225,19 +254,19 @@ if [ "$SKIP_KERNEL_DETECTION" = false ]; then
     rm outfile.txt
   fi
   echo "Stage: Kernel extraction"
-  $TRACEHOME/bin/cartographer -i ${TRC_NAME} -b output-${C_FILE_NO_EXT}-annotate.ll -k kernel-${C_FILE_NO_EXT}.json
-  echo "Stage: DAG extraction"
-  $TRACEHOME/bin/dagExtractor -t ${TRC_NAME} -k kernel-${C_FILE_NO_EXT}.json -o kernel-${C_FILE_NO_EXT}-dagExtractor.json
+  $TRACEHOME/bin/cartographer -i ${TRC_NAME} -b output-${C_FILE_NO_EXT}-annotate.ll -k kernel-${C_FILE_NO_EXT}.json -L=true
+  #echo "Stage: DAG extraction"
+  #$TRACEHOME/bin/dagExtractor -t ${TRC_NAME} -k kernel-${C_FILE_NO_EXT}.json -o kernel-${C_FILE_NO_EXT}-dagExtractor.json
 fi
 
 if [ "$SKIP_FINAL_COMPILATION" = false ]; then
   echo "Stage: Application refactoring/region outlining"
-  $TRACEHOME/bin/kwrap -semantic-opt=${SEM_OPT} -single-node=${SINGLE_NODE} -relax-loops=${RELAX_LOOPS} -a output-${C_FILE_NO_EXT}-annotate.ll -k kernel-${C_FILE_NO_EXT}.json -d kernel-${C_FILE_NO_EXT}-dagExtractor.json -n ${C_FILE_NO_EXT}-${ARCH} -o output-${C_FILE_NO_EXT}-extracted.ll -o2 ${C_FILE_NO_EXT}-${ARCH}.json
+  $TRACEHOME/bin/kwrap -semantic-opt=${SEM_OPT} -single-node=${SINGLE_NODE} -relax-loops=${RELAX_LOOPS} -unroll-nonkernels=${UNROLL_NONKERNELS} -loop-partition=${LOOP_PARTITION} -a output-${C_FILE_NO_EXT}-annotate.ll -k kernel-${C_FILE_NO_EXT}.json -d kernel-${C_FILE_NO_EXT}-dagExtractor.json -n ${C_FILE_NO_EXT}-${ARCH} -o output-${C_FILE_NO_EXT}-extracted.ll -o2 ${C_FILE_NO_EXT}-${ARCH}.json
   echo "Stage: Shared object compilation"
   if [ "$ARCH" = "x86" ]; then
-    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
+    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} -shared -fPIC -O2 -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
   else
-    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
+    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} -Woverride-module -shared -g -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} ${OUT_DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
   fi
 fi
 echo "Complete!"

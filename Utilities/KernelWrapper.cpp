@@ -13,6 +13,7 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include <llvm/Transforms/Utils/CodeExtractor.h>
+#include <llvm/Transforms/Utils/UnrollLoop.h>
 
 #include <algorithm>
 #include <fstream>
@@ -184,7 +185,9 @@ cl::opt<std::string> DagFilename("d", cl::desc("Specify DAG json"), cl::value_de
 cl::opt<std::string> AppName("n", cl::desc("Specify name of generated application"), cl::value_desc("name"), cl::Required);
 cl::opt<bool> SemanticOpt("semantic-opt", cl::desc("Enable \"semantic optimization\" of recognized kernels"), cl::Optional);
 cl::opt<bool> RelaxLoops("relax-loops", cl::desc("Enable loop relaxation to help fix split loops at the cost of degraded optimization opportunities"), cl::Optional);
+cl::opt<bool> UnrollNonKernels("unroll-nonkernels", cl::desc("Attempt to unroll loops that are not kernels with the hope that, if they contain kernels, they will be at the baseline part of main (and easily subbable)"), cl::Optional);
 cl::opt<bool> SingleNode("single-node", cl::desc("Produce an output file with only a single node for basic testing purposes"), cl::Optional);
+cl::opt<bool> LoopPartition("loop-partition", cl::desc("Partition a program into nodes based on its top level loops"), cl::Optional);
 
 cl::opt<std::string> OutputLLVMFilename("o", cl::desc("Specify output LLVM"), cl::value_desc("output llvm filename"));
 cl::opt<std::string> OutputJSONFilename("o2", cl::desc("Specify output JSON"), cl::value_desc("output json filename"));
@@ -204,10 +207,10 @@ int main(int argc, char **argv)
     kernelIfstream.close();
     kernelJson = kernelJson["Kernels"];
 
-    ifstream dagIfstream(DagFilename);
-    nlohmann::json dagJson;
-    dagIfstream >> dagJson;
-    dagIfstream.close();
+//    ifstream dagIfstream(DagFilename);
+//    nlohmann::json dagJson;
+//    dagIfstream >> dagJson;
+//    dagIfstream.close();
 
     int64_t main_start, main_end;
     map<int64_t, BasicBlock *> base_blockMap;
@@ -313,18 +316,18 @@ int main(int argc, char **argv)
         interleaved_groups.insert(interleaved_groups.begin(), pair<vector<int64_t>, bool>{alloca_block, false});
     }
 
-    outs() << "Now, we have interleaved the kernel blocks with the non-kernel blocks, and the program structure looks like this:\n";
-    for (const auto& group : interleaved_groups) {
-        if (group.second) {
-            outs() << "Kernel: ";
-        } else {
-            outs() << "Non-kernel: ";
-        }
-        for (auto block : group.first) {
-            outs() << block << " ";
-        }
-        outs() << "\n";
-    }
+//    outs() << "Now, we have interleaved the kernel blocks with the non-kernel blocks, and the program structure looks like this:\n";
+//    for (const auto& group : interleaved_groups) {
+//        if (group.second) {
+//            outs() << "Kernel: ";
+//        } else {
+//            outs() << "Non-kernel: ";
+//        }
+//        for (auto block : group.first) {
+//            outs() << block << " ";
+//        }
+//        outs() << "\n";
+//    }
 
     // Determine the memory requirements for all variables in this application by iterating over all the allocas
     // Only search within the first basic block, though
@@ -490,15 +493,16 @@ int main(int argc, char **argv)
     {
         LoopInfo loopInfo(dominatorTree);
         SmallVector<BasicBlock *, 8> latchVec;
-        //    for (auto *loop : loopInfo.getLoopsInPreorder()) {
-        //        errs() << "I found a loop (loop " << loop->getName() << "):\n";
-        //        loop->getLoopLatches(latchVec);
-        //        errs() << "It has " << latchVec.size() << " loop latches:\n";
-        //        for (auto *latch : latchVec) {
-        //            errs() << "\t" << latch->getName() << "\n";
-        //        }
-        //        latchVec.clear();
-        //    }
+//        for (auto *loop : loopInfo.getLoopsInPreorder()) {
+//            errs() << "I found a loop (loop " << loop->getName() << "):\n";
+//            loop->getLoopLatches(latchVec);
+//            errs() << "It has " << latchVec.size() << " loop latches:\n";
+//            for (auto *latch : latchVec) {
+//                latch->print(errs());
+//                //errs() << "\t" << latch->getName() << "\n";
+//            }
+//            latchVec.clear();
+//        }
 
         bool changed = false;
         for (auto &group : interleaved_groups)
@@ -528,6 +532,7 @@ int main(int argc, char **argv)
             //        Loop* loop = loopInfo.getLoopFor(base_blockMap[group.first.front()]);
             if (loop != nullptr)
             {
+                //errs() << "This loop has depth: " << loop->getLoopDepth() << "\n";
                 loop->getLoopLatches(latchVec);
                 BasicBlock *furthestLatch = latchVec.front();
                 for (auto *latch : latchVec)
@@ -541,11 +546,13 @@ int main(int argc, char **argv)
                 auto latchBoxIdx = group.first.back();
                 try
                 {
-                    latchBoxIdx = std::stoi(furthestLatch->getName().str().substr(7));
+                    latchBoxIdx = GetBlockID(furthestLatch);
+                    //latchBoxIdx = std::stoi(furthestLatch->getName().str().substr(7));
                 }
                 catch (exception &err)
                 {
-                    errs() << "oh no this block wasn't in the form BB_UID_### :((((\n";
+                    //errs() << "oh no this block wasn't in the form BB_UID_### :((((\n";
+                    errs() << "oh no I couldn't get the block id for some reason :((((\n";
                 }
                 for (auto idx = currentEndBlock + 1; idx <= latchBoxIdx; idx++)
                 {
@@ -582,6 +589,80 @@ int main(int argc, char **argv)
                 errs() << "\n";
             }
         }
+    }
+    else if (UnrollNonKernels) {
+        LoopInfo loopInfo(dominatorTree);
+        SmallVector<BasicBlock *, 8> latchVec;
+
+
+        for (auto &group : interleaved_groups)
+        {
+            if (group.second || group.first.empty())
+            {
+                // Don't process kernels or empty groups
+                continue;
+            }
+            latchVec.clear();
+            Loop *loop = nullptr;
+
+            for (auto idx : group.first)
+            {
+                loop = loopInfo.getLoopFor(base_blockMap[idx]);
+                if (loop == nullptr)
+                {
+                    continue;
+                }
+                UnrollLoopOptions ULO{.Force = true};
+                LoopUnrollResult res = UnrollLoop(loop, ULO, &loopInfo, nullptr, &dominatorTree, nullptr, nullptr, false, nullptr);
+                switch (res) {
+                    case LoopUnrollResult::Unmodified:
+                        errs() << "This loop was unmodified!\n";
+                        break;
+                    case LoopUnrollResult::PartiallyUnrolled:
+                        errs() << "This loop was partially modified!\n";
+                        break;
+                    case LoopUnrollResult::FullyUnrolled:
+                        errs() << "This loop was fully unrolled!\n";
+                        break;
+                }
+            }
+        }
+    }
+    else if (LoopPartition) {
+        LoopInfo loopInfo(dominatorTree);
+        SmallVector<BasicBlock *, 8> exitVec;
+
+        vector<pair<vector<int64_t>, bool>> new_interleaved_groups;
+        new_interleaved_groups.push_back({{}, false});
+        bool inLoop = false;
+
+        for (int64_t id = main_start+1; id <= main_end;) {
+            Loop* loop = loopInfo.getLoopFor(base_blockMap[id]);
+            if (loop == nullptr) {
+                new_interleaved_groups.back().first.push_back(id);
+                id++;
+                continue;
+            }
+            if (loop->getLoopDepth() == 1) {
+                loop->getExitBlocks(exitVec);
+                int64_t furthestExit = GetBlockID(exitVec.front());
+                for (auto *block : exitVec) {
+                    if (GetBlockID(block) > furthestExit) {
+                        furthestExit = GetBlockID(block);
+                    }
+                }
+                new_interleaved_groups.push_back({{}, true});
+                for (int64_t id2 = id; id2 < furthestExit; id2++) {
+                    new_interleaved_groups.back().first.push_back(id2);
+                }
+                new_interleaved_groups.push_back({{}, false});
+                exitVec.clear();
+                id = furthestExit;
+            } else {
+                errs() << "I found a loop with loop depth != 1, skipping processing...\n";
+            }
+        }
+        interleaved_groups = new_interleaved_groups;
     }
 
     if (SingleNode) {
@@ -630,7 +711,8 @@ int main(int argc, char **argv)
         for (auto idx : group.first) {
             outs() << idx << " ";
         }
-        outs() << (group.second ? "(kernel)\n" : "(non-kernel)\n");
+        outs() << "\n";
+        //outs() << (group.second ? "(kernel)\n" : "(non-kernel)\n");
 //        outs() << ", hash: " << hashBasicBlocks(blocks) << ")\n";
         Function *OrigF = blocks.at(0)->getParent();
         if (Function *OutF = CE.extractCodeRegion()) {
@@ -731,7 +813,7 @@ int main(int argc, char **argv)
         for (BasicBlock::iterator II = BB.begin(); II != BB.end(); ++II) {
             if (auto* CI = dyn_cast<CallInst>(II)) {
                 if (outlined_functions.find(CI->getCalledFunction()->getName()) == outlined_functions.end()) {
-                    errs() << "Just so you know, there was a function call to " << CI->getCalledFunction()->getName() << " that I don't have in my map of extracted functions\n";
+                    //errs() << "Just so you know, there was a function call to " << CI->getCalledFunction()->getName() << " that I don't have in my map of extracted functions\n";
                     continue;
                 }
 
@@ -809,6 +891,15 @@ int main(int argc, char **argv)
                     plat["nodecost"] = 10;
                     plat["runfunc"] = val->getName();
                     nodeJson["platforms"].push_back(plat);
+                }
+                if (outputJson["AppName"] == "temporal_mitigation-aarch64" && (val->getName() == "main.Node_4" || val->getName() == "main.Node_6")) {
+                    outs() << "Detected matrix multiply kernel with " << val->getName() << ". Adding support for this as well\n";
+                    nlohmann::json plat2 = json::object();
+                    plat2["name"] = "fft";
+                    plat2["nodecost"] = 5;
+                    plat2["runfunc"] = "mmult_fpga_kern";
+                    plat2["shared_object"] = "mmult-aarch64.so";
+                    nodeJson["platforms"].push_back(plat2);
                 }
                 outputDagJson["FuncCall_" + to_string(call_idx)] = nodeJson;
                 call_idx++;
