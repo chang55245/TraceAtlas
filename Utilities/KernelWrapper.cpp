@@ -901,6 +901,15 @@ int main(int argc, char **argv)
                     plat2["shared_object"] = "mmult-aarch64.so";
                     nodeJson["platforms"].push_back(plat2);
                 }
+                if (outputJson["AppName"] == "test-x86" && (val->getName() == "main.Node_1")) {
+                    outs() << "TiK Test: I am going to try to swap in a tik version of an outlined kernel rather than use " << val->getName() << "\n";
+                    nlohmann::json plat2 = json::object();
+                    plat2["name"] = "fft";
+                    plat2["nodecost"] = 5;
+                    plat2["runfunc"] = "K0";
+                    plat2["shared_object"] = "K0.so";
+                    nodeJson["platforms"].push_back(plat2);
+                }
                 outputDagJson["FuncCall_" + to_string(call_idx)] = nodeJson;
                 call_idx++;
             }
