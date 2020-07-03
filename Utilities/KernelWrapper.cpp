@@ -1,4 +1,5 @@
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
@@ -11,6 +12,7 @@
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include <llvm/Transforms/Utils/CodeExtractor.h>
 #include <llvm/Transforms/Utils/UnrollLoop.h>
@@ -181,6 +183,7 @@ int64_t GetBlockID(llvm::BasicBlock *BB)
 
 cl::opt<std::string> AnnotateFilename("a", cl::desc("Specify original input LLVM with annotated BBs"), cl::value_desc("llvm filename"), cl::Required);
 cl::opt<std::string> KernelFilename("k", cl::desc("Specify kernel json"), cl::value_desc("kernel filename"), cl::Required);
+cl::opt<std::string> JRFilename("j", cl::desc("Specify JR json"), cl::value_desc("jr filename"), cl::Required);
 cl::opt<std::string> DagFilename("d", cl::desc("Specify DAG json"), cl::value_desc("dag filename"), cl::Required);
 cl::opt<std::string> AppName("n", cl::desc("Specify name of generated application"), cl::value_desc("name"), cl::Required);
 cl::opt<bool> SemanticOpt("semantic-opt", cl::desc("Enable \"semantic optimization\" of recognized kernels"), cl::Optional);
@@ -197,12 +200,12 @@ int main(int argc, char **argv)
     cl::ParseCommandLineOptions(argc, argv);
     LLVMContext context;
     SMDiagnostic smerror;
-    std::unique_ptr<Module> annotate_ptr = parseIRFile(AnnotateFilename, smerror, context);
+    unique_ptr<Module> annotate_ptr = parseIRFile(AnnotateFilename, smerror, context);
     Module *base_module = annotate_ptr.get();
     Function* main_func = base_module->getFunction("main");
 
     ifstream kernelIfstream(KernelFilename);
-    nlohmann::json kernelJson;
+    json kernelJson;
     kernelIfstream >> kernelJson;
     kernelIfstream.close();
     kernelJson = kernelJson["Kernels"];
@@ -211,6 +214,14 @@ int main(int argc, char **argv)
 //    nlohmann::json dagJson;
 //    dagIfstream >> dagJson;
 //    dagIfstream.close();
+
+    ifstream jrIfstream(JRFilename);
+    json jrJson;
+    jrIfstream >> jrJson;
+    jrIfstream.close();
+    map<int64_t, string> bbToKernLabel;
+
+    jrJson = jrJson["kernels"];
 
     int64_t main_start, main_end;
     map<int64_t, BasicBlock *> base_blockMap;
@@ -238,27 +249,82 @@ int main(int argc, char **argv)
 
     errs() << "main starts with basic block number " << main_start << " and ends with block " << main_end << "\n";
 
-    map<string, vector<int64_t>> kernel_block_map;
-    vector<vector<int64_t>> kernel_blocks;
-    for (auto &[key, value] : kernelJson.items())
-    {
-        string index = key;
-        vector<int64_t> kernel = value["Blocks"];
-        kernel_block_map[index] = kernel;
-        kernel_blocks.push_back(kernel);
+    // Note: this loop is for processing the regular output given by JR
+//    for (auto block_idx = main_start; block_idx <= main_end; block_idx++) {
+//        if (jrJson.contains(to_string(block_idx)) && !jrJson[to_string(block_idx)].empty()) {
+//            errs() << "We have a block " << block_idx << " that is a part of these kernels\n";
+//            for (auto &str : jrJson[to_string(block_idx)]) {
+//                errs() << "\tKernel: " << to_string(str) << "\n";
+//            }
+//        }
+//    }
+    // Note: this loop is for processing the kernel object output from JR
+    // Strip out any block from the JR json that isn't contained in main
+    for (auto &item : jrJson) {
+        //for (auto &blk : jrJson["blocks"]) {
+        auto &blocks = item["blocks"];
+        for (json::iterator blkItr = blocks.begin(); blkItr != blocks.end(); ) {
+            if (*blkItr < main_start || *blkItr > main_end) {
+                blocks.erase(blkItr);
+            } else {
+                blkItr++;
+            }
+        }
     }
+
+
+    // Note: These two loops are used for seeding the set of kernel blocks based on the detected ontology kernels
+//    map<string, vector<int64_t>> kernel_block_map;
+//    vector<vector<int64_t>> kernel_blocks;
+//    for (auto &[key, value] : kernelJson.items())
+//    {
+//        string index = key;
+//        vector<int64_t> kernel = value["Blocks"];
+//        kernel_block_map[index] = kernel;
+//        kernel_blocks.push_back(kernel);
+//    }
+//
+//    std::sort(std::begin(kernel_blocks), std::end(kernel_blocks), [](auto &el1, auto &el2) -> bool {
+//        return el1.at(0) < el2.at(0);
+//    });
+//
+//    // Determine which basic blocks were not classified as kernels
+//    vector<int64_t> non_kernel_blocks;
+//    bool is_in_kernel;
+//    for (int64_t i = main_start; i <= main_end; i++) {
+//        is_in_kernel = false;
+//        for (const auto& kernel_elt : kernel_block_map) {
+//            auto kern_indices = kernel_elt.second;
+//            if (std::find(kern_indices.begin(), kern_indices.end(), i) != kern_indices.end()) {
+//                is_in_kernel = true;
+//                break;
+//            }
+//        }
+//        if (!is_in_kernel){
+//            non_kernel_blocks.push_back(i);
+//        }
+//    }
+
+    // Note: this loop is used for seeding the set of kernel blocks based on the JR output
+    vector<vector<int64_t>> kernel_blocks;
+    for (const auto &item : jrJson) {
+        vector<int64_t> kernel = item["blocks"];
+        if (!kernel.empty()) {
+            kernel_blocks.push_back(kernel);
+            bbToKernLabel[kernel.front()] = item["kernelLabel"];
+        }
+    }
+
     std::sort(std::begin(kernel_blocks), std::end(kernel_blocks), [](auto &el1, auto &el2) -> bool {
         return el1.at(0) < el2.at(0);
     });
 
-    // Determine which basic blocks were not classified as kernels
     vector<int64_t> non_kernel_blocks;
     bool is_in_kernel;
     for (int64_t i = main_start; i <= main_end; i++) {
         is_in_kernel = false;
-        for (const auto& kernel_elt : kernel_block_map) {
-            auto kern_indices = kernel_elt.second;
-            if (std::find(kern_indices.begin(), kern_indices.end(), i) != kern_indices.end()) {
+        for (const auto& kernel_vec : kernel_blocks) {
+            if (std::find(kernel_vec.begin(), kernel_vec.end(), i) != kernel_vec.end()) {
                 is_in_kernel = true;
                 break;
             }
@@ -676,26 +742,43 @@ int main(int argc, char **argv)
     }
 
     // Remove all CallInsts to KernelEnter/KernelExit
+    IRBuilder<> builder(&*main_func->begin());
     for (inst_iterator I = inst_begin(main_func), E = inst_end(main_func); I != E;) {
         Instruction *inst = &*I; I++;
         if (auto *CI = dyn_cast<CallInst>(inst)) {
             if (CI->getCalledFunction()->getName() == "KernelEnter" || CI->getCalledFunction()->getName() == "KernelExit") {
-                errs() << "I am removing a call to " << CI->getCalledFunction()->getName() << "\n";
-                inst->eraseFromParent();
+                auto *thisNode = CI->getParent();
+                auto *prevNode = thisNode->getSinglePredecessor();
+                auto *prevTerm = prevNode->getTerminator();
+                prevTerm->eraseFromParent();
+                builder.SetInsertPoint(prevNode);
+                builder.CreateBr(thisNode);
+            }
+        }
+    }
+    for (inst_iterator I = inst_begin(main_func), E = inst_end(main_func); I != E;) {
+        Instruction *inst = &*I; I++;
+        if (auto *CI = dyn_cast<CallInst>(inst)) {
+            if (CI->getCalledFunction()->getName() == "KernelEnter" || CI->getCalledFunction()->getName() == "KernelExit") {
+                errs() << "Replacing a call to " << CI->getCalledFunction()->getName() << " with a nop addition\n";
+                Value *val1 = ConstantInt::get(Type::getInt32Ty(main_func->getContext()), 0);
+                Value *val2 = ConstantInt::get(Type::getInt32Ty(main_func->getContext()), 0);
+                BinaryOperator *op = BinaryOperator::Create(Instruction::Add, val1, val2);
+                ReplaceInstWithInst(inst, op);
             }
         }
     }
 
     // Use the CodeExtractor to extract each snippet into a "node" function
     bool successful;
-    map<string, pair<Function*, vector<BasicBlock*>>> outlined_functions;
+    map<string, pair<Function*, string>> outlined_functions;
     deque<Function*> outlined_functions_deque;
     //vector<Function*> outlined_functions;
     vector<BasicBlock*> blocks;
     for (std::size_t i = 0; i < interleaved_groups.size(); i++) {
         successful = false;
         const auto& group = interleaved_groups.at(i);
-        if (group.first.empty() || base_blockMap[group.first.front()]->getParent()->getName() != main_func->getName()) {
+        if (group.first.empty() || base_blockMap[group.first.front()] == nullptr || base_blockMap[group.first.front()]->getParent()->getName() != main_func->getName()) {
             continue;
         }
         blocks.clear();
@@ -725,7 +808,12 @@ int main(int argc, char **argv)
             successful = true;
             NODE_UID++;
 
-            outlined_functions[OutF->getName()] = {OutF, blocks};
+            // If this function has an associated kernel label, propogate it
+            if (bbToKernLabel.find(group.first.front()) != bbToKernLabel.end()) {
+                outlined_functions[OutF->getName()] = {OutF, bbToKernLabel.at(group.first.front())};
+            } else {
+                outlined_functions[OutF->getName()] = {OutF, ""};
+            }
             outlined_functions_deque.push_back(OutF);
         }
         if (successful) {
@@ -819,17 +907,12 @@ int main(int argc, char **argv)
 
                 knownKernelReplaced = false;
                 auto *val = CI->getCalledFunction();
-                auto &called_blocks = outlined_functions.at(val->getName()).second;
-                uint64_t hash;
+                auto &label = outlined_functions.at(val->getName()).second;
                 nlohmann::json nodeJson = json::object();
                 nodeJson["arguments"] = json::array();
                 nodeJson["predecessors"] = json::array();
                 nodeJson["successors"] = json::array();
                 nodeJson["platforms"] = json::array();
-
-                if (SemanticOpt) {
-                    hash = hashBasicBlocks(called_blocks);
-                }
 
                 // Note: the last operand is always a reference to the function being called. We can ignore it
                 for (size_t opNum = 0; opNum < CI->getNumOperands()-1; opNum++) {
@@ -862,28 +945,23 @@ int main(int argc, char **argv)
                 }
                 nlohmann::json plat = json::object();
                 if (SemanticOpt) {
-                    if (knownKernels.find(hash) != knownKernels.end()) {
-                        const string& knownKernel = knownKernels.at(hash);
-                        outs() << "Recognized " << val->getName() << " as kernel " << knownKernel << ", attempting to swap in optimized implementation\n";
-                        if (knownKernel == "fft256") {
-                            plat["name"] = "cpu";
-                            plat["nodecost"] = 10;
-                            plat["runfunc"] = knownKernel + "_cpu";
-                            plat["shared_object"] = "fft.so";
-                            nodeJson["platforms"].push_back(plat);
-                            nlohmann::json plat2 = json::object();
-                            plat2["name"] = "fft";
-                            plat2["nodecost"] = 5;
-                            plat2["runfunc"] = knownKernel + "_accel";
-                            plat2["shared_object"] = "fft.so";
-                            nodeJson["platforms"].push_back(plat2);
-                            knownKernelReplaced = true;
-                            outs() << "Successfully augmented JSON with " << knownKernel << " platform invocations\n";
-                        } else {
-                            errs() << "I recognized this kernel, but I don't know how to optimize it. Falling back to standard processing\n";
-                        }
+                    if (label.empty()) {}
+                    else if (label == "FFT[1D][2048][complex][float64][forward]") {
+                        outs() << "Function " << val->getName() << " is labeled as kernel " << label << ". Adding in optimized implementation\n";
+                        plat["name"] = "cpu";
+                        plat["nodecost"] = 10;
+                        plat["runfunc"] = "fft2048_cpu";
+                        plat["shared_object"] = "fft.so";
+                        nodeJson["platforms"].push_back(plat);
+                        nlohmann::json plat2 = json::object();
+                        plat2["name"] = "fft";
+                        plat2["nodecost"] = 5;
+                        plat2["runfunc"] = "fft2048_accel";
+                        plat2["shared_object"] = "fft.so";
+                        nodeJson["platforms"].push_back(plat2);
+                        knownKernelReplaced = true;
                     } else {
-                        errs() << "No known kernel found for call to " << val->getName() << " (hash: " << hash << ")\n";
+                        outs() << "Function " << val->getName() << " is labeled as kernel " << label << ", but no optimized implementation is available\n";
                     }
                 }
                 if (!knownKernelReplaced) {
@@ -899,15 +977,6 @@ int main(int argc, char **argv)
                     plat2["nodecost"] = 5;
                     plat2["runfunc"] = "mmult_fpga_kern";
                     plat2["shared_object"] = "mmult-aarch64.so";
-                    nodeJson["platforms"].push_back(plat2);
-                }
-                if (outputJson["AppName"] == "test-x86" && (val->getName() == "main.Node_1")) {
-                    outs() << "TiK Test: I am going to try to swap in a tik version of an outlined kernel rather than use " << val->getName() << "\n";
-                    nlohmann::json plat2 = json::object();
-                    plat2["name"] = "fft";
-                    plat2["nodecost"] = 5;
-                    plat2["runfunc"] = "K0";
-                    plat2["shared_object"] = "K0.so";
                     nodeJson["platforms"].push_back(plat2);
                 }
                 outputDagJson["FuncCall_" + to_string(call_idx)] = nodeJson;

@@ -17,7 +17,7 @@ CPP=false
 CC=clang
 COMP_LEVEL=9
 TRC_NAME="raw.trc"
-TRACEHOME=/localhome/jmack2545/rcl/DASH-SoC/TraceAtlas/build
+TRACEHOME=/localhome/jmack2545/rcl/DASH-SoC/CEDR_private/TraceAtlas/build
 COMPILERRT=/localhome/jmack2545/rcl/DASH-SoC/llvm/llvm-project/compiler-rt/build/lib/linux/libclang_rt.builtins-aarch64.a
 
 #LLVM_HOME="/localhome/jmack2545/rcl/DASH-SoC/llvm/llvm-project/build-ninja/bin"
@@ -227,7 +227,7 @@ if [ "$SKIP_TRACE" = false ]; then
   echo "Stage: Initial compilation"
   # -S -flto -fPIC -static
   # -fuse-ld=lld-9 -Wl,--plugin-opt=emit-llvm
-  ${LLVM_HOME}/${CC} -S -g -flto -fPIC -static ${C_FILE} -o output-${C_FILE_NO_EXT}.ll
+  ${LLVM_HOME}/${CC} -DENABLE_TRACING -O0 -S -g -flto -fPIC -static ${C_FILE} -o output-${C_FILE_NO_EXT}.ll
   # Note: this stage might need all necessary functions to have the "always inline" attribute
   if [ "$INLINE" = true ]; then
     echo "Stage: Inlining function calls"
@@ -255,18 +255,32 @@ if [ "$SKIP_KERNEL_DETECTION" = false ]; then
   fi
   echo "Stage: Kernel extraction"
   $TRACEHOME/bin/cartographer -i ${TRC_NAME} -b output-${C_FILE_NO_EXT}-annotate.ll -k kernel-${C_FILE_NO_EXT}.json -L=true
-  #echo "Stage: DAG extraction"
-  #$TRACEHOME/bin/dagExtractor -t ${TRC_NAME} -k kernel-${C_FILE_NO_EXT}.json -o kernel-${C_FILE_NO_EXT}-dagExtractor.json
+  echo "Stage: JR execution"
+  $TRACEHOME/bin/JR -i ${TRC_NAME} -o kernel-jr-${C_FILE_NO_EXT}.json
+  echo "Stage: DAG extraction"
+  $TRACEHOME/bin/dagExtractor -t ${TRC_NAME} -k kernel-${C_FILE_NO_EXT}.json -o kernel-${C_FILE_NO_EXT}-dagExtractor.json
 fi
 
 if [ "$SKIP_FINAL_COMPILATION" = false ]; then
   echo "Stage: Application refactoring/region outlining"
-  $TRACEHOME/bin/kwrap -semantic-opt=${SEM_OPT} -single-node=${SINGLE_NODE} -relax-loops=${RELAX_LOOPS} -unroll-nonkernels=${UNROLL_NONKERNELS} -loop-partition=${LOOP_PARTITION} -a output-${C_FILE_NO_EXT}-annotate.ll -k kernel-${C_FILE_NO_EXT}.json -d kernel-${C_FILE_NO_EXT}-dagExtractor.json -n ${C_FILE_NO_EXT}-${ARCH} -o output-${C_FILE_NO_EXT}-extracted.ll -o2 ${C_FILE_NO_EXT}-${ARCH}.json
+  $TRACEHOME/bin/tik -f LLVM -t LLVM -j kernel-${C_FILE_NO_EXT}.json -o tik-${C_FILE_NO_EXT}.bc output-${C_FILE_NO_EXT}.ll
+  $TRACEHOME/bin/kwrap -semantic-opt=${SEM_OPT} \
+                       -single-node=${SINGLE_NODE} \
+                       -relax-loops=${RELAX_LOOPS} \
+                       -unroll-nonkernels=${UNROLL_NONKERNELS} \
+                       -loop-partition=${LOOP_PARTITION} \
+                       -a output-${C_FILE_NO_EXT}-annotate.ll \
+                       -k kernel-${C_FILE_NO_EXT}.json \
+                       -j kernel-jr-${C_FILE_NO_EXT}.json \
+                       -d kernel-${C_FILE_NO_EXT}-dagExtractor.json \
+                       -n ${C_FILE_NO_EXT}-${ARCH} \
+                       -o output-${C_FILE_NO_EXT}-extracted.ll \
+                       -o2 ${C_FILE_NO_EXT}-${ARCH}.json
   echo "Stage: Shared object compilation"
   if [ "$ARCH" = "x86" ]; then
-    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} -shared -fPIC -O2 -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
+    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
   else
-    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} -Woverride-module -shared -g -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} ${OUT_DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
+    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} -Woverride-module -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} ${OUT_DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
   fi
 fi
 echo "Complete!"

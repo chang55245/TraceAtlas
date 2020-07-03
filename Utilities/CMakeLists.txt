@@ -74,6 +74,7 @@ add_executable(kwrap KernelWrapper.cpp)
 target_link_libraries(kwrap ${llvm_libs} nlohmann_json nlohmann_json::nlohmann_json)
 target_include_directories(kwrap PRIVATE ${DEP_INC} ${LLVM_INCLUDE_DIRS})
 target_compile_definitions(kwrap PUBLIC ${LLVM_DEFINITIONS})
+target_compile_options(kwrap PRIVATE -O0 -ggdb)
 
 set_target_properties(kwrap PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
