@@ -19,7 +19,8 @@ using namespace std;
 cl::opt<std::string> InputFilename("t", cl::desc("Specify input trace"), cl::value_desc("trace filename"), cl::Required);
 cl::opt<std::string> OutputFilename("o", cl::desc("Specify output json"), cl::value_desc("output filename"), cl::Required);
 cl::opt<std::string> KernelFilename("k", cl::desc("Specify kernel json"), cl::value_desc("kernel filename"), cl::Required);
-llvm::cl::opt<bool> noBar("nb", llvm::cl::desc("No progress bar"), llvm::cl::value_desc("No progress bar"));
+cl::opt<std::string> JRFilename("j", cl::desc("JR JSON Output"), cl::value_desc("jr kernel filename"), cl::Optional, cl::init(""));
+cl::opt<bool> noBar("nb", llvm::cl::desc("No progress bar"), llvm::cl::value_desc("No progress bar"));
 cl::opt<int> LogLevel("v", cl::desc("Logging level"), cl::value_desc("logging level"), cl::init(4));
 cl::opt<string> LogFile("l", cl::desc("Specify log filename"), cl::value_desc("log file"));
 cl::opt<string> DotFile("d", cl::desc("Specify dot filename"), cl::value_desc("dot file"));
@@ -27,6 +28,8 @@ static int UID = 0;
 
 string currentKernel = "-1";
 int currentUid = -1;
+
+static int JR_UID = 0;
 
 //maps
 map<uint64_t, int> writeMap;
@@ -164,37 +167,24 @@ int main(int argc, char **argv)
     inputJson >> j;
     inputJson.close();
 
-    for (auto &[k, l] : j["Kernels"].items())
-    {
-        string index = k;
-        nlohmann::json kernel = l["Blocks"];
-        kernelMap[index] = kernel.get<set<int>>();
-    }
+    // if it's present, read the JR json
+    nlohmann::json jr_json;
+    if (JRFilename != "") {
+        ifstream inputJrJson(JRFilename);
+        inputJrJson >> jr_json;
+        inputJrJson.close();
 
-    //get parent child relationships
-    for (const auto &kernel : kernelMap)
-    {
-        for (const auto &kernel2 : kernelMap)
-        {
-            if (kernel.first == kernel2.first)
-            {
-                continue;
-            }
-            vector<int> intSet;
-            set_difference(kernel.second.begin(), kernel.second.end(), kernel2.second.begin(), kernel2.second.end(), std::inserter(intSet, intSet.begin()));
-            if (intSet.empty())
-            {
-                parentMap[kernel.first].insert(kernel2.first);
-            }
+        for (auto &elem : jr_json["kernels"]) {
+            string index = to_string(JR_UID++);
+            nlohmann::json kernel = elem["blocks"];
+            kernelMap[index] = kernel.get<set<int>>();
         }
-    }
-
-    std::set<string> topKernels;
-    for (const auto &kernel : kernelMap)
-    {
-        if (parentMap.find(kernel.first) == parentMap.end())
+    } else {
+        for (auto &[k, l] : j["Kernels"].items())
         {
-            topKernels.insert(kernel.first);
+            string index = k;
+            nlohmann::json kernel = l["Blocks"];
+            kernelMap[index] = kernel.get<set<int>>();
         }
     }
 

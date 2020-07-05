@@ -20,13 +20,15 @@ namespace myns {
         string kernelLabel;
         set<int64_t> blocks;
         uint64_t instanceNum;
+        uint64_t globalUID;
     };
     typedef struct labelGroup_s labelGroup;
     void to_json(nlohmann::json &j, const labelGroup &l) {
-        j = nlohmann::json{{"kernelLabel", l.kernelLabel}, {"blocks", l.blocks}, {"instanceNum", l.instanceNum}};
+        j = nlohmann::json{{"kernelLabel", l.kernelLabel}, {"blocks", l.blocks}, {"instanceNum", l.instanceNum}, {"globalUID", l.globalUID}};
     }
 }
 
+static int64_t GLOBAL_UID = 0;
 
 map<int64_t, set<string>> labels;
 //map<string, vector<int64_t>> labelToBBs;
@@ -91,6 +93,7 @@ void Process(string &key, string &value)
         labelsAndBBVecs.back().kernelLabel = value;
         labelsAndBBVecs.back().blocks = {};
         labelsAndBBVecs.back().instanceNum = kernelInstanceCounter[value];
+        labelsAndBBVecs.back().globalUID = GLOBAL_UID++;
     }
     else if (key == "KernelExit")
     {
@@ -103,6 +106,7 @@ void Process(string &key, string &value)
                 //cout << "I found a duplicate struct and I'm dropping it" << endl;
                 labelsAndBBVecs.pop_back();
                 kernelInstanceCounter[value]--;
+                GLOBAL_UID--;
             }
         }
     }
