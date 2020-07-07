@@ -10,6 +10,7 @@ SINGLE_NODE=false
 RELAX_LOOPS=false
 UNROLL_NONKERNELS=false
 LOOP_PARTITION=false;
+AUTO_PARALLEL=false;
 SKIP_TRACE=false
 SKIP_KERNEL_DETECTION=false
 SKIP_FINAL_COMPILATION=false
@@ -51,6 +52,8 @@ cat << EOF
         Attempt to unroll any loops that are not themselves kernels
       [--loop-partition]
         Partition the main function based on top level loops present. If a top level loop matches a kernel, it will be treated as such
+      [--auto-parallelize]
+        Attempt to parallelize nodes in the output JSON based on whether DagExtractor detects them as independent
       [--skip-trace]
         Skip the trace instrumentation and trace collection steps
       [--skip-kernel-detection]
@@ -104,6 +107,10 @@ while (( "$#" )); do
     --loop-partition)
       LOOP_PARTITION=true
       shift 1
+      ;;
+    --auto-parallelize)
+      AUTO_PARALLEL=true;
+      shift 1;
       ;;
     --skip-trace)
       SKIP_TRACE=true
@@ -269,6 +276,7 @@ if [ "$SKIP_FINAL_COMPILATION" = false ]; then
                        -relax-loops=${RELAX_LOOPS} \
                        -unroll-nonkernels=${UNROLL_NONKERNELS} \
                        -loop-partition=${LOOP_PARTITION} \
+                       -auto-parallelize=${AUTO_PARALLEL} \
                        -a output-${C_FILE_NO_EXT}-annotate.ll \
                        -k kernel-${C_FILE_NO_EXT}.json \
                        -j kernel-jr-${C_FILE_NO_EXT}.json \

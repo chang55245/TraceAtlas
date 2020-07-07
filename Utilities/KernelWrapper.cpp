@@ -1,5 +1,4 @@
 #include "llvm/Analysis/LoopInfo.h"
-#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
@@ -7,7 +6,6 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
-#include "llvm/IR/IRBuilder.h"
 #include <llvm/IR/AssemblyAnnotationWriter.h>
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/CommandLine.h"
@@ -285,7 +283,9 @@ int main(int argc, char **argv)
     for (const auto &tuple : dagJson["KernelInstanceMap"]) {
         const auto instanceId = tuple[0];
         const auto kernID = stoul((string)tuple[1], nullptr, 0);
-        kernelUID_to_function_node[kernID]->dagExtractor_instance_id = instanceId;
+        if (kernelUID_to_function_node.find(kernID) != kernelUID_to_function_node.end()) {
+            kernelUID_to_function_node[kernID]->dagExtractor_instance_id = instanceId;
+        }
     }
 
     for (const auto &tuple : dagJson["ConsumerMap"]) {
@@ -302,14 +302,6 @@ int main(int argc, char **argv)
     bool is_in_kernel;
     for (int64_t i = main_start; i < main_end; i++) {
         is_in_kernel = false;
-//        for (const auto &[key, val] : kernelUID_to_function_node) {
-//            for (const auto& kernel_vec : val->block_indices) {
-//                if (std::find(kernel_vec.begin(), kernel_vec.end(), i) != kernel_vec.end()) {
-//                    is_in_kernel = true;
-//                    break;
-//                }
-//            }
-//        }
         for (const auto& kernel_vec : kernel_blocks) {
             if (std::find(kernel_vec.begin(), kernel_vec.end(), i) != kernel_vec.end()) {
                 is_in_kernel = true;
@@ -363,6 +355,10 @@ int main(int argc, char **argv)
         interleaved_groups.at(0).first.erase(interleaved_groups.at(0).first.begin());
         interleaved_groups.insert(interleaved_groups.begin(), pair<vector<int64_t>, bool>{alloca_block, false});
         bbToFunctionNode[main_start] = nullptr;
+    }
+
+    if (interleaved_groups.at(0).first.size() == 1 && interleaved_groups.at(0).first.at(0) == main_start) {
+        interleaved_groups.erase(interleaved_groups.begin());
     }
 
     // All of the non-kernel blocks would not have function nodes associated with them yet
@@ -759,18 +755,6 @@ int main(int argc, char **argv)
             }
         }
     }
-//    for (inst_iterator I = inst_begin(main_func), E = inst_end(main_func); I != E;) {
-//        Instruction *inst = &*I; I++;
-//        if (auto *CI = dyn_cast<CallInst>(inst)) {
-//            if (CI->getCalledFunction()->getName() == "KernelEnter" || CI->getCalledFunction()->getName() == "KernelExit") {
-//                errs() << "Replacing a call to " << CI->getCalledFunction()->getName() << " with a nop addition\n";
-//                Value *val1 = ConstantInt::get(Type::getInt32Ty(main_func->getContext()), 0);
-//                Value *val2 = ConstantInt::get(Type::getInt32Ty(main_func->getContext()), 0);
-//                BinaryOperator *op = BinaryOperator::Create(Instruction::Add, val1, val2);
-//                ReplaceInstWithInst(inst, op);
-//            }
-//        }
-//    }
     // Replace KernelEnter and KernelExit calls in every function in the module
     for (Module::iterator MM = base_module->begin(); MM != base_module->end(); MM++) {
         Function *current_func = &*MM;
@@ -842,41 +826,8 @@ int main(int argc, char **argv)
         }
     }
 
-//    int64_t graph_level = 0;
-//    map<int64_t, vector<Function*>> dag_level_map;
-//    dag_level_map[graph_level] = vector<Function*>();
-//    while (!outlined_functions_deque.empty()) {
-//        Function* func = outlined_functions_deque.front();
-//        if (dag_level_map[graph_level].empty()) {
-//            dag_level_map[graph_level].push_back(func);
-//            outlined_functions_deque.pop_front();
-//        }
-//        for (auto *otherFunc : dag_level_map[graph_level]) {
-//            for (std::size_t thisOpNum = 0; thisOpNum < func->getNumOperands(); thisOpNum++) {
-//                for (std::size_t otherOpNum = 0; otherOpNum < otherFunc->getNumOperands(); otherOpNum++) {
-//                    if
-//                }
-//            }
-//        }
-//    }
-
     unsigned int call_idx = 0;
     bool knownKernelReplaced = false;
-    bool kernelsAreParallelizable = false;
-
-//    vector<vector<CallInst*>> callInsts;
-//    for (auto & BB : *main_func) {
-//        for (BasicBlock::iterator II = BB.begin(); II != BB.end(); ++II) {
-//            if (auto* CI = dyn_cast<CallInst>(II)) {
-//                if (outlined_functions.find(CI->getCalledFunction()->getName()) == outlined_functions.end()) {
-//                    errs() << "Just so you know, there was a function call to " << CI->getCalledFunction()->getName() << " that I don't have in my map of extracted functions\n";
-//                    continue;
-//                }
-//
-//
-//            }
-//        }
-//    }
 
     nlohmann::json outputJson;
     outputJson["AppName"] = AppName;
@@ -916,341 +867,337 @@ int main(int argc, char **argv)
         }
     }
 
-    vector<function_node*> callSequences;
-    vector<parallelizable_unit*> generation_units;
+    if (AutoParallelize) {
+        // TODO: One approach for auto parallelization would be to do a two pass process
+        // TODO: A single pass is difficult as we likely want to position the non-kernel nodes based on whether or not their following
+        // TODO: kernel node is independent from the preceding kernel node (as the non-kernel code is probably setup for the next kernel)
+        // TODO: In the first pass, we assume that each non-kernel section is a successor to the previous kernel
+        // TODO: But, if when processing the next kernel node, we notice it's independent from the previous kernel, then we unlink
+        // TODO: the preceding non-kernel node and make its predecessor the furthest possible node that is a prerequisite for this kernel
+        // TODO: (with the ultimate limit being basically the top of main)
+        // TODO: Then, in the second pass, with this analysis complete, we generate the output JSON by walking along this graph,
+        // TODO: generating the JSON for each node, and linking up its predecessors and successors as specified by the graph
+        // TODO: Aside: would it benefit this processing to have some kind of struct that combines pairs of non-kernel and kernel nodes?
+        // TODO: A kernel and its prologue, perhaps?
 
-    //map<function_node*, parallelizable_unit*> funcCallToUnit;
+        vector<function_node*> callSequences;
+        vector<parallelizable_unit*> generation_units;
 
-    // TODO: One approach for auto parallelization would be to do a two pass process
-    // TODO: A single pass is difficult as we likely want to position the non-kernel nodes based on whether or not their following
-    // TODO: kernel node is independent from the preceding kernel node (as the non-kernel code is probably setup for the next kernel)
-    // TODO: In the first pass, we assume that each non-kernel section is a successor to the previous kernel
-    // TODO: But, if when processing the next kernel node, we notice it's independent from the previous kernel, then we unlink
-    // TODO: the preceding non-kernel node and make its predecessor the furthest possible node that is a prerequisite for this kernel
-    // TODO: (with the ultimate limit being basically the top of main)
-    // TODO: Then, in the second pass, with this analysis complete, we generate the output JSON by walking along this graph,
-    // TODO: generating the JSON for each node, and linking up its predecessors and successors as specified by the graph
-    // TODO: Aside: would it benefit this processing to have some kind of struct that combines pairs of non-kernel and kernel nodes?
-    // TODO: A kernel and its prologue, perhaps?
-
-    errs() << "Looking at all of the calls in main and assigning the outlined functions to the function nodes\n";
-    for (auto &BB : *main_func) {
-        for (BasicBlock::iterator II = BB.begin(); II != BB.end(); ++II) {
-            if (auto* CI = dyn_cast<CallInst>(II)) {
-                if (outlined_functions.find(CI->getCalledFunction()->getName()) == outlined_functions.end()) {
-                    //errs() << "Just so you know, there was a function call to " << CI->getCalledFunction()->getName() << " that I don't have in my map of extracted functions\n";
-                    continue;
-                }
-                knownKernelReplaced = false;
-                auto *called_func = CI->getCalledFunction();
-                function_node *func_node = nullptr;
-                for (auto &[key, val] : bbToFunctionNode) {
-                    if (val == nullptr) {
+        errs() << "Looking at all of the calls in main and assigning the outlined functions to the function nodes\n";
+        for (auto &BB : *main_func) {
+            for (BasicBlock::iterator II = BB.begin(); II != BB.end(); ++II) {
+                if (auto* CI = dyn_cast<CallInst>(II)) {
+                    if (outlined_functions.find(CI->getCalledFunction()->getName()) == outlined_functions.end()) {
+                        //errs() << "Just so you know, there was a function call to " << CI->getCalledFunction()->getName() << " that I don't have in my map of extracted functions\n";
                         continue;
                     }
-                    if (val->outlined_func == called_func) {
-                        func_node = val;
-                        val->call_site = CI;
-                        break;
+                    knownKernelReplaced = false;
+                    auto *called_func = CI->getCalledFunction();
+                    function_node *func_node = nullptr;
+                    for (auto &[key, val] : bbToFunctionNode) {
+                        if (val == nullptr) {
+                            continue;
+                        }
+                        if (val->outlined_func == called_func) {
+                            func_node = val;
+                            val->call_site = CI;
+                            break;
+                        }
                     }
-                }
-                if (func_node == nullptr) {
-                    errs() << "[ERROR] We encountered an outlined function that does not have an associated function node pointer!\n";
-                } else {
-                    callSequences.push_back(func_node);
-                }
-            }
-        }
-    }
-
-    // Iterate and form the parallelizable units
-    errs() << "Iterating over call sequences to form initial parallelization units\n";
-    bool isKernel = false;
-    parallelizable_unit *current_unit = nullptr;
-    for (auto *call : callSequences) {
-        if (call->is_kernel != isKernel) {
-            errs() << "This program doesn't follow a strict sequence of alternating non-kernel, kernel! Giving up\n";
-            break;
-        } else {
-            if (!isKernel) {
-                errs() << "Generating parallelizable unit\n";
-                current_unit = new parallelizable_unit();
-                current_unit->non_kernel_prologue = call;
-                call->parent_unit = current_unit;
-                generation_units.push_back(current_unit);
-            } else {
-                generation_units.back()->kernel_node = call;
-                call->parent_unit = generation_units.back();
-            }
-            isKernel = !isKernel;
-        }
-    }
-
-    // Iterate again and link the predecessors and successors together
-    errs() << "Iterating over the parallelization units and linking them together\n";
-    for (auto *unit : generation_units) {
-        auto *kernel_node = unit->kernel_node;
-        if (kernel_node == nullptr) {
-            continue;
-        }
-        for (auto pred : dagPredecessorMap[kernel_node->dagExtractor_instance_id]) {
-            auto *pred_unit = kernelUID_to_function_node[pred]->parent_unit;
-            unit->predecessors.push_back(pred_unit);
-            pred_unit->successors.push_back(unit);
-        }
-    }
-
-    // Special case: if the last region has no kernel, then link it up manually since we may end without a kernel for it
-    if (generation_units.size() >= 2) {
-        auto *last_unit = generation_units.rbegin()[0];
-        auto *second_last_unit = generation_units.rbegin()[1];
-        if (last_unit->kernel_node == nullptr) {
-            second_last_unit->successors.push_back(last_unit);
-            last_unit->predecessors.push_back(second_last_unit);
-        }
-    }
-
-    errs() << "Printing out the formed generation units\n";
-    for (auto unit_num = 0; unit_num < generation_units.size(); unit_num++) {
-        auto *unit = generation_units.at(unit_num);
-        errs() << "Unit " << unit_num << " (ptr: " << unit << ")\n";
-        if (unit->non_kernel_prologue != nullptr) {
-            errs() << "\tNon-kernel prologue:\n\t\t[";
-            for (auto blk_idx : unit->non_kernel_prologue->block_indices) {
-                errs() << blk_idx << ", ";
-            }
-            errs() << "]\n";
-        }
-        if (unit->kernel_node != nullptr) {
-            errs() << "\tKernel (" << unit->kernel_node->kernel_id << "):\n\t\t[";
-            for (auto blk_idx : unit->kernel_node->block_indices) {
-                errs() << blk_idx << ", ";
-            }
-            errs() << "]\n";
-        }
-        errs() << "\tPredecessors: [";
-        for (auto *pred_unit : unit->predecessors) {
-            errs() << pred_unit << ", ";
-        }
-        errs() << "]\n";
-        errs() << "\tSuccessors: [";
-        for (auto *succ_unit : unit->successors) {
-            errs() << succ_unit << ", ";
-        }
-        errs() << "]\n";
-    }
-
-    errs() << "Generating the output DAG";
-    // outputDagJson
-    for (auto *unit : generation_units) {
-        // Generate the non-kernel
-        if (unit->non_kernel_prologue != nullptr) {
-            nlohmann::json nodeNonKernelJson = json::object();
-            nodeNonKernelJson["arguments"] = json::array();
-            nodeNonKernelJson["predecessors"] = json::array();
-            nodeNonKernelJson["successors"] = json::array();
-            nodeNonKernelJson["platforms"] = json::array();
-
-            auto *func = unit->non_kernel_prologue->outlined_func;
-            auto *callInst = unit->non_kernel_prologue->call_site;
-
-            for (size_t opNum = 0; opNum < callInst->getNumOperands()-1; opNum++) {
-                auto *arg = callInst->getOperand(opNum);
-                if (auto* AI = dyn_cast<AllocaInst>(arg)) {
-                    if (alloca_map.find(AI) == alloca_map.end()) {
-                        errs() << "Encountered an alloca instruction that I don't have in my map. Assuming it's the return value\n";
-                        nodeNonKernelJson["arguments"].push_back("_var_ret");
+                    if (func_node == nullptr) {
+                        errs() << "[ERROR] We encountered an outlined function that does not have an associated function node pointer!\n";
                     } else {
-                        nodeNonKernelJson["arguments"].push_back(alloca_map[AI]->name);
+                        callSequences.push_back(func_node);
                     }
-                } else {
-                    errs() << "Encountered a function with a non-alloca operand. Function: " << func->getName() << ", Operand: ";
-                    arg->print(errs());
-                    errs() << "\n";
                 }
             }
+        }
 
-            for (auto *pred_unit : unit->predecessors) {
-                nlohmann::json predJson = json::object();
-                predJson["name"] = pred_unit->kernel_node->outlined_func->getName();
-                predJson["edgecost"] = 10;
-                nodeNonKernelJson["predecessors"].push_back(predJson);
+        // Iterate and form the parallelizable units
+        errs() << "Iterating over call sequences to form initial parallelization units\n";
+        bool isKernel = false;
+        parallelizable_unit *current_unit = nullptr;
+        for (auto *call : callSequences) {
+            if (call->is_kernel != isKernel) {
+                errs() << "This program doesn't follow a strict sequence of alternating non-kernel, kernel! Giving up\n";
+                break;
+            } else {
+                if (!isKernel) {
+                    errs() << "Generating parallelizable unit\n";
+                    current_unit = new parallelizable_unit();
+                    current_unit->non_kernel_prologue = call;
+                    call->parent_unit = current_unit;
+                    generation_units.push_back(current_unit);
+                } else {
+                    generation_units.back()->kernel_node = call;
+                    call->parent_unit = generation_units.back();
+                }
+                isKernel = !isKernel;
+            }
+        }
+
+        // Iterate again and link the predecessors and successors together
+        errs() << "Iterating over the parallelization units and linking them together\n";
+        for (auto *unit : generation_units) {
+            auto *kernel_node = unit->kernel_node;
+            if (kernel_node == nullptr) {
+                continue;
+            }
+            for (auto pred : dagPredecessorMap[kernel_node->dagExtractor_instance_id]) {
+                auto *pred_unit = kernelUID_to_function_node[pred]->parent_unit;
+                unit->predecessors.push_back(pred_unit);
+                pred_unit->successors.push_back(unit);
+            }
+        }
+
+        // Special case: if the last region has no kernel, then link it up manually since we may end without a kernel for it
+        if (generation_units.size() >= 2) {
+            auto *last_unit = generation_units.rbegin()[0];
+            auto *second_last_unit = generation_units.rbegin()[1];
+            if (last_unit->kernel_node == nullptr) {
+                second_last_unit->successors.push_back(last_unit);
+                last_unit->predecessors.push_back(second_last_unit);
+            }
+        }
+
+        errs() << "Printing out the formed generation units\n";
+        for (auto unit_num = 0; unit_num < generation_units.size(); unit_num++) {
+            auto *unit = generation_units.at(unit_num);
+            errs() << "Unit " << unit_num << " (ptr: " << unit << ")\n";
+            if (unit->non_kernel_prologue != nullptr) {
+                errs() << "\tNon-kernel prologue:\n\t\t[";
+                for (auto blk_idx : unit->non_kernel_prologue->block_indices) {
+                    errs() << blk_idx << ", ";
+                }
+                errs() << "]\n";
             }
             if (unit->kernel_node != nullptr) {
-                nlohmann::json succJson = json::object();
-                succJson["name"] = unit->kernel_node->outlined_func->getName();
-                succJson["edgecost"] = 10;
-                nodeNonKernelJson["successors"].push_back(succJson);
-            }
-
-            nlohmann::json plat = json::object();
-            plat["name"] = "cpu";
-            plat["nodecost"] = 10;
-            plat["runfunc"] = func->getName();
-            nodeNonKernelJson["platforms"].push_back(plat);
-
-            outputDagJson[func->getName()] = nodeNonKernelJson;
-        }
-        // Generate the kernel
-        if (unit->kernel_node != nullptr) {
-            nlohmann::json nodeKernelJson = json::object();
-            nodeKernelJson["arguments"] = json::array();
-            nodeKernelJson["predecessors"] = json::array();
-            nodeKernelJson["successors"] = json::array();
-            nodeKernelJson["platforms"] = json::array();
-
-            auto *func = unit->kernel_node->outlined_func;
-            auto *callInst = unit->kernel_node->call_site;
-
-            for (size_t opNum = 0; opNum < callInst->getNumOperands()-1; opNum++) {
-                auto *arg = callInst->getOperand(opNum);
-                if (auto* AI = dyn_cast<AllocaInst>(arg)) {
-                    if (alloca_map.find(AI) == alloca_map.end()) {
-                        errs() << "Encountered an alloca instruction that I don't have in my map. Assuming it's the return value\n";
-                        nodeKernelJson["arguments"].push_back("_var_ret");
-                    } else {
-                        nodeKernelJson["arguments"].push_back(alloca_map[AI]->name);
-                    }
-                } else {
-                    errs() << "Encountered a function with a non-alloca operand. Function: " << func->getName() << ", Operand: ";
-                    arg->print(errs());
-                    errs() << "\n";
+                errs() << "\tKernel (" << unit->kernel_node->kernel_id << "):\n\t\t[";
+                for (auto blk_idx : unit->kernel_node->block_indices) {
+                    errs() << blk_idx << ", ";
                 }
+                errs() << "]\n";
             }
-
-            nlohmann::json predJson = json::object();
-            predJson["name"] = unit->non_kernel_prologue->outlined_func->getName();
-            predJson["edgecost"] = 10;
-            nodeKernelJson["predecessors"].push_back(predJson);
+            errs() << "\tPredecessors: [";
+            for (auto *pred_unit : unit->predecessors) {
+                errs() << pred_unit << ", ";
+            }
+            errs() << "]\n";
+            errs() << "\tSuccessors: [";
             for (auto *succ_unit : unit->successors) {
-                nlohmann::json succJson = json::object();
-                succJson["name"] = succ_unit->non_kernel_prologue->outlined_func->getName();
-                succJson["edgecost"] = 10;
-                nodeKernelJson["successors"].push_back(succJson);
+                errs() << succ_unit << ", ";
             }
-            nlohmann::json plat = json::object();
-            plat["name"] = "cpu";
-            plat["nodecost"] = 10;
-            plat["runfunc"] = func->getName();
-            nodeKernelJson["platforms"].push_back(plat);
-
-            outputDagJson[func->getName()] = nodeKernelJson;
+            errs() << "]\n";
         }
-    }
 
-    /*
-    for (auto &BB : *main_func) {
-        for (BasicBlock::iterator II = BB.begin(); II != BB.end(); ++II) {
-            if (auto* CI = dyn_cast<CallInst>(II)) {
-                if (outlined_functions.find(CI->getCalledFunction()->getName()) == outlined_functions.end()) {
-                    //errs() << "Just so you know, there was a function call to " << CI->getCalledFunction()->getName() << " that I don't have in my map of extracted functions\n";
-                    continue;
-                }
+        errs() << "Generating the output DAG";
+        // outputDagJson
+        for (auto *unit : generation_units) {
+            // Generate the non-kernel
+            if (unit->non_kernel_prologue != nullptr) {
+                nlohmann::json nodeNonKernelJson = json::object();
+                nodeNonKernelJson["arguments"] = json::array();
+                nodeNonKernelJson["predecessors"] = json::array();
+                nodeNonKernelJson["successors"] = json::array();
+                nodeNonKernelJson["platforms"] = json::array();
 
-                knownKernelReplaced = false;
-                //auto *val = CI->getCalledFunction();
-                auto *called_func = CI->getCalledFunction();
-                auto &label = outlined_functions.at(called_func->getName()).second;
-                nlohmann::json nodeJson = json::object();
-                nodeJson["arguments"] = json::array();
-                nodeJson["predecessors"] = json::array();
-                nodeJson["successors"] = json::array();
-                nodeJson["platforms"] = json::array();
+                auto *func = unit->non_kernel_prologue->outlined_func;
+                auto *callInst = unit->non_kernel_prologue->call_site;
 
-                // Note: the last operand is always a reference to the function being called. We can ignore it
-                for (size_t opNum = 0; opNum < CI->getNumOperands()-1; opNum++) {
-                    auto *arg = CI->getOperand(opNum);
+                for (size_t opNum = 0; opNum < callInst->getNumOperands()-1; opNum++) {
+                    auto *arg = callInst->getOperand(opNum);
                     if (auto* AI = dyn_cast<AllocaInst>(arg)) {
                         if (alloca_map.find(AI) == alloca_map.end()) {
                             errs() << "Encountered an alloca instruction that I don't have in my map. Assuming it's the return value\n";
-                            nodeJson["arguments"].push_back("_var_ret");
+                            nodeNonKernelJson["arguments"].push_back("_var_ret");
                         } else {
-                            nodeJson["arguments"].push_back(alloca_map[AI]->name);
+                            nodeNonKernelJson["arguments"].push_back(alloca_map[AI]->name);
                         }
                     } else {
-                        errs() << "Encountered a function with a non-alloca operand. Function: " << called_func->getName() << ", Operand: ";
+                        errs() << "Encountered a function with a non-alloca operand. Function: " << func->getName() << ", Operand: ";
                         arg->print(errs());
                         errs() << "\n";
                     }
                 }
 
-                if (call_idx > 0) {
+                for (auto *pred_unit : unit->predecessors) {
                     nlohmann::json predJson = json::object();
-                    predJson["name"] = "FuncCall_" + to_string(call_idx-1);
+                    predJson["name"] = pred_unit->kernel_node->outlined_func->getName();
                     predJson["edgecost"] = 10;
-                    nodeJson["predecessors"].push_back(predJson);
+                    nodeNonKernelJson["predecessors"].push_back(predJson);
                 }
-                if (CI != lastCallInst) {
+                if (unit->kernel_node != nullptr) {
                     nlohmann::json succJson = json::object();
-                    succJson["name"] = "FuncCall_" + to_string(call_idx+1);
+                    succJson["name"] = unit->kernel_node->outlined_func->getName();
                     succJson["edgecost"] = 10;
-                    nodeJson["successors"].push_back(succJson);
+                    nodeNonKernelJson["successors"].push_back(succJson);
+                }
+
+                nlohmann::json plat = json::object();
+                plat["name"] = "cpu";
+                plat["nodecost"] = 10;
+                plat["runfunc"] = func->getName();
+                nodeNonKernelJson["platforms"].push_back(plat);
+
+                outputDagJson[func->getName()] = nodeNonKernelJson;
+            }
+            // Generate the kernel
+            if (unit->kernel_node != nullptr) {
+                nlohmann::json nodeKernelJson = json::object();
+                nodeKernelJson["arguments"] = json::array();
+                nodeKernelJson["predecessors"] = json::array();
+                nodeKernelJson["successors"] = json::array();
+                nodeKernelJson["platforms"] = json::array();
+
+                auto *func = unit->kernel_node->outlined_func;
+                auto *callInst = unit->kernel_node->call_site;
+
+                for (size_t opNum = 0; opNum < callInst->getNumOperands()-1; opNum++) {
+                    auto *arg = callInst->getOperand(opNum);
+                    if (auto* AI = dyn_cast<AllocaInst>(arg)) {
+                        if (alloca_map.find(AI) == alloca_map.end()) {
+                            errs() << "Encountered an alloca instruction that I don't have in my map. Assuming it's the return value\n";
+                            nodeKernelJson["arguments"].push_back("_var_ret");
+                        } else {
+                            nodeKernelJson["arguments"].push_back(alloca_map[AI]->name);
+                        }
+                    } else {
+                        errs() << "Encountered a function with a non-alloca operand. Function: " << func->getName() << ", Operand: ";
+                        arg->print(errs());
+                        errs() << "\n";
+                    }
+                }
+
+                nlohmann::json predJson = json::object();
+                predJson["name"] = unit->non_kernel_prologue->outlined_func->getName();
+                predJson["edgecost"] = 10;
+                nodeKernelJson["predecessors"].push_back(predJson);
+                for (auto *succ_unit : unit->successors) {
+                    nlohmann::json succJson = json::object();
+                    succJson["name"] = succ_unit->non_kernel_prologue->outlined_func->getName();
+                    succJson["edgecost"] = 10;
+                    nodeKernelJson["successors"].push_back(succJson);
                 }
                 nlohmann::json plat = json::object();
-                if (SemanticOpt) {
-                    if (label.empty()) {}
-                    else if (label == "FFT[1D][2048][complex][float64][forward]") {
-                        outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ". Adding in optimized implementation\n";
-                        plat["name"] = "cpu";
-                        plat["nodecost"] = 10;
-                        plat["runfunc"] = "fft2048_cpu";
-                        plat["shared_object"] = "fft.so";
-                        nodeJson["platforms"].push_back(plat);
-                        nlohmann::json plat2 = json::object();
-                        plat2["name"] = "fft";
-                        plat2["nodecost"] = 5;
-                        plat2["runfunc"] = "fft2048_accel";
-                        plat2["shared_object"] = "fft.so";
-                        nodeJson["platforms"].push_back(plat2);
-                        knownKernelReplaced = true;
-                    } else if (label == "FFT[1D][256][complex][float64][forward]") {
-                        outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ". Adding in optimized implementation\n";
-                        plat["name"] = "cpu";
-                        plat["nodecost"] = 10;
-                        plat["runfunc"] = "fft256_cpu";
-                        plat["shared_object"] = "fft.so";
-                        nodeJson["platforms"].push_back(plat);
-                        nlohmann::json plat2 = json::object();
-                        plat2["name"] = "fft";
-                        plat2["nodecost"] = 5;
-                        plat2["runfunc"] = "fft256_accel";
-                        plat2["shared_object"] = "fft.so";
-                        nodeJson["platforms"].push_back(plat2);
-                        knownKernelReplaced = true;
-                    }
-                    else {
-                        outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ", but no optimized implementation is available\n";
-                    }
-                }
-                if (!knownKernelReplaced) {
-                    plat["name"] = "cpu";
-                    plat["nodecost"] = 10;
-                    plat["runfunc"] = called_func->getName();
-                    nodeJson["platforms"].push_back(plat);
-                }
-                if (outputJson["AppName"] == "temporal_mitigation-aarch64" && (called_func->getName() == "main.Node_4" || called_func->getName() == "main.Node_6")) {
-                    outs() << "Detected matrix multiply kernel with " << called_func->getName() << ". Adding support for this as well\n";
-                    nlohmann::json plat2 = json::object();
-                    plat2["name"] = "fft";
-                    plat2["nodecost"] = 5;
-                    plat2["runfunc"] = "mmult_fpga_kern";
-                    plat2["shared_object"] = "mmult-aarch64.so";
-                    nodeJson["platforms"].push_back(plat2);
-                }
-                outputDagJson["FuncCall_" + to_string(call_idx)] = nodeJson;
-                call_idx++;
+                plat["name"] = "cpu";
+                plat["nodecost"] = 10;
+                plat["runfunc"] = func->getName();
+                nodeKernelJson["platforms"].push_back(plat);
+
+                outputDagJson[func->getName()] = nodeKernelJson;
             }
         }
     }
-    */
-//    for (inst_iterator I = inst_begin(main_func); I != inst_end(main_func); ++I) {
-//
-//    }
+    else /* Non-parallel DAG generation */ {
+        for (auto &BB : *main_func) {
+            for (BasicBlock::iterator II = BB.begin(); II != BB.end(); ++II) {
+                if (auto* CI = dyn_cast<CallInst>(II)) {
+                    if (outlined_functions.find(CI->getCalledFunction()->getName()) == outlined_functions.end()) {
+                        //errs() << "Just so you know, there was a function call to " << CI->getCalledFunction()->getName() << " that I don't have in my map of extracted functions\n";
+                        continue;
+                    }
 
-//    for (size_t i = 0; i < outlined_functions_deque.size(); i++) { //auto &[key, val] : outlined_functions) {
-//        auto *val = outlined_functions_deque.at(i);
-//
-//    }
+                    knownKernelReplaced = false;
+                    //auto *val = CI->getCalledFunction();
+                    auto *called_func = CI->getCalledFunction();
+                    auto &label = outlined_functions.at(called_func->getName()).second;
+                    nlohmann::json nodeJson = json::object();
+                    nodeJson["arguments"] = json::array();
+                    nodeJson["predecessors"] = json::array();
+                    nodeJson["successors"] = json::array();
+                    nodeJson["platforms"] = json::array();
+
+                    // Note: the last operand is always a reference to the function being called. We can ignore it
+                    for (size_t opNum = 0; opNum < CI->getNumOperands()-1; opNum++) {
+                        auto *arg = CI->getOperand(opNum);
+                        if (auto* AI = dyn_cast<AllocaInst>(arg)) {
+                            if (alloca_map.find(AI) == alloca_map.end()) {
+                                errs() << "Encountered an alloca instruction that I don't have in my map. Assuming it's the return value\n";
+                                nodeJson["arguments"].push_back("_var_ret");
+                            } else {
+                                nodeJson["arguments"].push_back(alloca_map[AI]->name);
+                            }
+                        } else {
+                            errs() << "Encountered a function with a non-alloca operand. Function: " << called_func->getName() << ", Operand: ";
+                            arg->print(errs());
+                            errs() << "\n";
+                        }
+                    }
+
+                    if (call_idx > 0) {
+                        nlohmann::json predJson = json::object();
+                        predJson["name"] = "FuncCall_" + to_string(call_idx-1);
+                        predJson["edgecost"] = 10;
+                        nodeJson["predecessors"].push_back(predJson);
+                    }
+                    if (CI != lastCallInst) {
+                        nlohmann::json succJson = json::object();
+                        succJson["name"] = "FuncCall_" + to_string(call_idx+1);
+                        succJson["edgecost"] = 10;
+                        nodeJson["successors"].push_back(succJson);
+                    }
+                    nlohmann::json plat = json::object();
+                    if (SemanticOpt) {
+                        if (label.empty()) {}
+                        else if (label == "FFT[1D][2048][complex][float64][forward]") {
+                            outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ". Adding in optimized implementation\n";
+                            // Note: temporarily only enabling accelerator optimization and only looking for aarch64 shared object
+                            /*
+                            plat["name"] = "cpu";
+                            plat["nodecost"] = 10;
+                            plat["runfunc"] = "fft2048_cpu";
+                            plat["shared_object"] = "fft.so";
+                            nodeJson["platforms"].push_back(plat);
+                            nlohmann::json plat2 = json::object();
+                            plat2["name"] = "fft";
+                            plat2["nodecost"] = 5;
+                            plat2["runfunc"] = "fft2048_accel";
+                            plat2["shared_object"] = "fft.so";
+                            nodeJson["platforms"].push_back(plat2);
+                            */
+                            plat["name"] = "fft";
+                            plat["nodecost"] = 5;
+                            knownKernelReplaced = true;
+                        } else if (label == "FFT[1D][256][complex][float64][forward]") {
+                            outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ". Adding in optimized implementation\n";
+                            plat["name"] = "cpu";
+                            plat["nodecost"] = 10;
+                            plat["runfunc"] = "fft256_cpu";
+                            plat["shared_object"] = "fft.so";
+                            nodeJson["platforms"].push_back(plat);
+                            nlohmann::json plat2 = json::object();
+                            plat2["name"] = "fft";
+                            plat2["nodecost"] = 5;
+                            plat2["runfunc"] = "fft256_accel";
+                            plat2["shared_object"] = "fft.so";
+                            nodeJson["platforms"].push_back(plat2);
+                            knownKernelReplaced = true;
+                        }
+                        else {
+                            outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ", but no optimized implementation is available\n";
+                        }
+                    }
+                    if (!knownKernelReplaced) {
+                        plat["name"] = "cpu";
+                        plat["nodecost"] = 10;
+                        plat["runfunc"] = called_func->getName();
+                        nodeJson["platforms"].push_back(plat);
+                    }
+                    if (outputJson["AppName"] == "temporal_mitigation-aarch64" && (called_func->getName() == "main.Node_4" || called_func->getName() == "main.Node_6")) {
+                        outs() << "Detected matrix multiply kernel with " << called_func->getName() << ". Adding support for this as well\n";
+                        nlohmann::json plat2 = json::object();
+                        plat2["name"] = "fft";
+                        plat2["nodecost"] = 5;
+                        plat2["runfunc"] = "mmult_fpga_kern";
+                        plat2["shared_object"] = "mmult-aarch64.so";
+                        nodeJson["platforms"].push_back(plat2);
+                    }
+                    outputDagJson["FuncCall_" + to_string(call_idx)] = nodeJson;
+                    call_idx++;
+                }
+            }
+        }
+    }
 
     outputJson["Variables"] = outputVariablesJson;
     outputJson["DAG"] = outputDagJson;
