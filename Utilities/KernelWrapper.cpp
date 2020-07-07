@@ -1142,11 +1142,9 @@ int main(int argc, char **argv)
                         else if (label == "FFT[1D][2048][complex][float64][forward]") {
                             outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ". Adding in optimized implementation\n";
                             // Note: temporarily only enabling accelerator optimization and only looking for aarch64 shared object
-                            /*
                             plat["name"] = "cpu";
                             plat["nodecost"] = 10;
-                            plat["runfunc"] = "fft2048_cpu";
-                            plat["shared_object"] = "fft.so";
+                            plat["runfunc"] = called_func->getName();
                             nodeJson["platforms"].push_back(plat);
                             nlohmann::json plat2 = json::object();
                             plat2["name"] = "fft";
@@ -1154,9 +1152,6 @@ int main(int argc, char **argv)
                             plat2["runfunc"] = "fft2048_accel";
                             plat2["shared_object"] = "fft.so";
                             nodeJson["platforms"].push_back(plat2);
-                            */
-                            plat["name"] = "fft";
-                            plat["nodecost"] = 5;
                             knownKernelReplaced = true;
                         } else if (label == "FFT[1D][256][complex][float64][forward]") {
                             outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ". Adding in optimized implementation\n";
