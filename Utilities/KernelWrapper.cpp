@@ -823,6 +823,9 @@ int main(int argc, char **argv)
             outs() << "Successfully outlined region as " << outlined_functions_deque.back()->getName() << "\n";
         } else {
             outs() << "Failed to extract region\n";
+//            for (auto *blk : blocks) {
+//                blk->print(outs());
+//            }
         }
     }
 
@@ -1141,7 +1144,6 @@ int main(int argc, char **argv)
                         if (label.empty()) {}
                         else if (label == "FFT[1D][2048][complex][float64][forward]") {
                             outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ". Adding in optimized implementation\n";
-                            // Note: temporarily only enabling accelerator optimization and only looking for aarch64 shared object
                             plat["name"] = "cpu";
                             plat["nodecost"] = 10;
                             plat["runfunc"] = called_func->getName();
@@ -1150,7 +1152,7 @@ int main(int argc, char **argv)
                             plat2["name"] = "fft";
                             plat2["nodecost"] = 5;
                             plat2["runfunc"] = "fft2048_accel";
-                            plat2["shared_object"] = "fft.so";
+                            plat2["shared_object"] = "fft-aarch64.so";
                             nodeJson["platforms"].push_back(plat2);
                             knownKernelReplaced = true;
                         } else if (label == "FFT[1D][256][complex][float64][forward]") {
