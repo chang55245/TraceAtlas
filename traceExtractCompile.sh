@@ -137,6 +137,10 @@ while (( "$#" )); do
       TRACE_LIBS="${TRACE_LIBS} `echo $1 | sed 's/-tl/-l/g'`"
       shift 1
       ;;
+    -I*)
+      INCLUDES="${INCLUDES} $1"
+      shift 1
+      ;;
     --trace-compression)
       COMP_LEVEL=$2
       shift 2
@@ -229,24 +233,25 @@ IFS=' ' read -r -a DEPS <<< "$DEPS"
 IFS=' ' read -r -a OUT_DEPS <<< "${OUT_DEPS}"
 IFS=' ' read -r -a LIBS <<< "$LIBS"
 IFS=' ' read -r -a TRACE_LIBS <<< "${TRACE_LIBS}"
+IFS=' ' read -r -a INCLUDES <<< "${INCLUDES}"
 
 if [ "$SKIP_TRACE" = false ]; then
   echo "Stage: Initial compilation"
   # -S -flto -fPIC -static
   # -fuse-ld=lld-9 -Wl,--plugin-opt=emit-llvm
-  ${LLVM_HOME}/${CC} -DENABLE_TRACING -O0 -S -g -flto -fPIC -static ${C_FILE} -o output-${C_FILE_NO_EXT}.ll
+  ${LLVM_HOME}/${CC} -DENABLE_TRACING ${INCLUDES[@]} -O0 -S -g -flto -fPIC -static ${C_FILE} -o output-${C_FILE_NO_EXT}.ll
   # Note: this stage might need all necessary functions to have the "always inline" attribute
   if [ "$INLINE" = true ]; then
     echo "Stage: Inlining function calls"
     ${LLVM_HOME}/opt -always-inline output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}.ll
   fi
+  echo "Stage: Splitting allocas"
+  ${LLVM_HOME}/opt -load $TRACEHOME/lib/AtlasPasses.so -SplitAllocas output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}.ll
   echo "Stage: Encoded annotation"
   ${LLVM_HOME}/opt -load $TRACEHOME/lib/AtlasPasses.so -EncodedAnnotate output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}-annotate.ll
   echo "Stage: Encoded trace instrumentation"
   ${LLVM_HOME}/opt -load $TRACEHOME/lib/AtlasPasses.so -EncodedTrace output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}-opt.ll
-fi
-
-if [ "$SKIP_KERNEL_DETECTION" = false ]; then
+  
   echo "Stage: Tracer binary compilation"
   ${LLVM_HOME}/${CC} -static -fuse-ld=lld-9 \
             -lpthread -lz ${LIBS[@]} ${TRACE_LIBS[@]} $TRACEHOME/lib/libAtlasBackend.a \
@@ -255,7 +260,9 @@ if [ "$SKIP_KERNEL_DETECTION" = false ]; then
 
   echo "Stage: Trace collection"
   TRACE_NAME=${TRC_NAME} TRACE_COMPRESSION=${COMP_LEVEL} ./${C_FILE_NO_EXT}-tracer.out
+fi
 
+if [ "$SKIP_KERNEL_DETECTION" = false ]; then
   if [ -f outfile.txt ]; then
     echo "Removing previous outfile.txt"
     rm outfile.txt
