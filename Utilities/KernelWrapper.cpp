@@ -159,6 +159,9 @@ cl::opt<bool> UnrollNonKernels("unroll-nonkernels", cl::desc("Attempt to unroll 
 cl::opt<bool> SingleNode("single-node", cl::desc("Produce an output file with only a single node for basic testing purposes"), cl::Optional);
 cl::opt<bool> LoopPartition("loop-partition", cl::desc("Partition a program into nodes based on its top level loops"), cl::Optional);
 cl::opt<bool> AutoParallelize("auto-parallelize", cl::desc("Use DAG Extractor output to attempt to parallelize independent kernels"), cl::Optional);
+cl::opt<bool> SeedWithJR("seed-with-jr", cl::desc("Seed the kernel/non-kernel groups with the output from JR rather than Cartographer"), cl::Optional);
+// Lol logging with proper log levels...
+cl::opt<bool> PrintDebug("print-debug", cl::desc("Print all intermediate debug information"), cl::Optional);
 
 cl::opt<std::string> OutputLLVMFilename("o", cl::desc("Specify output LLVM"), cl::value_desc("output llvm filename"));
 cl::opt<std::string> OutputJSONFilename("o2", cl::desc("Specify output JSON"), cl::value_desc("output json filename"));
@@ -210,73 +213,93 @@ int main(int argc, char **argv)
 
     errs() << "main starts with basic block number " << main_start << " and ends with block " << main_end << "\n";
 
-    // Note: this loop is for processing the kernel object output from JR
-    // Strip out any block from the JR json that isn't contained in main
-    for (auto &item : jrJson) {
-        //for (auto &blk : jrJson["blocks"]) {
-        auto &blocks = item["blocks"];
-        for (json::iterator blkItr = blocks.begin(); blkItr != blocks.end(); ) {
-            if (*blkItr < main_start || *blkItr > main_end) {
-                blocks.erase(blkItr);
-            } else {
-                blkItr++;
+    vector<int64_t> non_kernel_blocks;
+    vector<vector<int64_t>> kernel_blocks;
+    map<string, vector<int64_t>> kernel_block_map;
+    
+    if (SeedWithJR) {
+        // Note: this loop is for processing the kernel object output from JR
+        // Strip out any block from the JR json that isn't contained in main
+        for (auto &item : jrJson) {
+            //for (auto &blk : jrJson["blocks"]) {
+            auto &blocks = item["blocks"];
+            for (json::iterator blkItr = blocks.begin(); blkItr != blocks.end(); ) {
+                if (*blkItr < main_start || *blkItr > main_end) {
+                    blocks.erase(blkItr);
+                } else {
+                    blkItr++;
+                }
             }
         }
-    }
 
-
-    // Note: These two loops are used for seeding the set of kernel blocks based on the detected ontology kernels
-//    map<string, vector<int64_t>> kernel_block_map;
-//    vector<vector<int64_t>> kernel_blocks;
-//    for (auto &[key, value] : kernelJson.items())
-//    {
-//        string index = key;
-//        vector<int64_t> kernel = value["Blocks"];
-//        kernel_block_map[index] = kernel;
-//        kernel_blocks.push_back(kernel);
-//    }
-//
-//    std::sort(std::begin(kernel_blocks), std::end(kernel_blocks), [](auto &el1, auto &el2) -> bool {
-//        return el1.at(0) < el2.at(0);
-//    });
-//
-//    // Determine which basic blocks were not classified as kernels
-//    vector<int64_t> non_kernel_blocks;
-//    bool is_in_kernel;
-//    for (int64_t i = main_start; i <= main_end; i++) {
-//        is_in_kernel = false;
-//        for (const auto& kernel_elt : kernel_block_map) {
-//            auto kern_indices = kernel_elt.second;
-//            if (std::find(kern_indices.begin(), kern_indices.end(), i) != kern_indices.end()) {
-//                is_in_kernel = true;
-//                break;
-//            }
-//        }
-//        if (!is_in_kernel){
-//            non_kernel_blocks.push_back(i);
-//        }
-//    }
-
-    // Note: this loop is used for seeding the set of kernel blocks based on the JR output
-    vector<vector<int64_t>> kernel_blocks;
-    for (const auto &item : jrJson) {
-        vector<int64_t> kernel = item["blocks"];
-        if (!kernel.empty()) {
-            int64_t kernUID = item["globalUID"];
-            function_node *node = new function_node();
-            node->kernel_id = kernUID;
-            node->block_indices = kernel;
-            node->is_kernel = true;
-            node->label = item["kernelLabel"];
-            vector<BasicBlock*> block_ptrs;
-            for (auto blk : kernel) {
-                bbToFunctionNode[blk] = node;
-                block_ptrs.push_back(base_blockMap[blk]);
+        // Note: this loop is used for seeding the set of kernel blocks based on the JR output
+        for (const auto &item : jrJson) {
+            vector<int64_t> kernel = item["blocks"];
+            if (!kernel.empty()) {
+                int64_t kernUID = item["globalUID"];
+                function_node *node = new function_node();
+                node->kernel_id = kernUID;
+                node->block_indices = kernel;
+                node->is_kernel = true;
+                node->label = item["kernelLabel"];
+                vector<BasicBlock*> block_ptrs;
+                for (auto blk : kernel) {
+                    bbToFunctionNode[blk] = node;
+                    block_ptrs.push_back(base_blockMap[blk]);
+                }
+                node->block_ptrs = block_ptrs;
+                kernel_blocks.push_back(kernel);
+                kernelUID_to_function_node[kernUID] = node;
+                bbToKernLabel[kernel.front()] = item["kernelLabel"];
             }
-            node->block_ptrs = block_ptrs;
+        }
+
+        std::sort(std::begin(kernel_blocks), std::end(kernel_blocks), [](auto &el1, auto &el2) -> bool {
+            return el1.at(0) < el2.at(0);
+        });
+
+        bool is_in_kernel;
+        for (int64_t i = main_start; i < main_end; i++) {
+            is_in_kernel = false;
+            for (const auto& kernel_vec : kernel_blocks) {
+                if (std::find(kernel_vec.begin(), kernel_vec.end(), i) != kernel_vec.end()) {
+                    is_in_kernel = true;
+                    break;
+                }
+            }
+            if (!is_in_kernel){
+                non_kernel_blocks.push_back(i);
+            }
+        }
+
+    } else {
+        // Note: These two loops are used for seeding the set of kernel blocks based on the detected ontology kernels
+        for (auto &[key, value] : kernelJson.items())
+        {
+            string index = key;
+            vector<int64_t> kernel = value["Blocks"];
+            kernel_block_map[index] = kernel;
             kernel_blocks.push_back(kernel);
-            kernelUID_to_function_node[kernUID] = node;
-            bbToKernLabel[kernel.front()] = item["kernelLabel"];
+        }
+
+        std::sort(std::begin(kernel_blocks), std::end(kernel_blocks), [](auto &el1, auto &el2) -> bool {
+            return el1.at(0) < el2.at(0);
+        });
+
+        // Determine which basic blocks were not classified as kernels
+        bool is_in_kernel;
+        for (int64_t i = main_start; i <= main_end; i++) {
+            is_in_kernel = false;
+            for (const auto& kernel_elt : kernel_block_map) {
+                auto kern_indices = kernel_elt.second;
+                if (std::find(kern_indices.begin(), kern_indices.end(), i) != kern_indices.end()) {
+                    is_in_kernel = true;
+                    break;
+                }
+            }
+            if (!is_in_kernel){
+                non_kernel_blocks.push_back(i);
+            }
         }
     }
 
@@ -292,25 +315,6 @@ int main(int argc, char **argv)
         const auto instanceId = tuple[0];
         const auto predecessors = tuple[1];
         dagPredecessorMap[instanceId] = (vector<int64_t>) predecessors;
-    }
-
-    std::sort(std::begin(kernel_blocks), std::end(kernel_blocks), [](auto &el1, auto &el2) -> bool {
-        return el1.at(0) < el2.at(0);
-    });
-
-    vector<int64_t> non_kernel_blocks;
-    bool is_in_kernel;
-    for (int64_t i = main_start; i < main_end; i++) {
-        is_in_kernel = false;
-        for (const auto& kernel_vec : kernel_blocks) {
-            if (std::find(kernel_vec.begin(), kernel_vec.end(), i) != kernel_vec.end()) {
-                is_in_kernel = true;
-                break;
-            }
-        }
-        if (!is_in_kernel){
-            non_kernel_blocks.push_back(i);
-        }
     }
 
     // Group them into contiguous ranges
@@ -349,7 +353,6 @@ int main(int argc, char **argv)
     // Check if main's first basic block is in its own unique region or not
     // If it's not, we need to make it so
     // Its AllocaInsts mess up the rest of the program when it comes time to do code extraction currently
-
     if (interleaved_groups.at(0).first.size() > 1) {
         vector<int64_t> alloca_block{main_start};
         interleaved_groups.at(0).first.erase(interleaved_groups.at(0).first.begin());
@@ -381,25 +384,29 @@ int main(int argc, char **argv)
         new_func->parent_unit = nullptr;
     }
 
-//    outs() << "Now, we have interleaved the kernel blocks with the non-kernel blocks, and the program structure looks like this:\n";
-//    for (const auto& group : interleaved_groups) {
-//        if (group.second) {
-//            outs() << "Kernel: ";
-//        } else {
-//            outs() << "Non-kernel: ";
-//        }
-//        for (auto block : group.first) {
-//            outs() << block << " ";
-//        }
-//        outs() << "\n";
-//    }
+    if (PrintDebug) {
+        outs() << "Now, we have interleaved the kernel blocks with the non-kernel blocks, and the program structure looks like this:\n";
+        for (const auto& group : interleaved_groups) {
+            if (group.second) {
+                outs() << "Kernel: ";
+            } else {
+                outs() << "Non-kernel: ";
+            }
+            for (auto block : group.first) {
+                outs() << block << " ";
+            }
+            outs() << "\n";
+        }
+    }
 
     // Determine the memory requirements for all variables in this application by iterating over all the allocas
     // Only search within the first basic block, though
     map<AllocaInst*, runtime_variable*> alloca_map;
     for (BasicBlock::iterator II = base_blockMap[main_start]->begin(); II != base_blockMap[main_start]->end(); ++II) {
         if (auto *AI = dyn_cast<AllocaInst>(II)) {
-            //outs() << "Found AllocaInst:" << *AI << "\n";
+            if (PrintDebug) {
+                outs() << "Found AllocaInst:" << *AI << "\n";
+            }
             alloca_map[AI] = new runtime_variable("_var_" + to_string(VAR_UID++));
             Optional<uint64_t> bits = AI->getAllocationSizeInBits(base_module->getDataLayout());
             if (bits.hasValue()) {
@@ -528,27 +535,29 @@ int main(int argc, char **argv)
         }
     }
 
-//    for (auto &[key, val] : alloca_map) {
-//        outs() << "AllocaInst: ";
-//        key->print(outs());
-//        outs() << "\n";
-//        outs() << "Was determined to be a variable with the following attributes: {\n";
-//        outs() << "\tname: " << val->name << "\n";
-//        outs() << "\tsize_in_bytes: " << val->size_in_bytes << "\n";
-//        outs() << "\tval_bytes: [";
-//        for (auto i = 0; i < val->byteVal.size(); i++) {
-//            if (i == val->byteVal.size()-1) {
-//                fprintf(stdout, "%hhx", val->byteVal.at(i));
-//                fflush(stdout);
-//            } else {
-//                fprintf(stdout, "%hhx, ", val->byteVal.at(i));
-//                fflush(stdout);
-//            }
-//        }
-//        outs() << "]\n";
-//        outs() << "\tis_ptr: " << (val->isPtrType ? "true" : "false") << "\n";
-//        outs() << "\tptr_alloc_bytes: " << val->ptr_alloc_bytes << "\n";
-//    }
+    if (PrintDebug) {
+        for (auto &[key, val] : alloca_map) {
+            outs() << "AllocaInst: ";
+            key->print(outs());
+            outs() << "\n";
+            outs() << "Was determined to be a variable with the following attributes: {\n";
+            outs() << "\tname: " << val->name << "\n";
+            outs() << "\tsize_in_bytes: " << val->size_in_bytes << "\n";
+            outs() << "\tval_bytes: [";
+            for (auto i = 0; i < val->byteVal.size(); i++) {
+                if (i == val->byteVal.size()-1) {
+                    fprintf(stdout, "%hhx", val->byteVal.at(i));
+                    fflush(stdout);
+                } else {
+                    fprintf(stdout, "%hhx, ", val->byteVal.at(i));
+                    fflush(stdout);
+                }
+            }
+            outs() << "]\n";
+            outs() << "\tis_ptr: " << (val->isPtrType ? "true" : "false") << "\n";
+            outs() << "\tptr_alloc_bytes: " << val->ptr_alloc_bytes << "\n";
+        }
+    }
 
     DominatorTreeAnalysis dtAnalysis;
     FunctionAnalysisManager funcAnalysisManager;
@@ -558,16 +567,18 @@ int main(int argc, char **argv)
     {
         LoopInfo loopInfo(dominatorTree);
         SmallVector<BasicBlock *, 8> latchVec;
-//        for (auto *loop : loopInfo.getLoopsInPreorder()) {
-//            errs() << "I found a loop (loop " << loop->getName() << "):\n";
-//            loop->getLoopLatches(latchVec);
-//            errs() << "It has " << latchVec.size() << " loop latches:\n";
-//            for (auto *latch : latchVec) {
-//                latch->print(errs());
-//                //errs() << "\t" << latch->getName() << "\n";
-//            }
-//            latchVec.clear();
-//        }
+        if (PrintDebug) {
+            for (auto *loop : loopInfo.getLoopsInPreorder()) {
+                errs() << "I found a loop (loop " << loop->getName() << "):\n";
+                loop->getLoopLatches(latchVec);
+                errs() << "It has " << latchVec.size() << " loop latches:\n";
+                for (auto *latch : latchVec) {
+                    latch->print(errs());
+                    errs() << "\t" << latch->getName() << "\n";
+                }
+                latchVec.clear();
+            }
+        }
 
         bool changed = false;
         for (auto &group : interleaved_groups)
@@ -597,7 +608,9 @@ int main(int argc, char **argv)
             //        Loop* loop = loopInfo.getLoopFor(base_blockMap[group.first.front()]);
             if (loop != nullptr)
             {
-                //errs() << "This loop has depth: " << loop->getLoopDepth() << "\n";
+                if (PrintDebug) {
+                    errs() << "This loop has depth: " << loop->getLoopDepth() << "\n";
+                }
                 loop->getLoopLatches(latchVec);
                 BasicBlock *furthestLatch = latchVec.front();
                 for (auto *latch : latchVec)
@@ -741,20 +754,20 @@ int main(int argc, char **argv)
     }
 
     // Remove all CallInsts to KernelEnter/KernelExit
-    IRBuilder<> builder(&*main_func->begin());
-    for (inst_iterator I = inst_begin(main_func), E = inst_end(main_func); I != E;) {
-        Instruction *inst = &*I; I++;
-        if (auto *CI = dyn_cast<CallInst>(inst)) {
-            if (CI->getCalledFunction()->getName() == "KernelEnter" || CI->getCalledFunction()->getName() == "KernelExit") {
-                auto *thisNode = CI->getParent();
-                auto *prevNode = thisNode->getSinglePredecessor();
-                auto *prevTerm = prevNode->getTerminator();
-                prevTerm->eraseFromParent();
-                builder.SetInsertPoint(prevNode);
-                builder.CreateBr(thisNode);
-            }
-        }
-    }
+//    IRBuilder<> builder(&*main_func->begin());
+//    for (inst_iterator I = inst_begin(main_func), E = inst_end(main_func); I != E;) {
+//        Instruction *inst = &*I; I++;
+//        if (auto *CI = dyn_cast<CallInst>(inst)) {
+//            if (CI->getCalledFunction()->getName() == "KernelEnter" || CI->getCalledFunction()->getName() == "KernelExit") {
+//                auto *thisNode = CI->getParent();
+//                auto *prevNode = thisNode->getSinglePredecessor();
+//                auto *prevTerm = prevNode->getTerminator();
+//                prevTerm->eraseFromParent();
+//                builder.SetInsertPoint(prevNode);
+//                builder.CreateBr(thisNode);
+//            }
+//        }
+//    }
     // Replace KernelEnter and KernelExit calls in every function in the module
     for (Module::iterator MM = base_module->begin(); MM != base_module->end(); MM++) {
         Function *current_func = &*MM;
@@ -854,6 +867,19 @@ int main(int argc, char **argv)
     outputVariablesJson["_var_ret"]["val"] = json::array();
     outputVariablesJson["_var_ret"]["is_ptr"] = false;
     outputVariablesJson["_var_ret"]["ptr_alloc_bytes"] = 0;
+
+    // On top of this, add placeholders for argc and argv in case they are found for a similar reason
+    outputVariablesJson["_var_argc"] = json::object();
+    outputVariablesJson["_var_argc"]["bytes"] = 4;
+    outputVariablesJson["_var_argc"]["val"] = json::array();
+    outputVariablesJson["_var_argc"]["is_ptr"] = false;
+    outputVariablesJson["_var_argc"]["ptr_alloc_bytes"] = 0;
+
+    outputVariablesJson["_var_argv"] = json::object();
+    outputVariablesJson["_var_argv"]["bytes"] = 8;
+    outputVariablesJson["_var_argv"]["val"] = json::array();
+    outputVariablesJson["_var_argv"]["is_ptr"] = false;
+    outputVariablesJson["_var_argv"]["ptr_alloc_bytes"] = 0;
 
     nlohmann::json outputDagJson = json::object();
 
@@ -1121,9 +1147,21 @@ int main(int argc, char **argv)
                                 nodeJson["arguments"].push_back(alloca_map[AI]->name);
                             }
                         } else {
-                            errs() << "Encountered a function with a non-alloca operand. Function: " << called_func->getName() << ", Operand: ";
-                            arg->print(errs());
-                            errs() << "\n";
+                            if (arg->getType()->isIntegerTy(32)) {
+                                errs() << "Encountered a function (" << called_func->getName() << ") with a non-alloca operand, but I think this operand (";
+                                arg->print(errs());
+                                errs() << ") is 'argc' because it's a 32-bit value\n";
+                                nodeJson["arguments"].push_back("_var_argc");
+                            } else if (arg->getType()->isPointerTy() && arg->getType()->getPointerElementType()->isPointerTy() && arg->getType()->getPointerElementType()->getPointerElementType()->isIntegerTy(8)) {
+                                errs() << "Encountered a function (" << called_func->getName() << ") with a non-alloca operand, but I think this operand (";
+                                arg->print(errs());
+                                errs() << ") is 'argv' because it's a pointer to a pointer to an 8-bit value\n";
+                                nodeJson["arguments"].push_back("_var_argv");
+                            } else {
+                                errs() << "Encountered a function with a non-alloca operand. Function: " << called_func->getName() << ", Operand: ";
+                                arg->print(errs());
+                                errs() << "\n";
+                            }
                         }
                     }
 

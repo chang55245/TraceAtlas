@@ -12,7 +12,7 @@ UNROLL_NONKERNELS=false
 LOOP_PARTITION=false;
 AUTO_PARALLEL=false;
 SKIP_TRACE=false
-SKIP_KERNEL_DETECTION=false
+SKIP_TRACE_ANALYSIS=false
 SKIP_FINAL_COMPILATION=false
 CPP=false
 CC=clang
@@ -26,6 +26,8 @@ LLVM_HOME="/usr/lib/llvm-9/bin"
 
 ARCH=""
 ARCH_FLAGS=""
+
+DEBUG=""
 
 print_usage() {
   echo "Usage:"
@@ -56,10 +58,12 @@ cat << EOF
         Attempt to parallelize nodes in the output JSON based on whether DagExtractor detects them as independent
       [--skip-trace]
         Skip the trace instrumentation and trace collection steps
-      [--skip-kernel-detection]
+      [--skip-trace-analysis]
         Skip the trace processing and kernel detection/DAG extraction steps
       [--skip-final-processing]
         Skip the application refactoring and final shared object compilation steps
+      [--debug]
+        Attempt to maintain debug symbols throughout the whole transformation process
       [--cpp]
         Process input files as with clang++ rather than clang
       [-l<lib_suffix>]
@@ -116,12 +120,16 @@ while (( "$#" )); do
       SKIP_TRACE=true
       shift 1
       ;;
-    --skip-kernel-detection)
-      SKIP_KERNEL_DETECTION=true
+    --skip-trace-analysis)
+      SKIP_TRACE_ANALYSIS=true
       shift 1
       ;;
     --skip-final-processing)
       SKIP_FINAL_COMPILATION=true
+      shift 1
+      ;;
+    --debug)
+      DEBUG="-g3 -ggdb"
       shift 1
       ;;
     --cpp)
@@ -239,7 +247,7 @@ if [ "$SKIP_TRACE" = false ]; then
   echo "Stage: Initial compilation"
   # -S -flto -fPIC -static
   # -fuse-ld=lld-9 -Wl,--plugin-opt=emit-llvm
-  ${LLVM_HOME}/${CC} -DENABLE_TRACING ${INCLUDES[@]} -O0 -S -g -flto -fPIC -static ${C_FILE} -o output-${C_FILE_NO_EXT}.ll
+  ${LLVM_HOME}/${CC} -DENABLE_TRACING ${INCLUDES[@]} -O0 -S ${DEBUG} -flto -fPIC -static ${C_FILE} -o output-${C_FILE_NO_EXT}.ll
   # Note: this stage might need all necessary functions to have the "always inline" attribute
   if [ "$INLINE" = true ]; then
     echo "Stage: Inlining function calls"
@@ -262,7 +270,7 @@ if [ "$SKIP_TRACE" = false ]; then
   TRACE_NAME=${TRC_NAME} TRACE_COMPRESSION=${COMP_LEVEL} ./${C_FILE_NO_EXT}-tracer.out
 fi
 
-if [ "$SKIP_KERNEL_DETECTION" = false ]; then
+if [ "$SKIP_TRACE_ANALYSIS" = false ]; then
   if [ -f outfile.txt ]; then
     echo "Removing previous outfile.txt"
     rm outfile.txt
@@ -293,9 +301,9 @@ if [ "$SKIP_FINAL_COMPILATION" = false ]; then
                        -o2 ${C_FILE_NO_EXT}-${ARCH}.json
   echo "Stage: Shared object compilation"
   if [ "$ARCH" = "x86" ]; then
-    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
+    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} ${DEBUG} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
   else
-    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} -Woverride-module -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} ${OUT_DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
+    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} ${DEBUG} -Woverride-module -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} ${OUT_DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
   fi
 fi
 echo "Complete!"
