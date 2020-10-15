@@ -272,7 +272,10 @@ int main(int argc, char **argv)
             }
         }
 
-    } else {
+    }
+    // (!SeedWithJR)
+    else
+    {
         // Note: These two loops are used for seeding the set of kernel blocks based on the detected ontology kernels
         for (auto &[key, value] : kernelJson.items())
         {
@@ -382,21 +385,6 @@ int main(int argc, char **argv)
         }
         new_func->outlined_func = nullptr;
         new_func->parent_unit = nullptr;
-    }
-
-    if (PrintDebug) {
-        outs() << "Now, we have interleaved the kernel blocks with the non-kernel blocks, and the program structure looks like this:\n";
-        for (const auto& group : interleaved_groups) {
-            if (group.second) {
-                outs() << "Kernel: ";
-            } else {
-                outs() << "Non-kernel: ";
-            }
-            for (auto block : group.first) {
-                outs() << block << " ";
-            }
-            outs() << "\n";
-        }
     }
 
     // Determine the memory requirements for all variables in this application by iterating over all the allocas
@@ -753,29 +741,29 @@ int main(int argc, char **argv)
         interleaved_groups.emplace_back(all_blocks, false);
     }
 
-    // Remove all CallInsts to KernelEnter/KernelExit
-//    IRBuilder<> builder(&*main_func->begin());
-//    for (inst_iterator I = inst_begin(main_func), E = inst_end(main_func); I != E;) {
-//        Instruction *inst = &*I; I++;
-//        if (auto *CI = dyn_cast<CallInst>(inst)) {
-//            if (CI->getCalledFunction()->getName() == "KernelEnter" || CI->getCalledFunction()->getName() == "KernelExit") {
-//                auto *thisNode = CI->getParent();
-//                auto *prevNode = thisNode->getSinglePredecessor();
-//                auto *prevTerm = prevNode->getTerminator();
-//                prevTerm->eraseFromParent();
-//                builder.SetInsertPoint(prevNode);
-//                builder.CreateBr(thisNode);
-//            }
-//        }
-//    }
-    // Replace KernelEnter and KernelExit calls in every function in the module
+    if (PrintDebug) {
+        outs() << "Prior to kernel extraction, we have interleaved the kernel blocks with the non-kernel blocks, and the program structure looks like this:\n";
+        for (const auto& group : interleaved_groups) {
+            if (group.second) {
+                outs() << "Kernel: ";
+            } else {
+                outs() << "Non-kernel: ";
+            }
+            for (auto block : group.first) {
+                outs() << block << " ";
+            }
+            outs() << "\n";
+        }
+    }
+
+    // Replace KernelEnter and KernelExit calls with NOPs in every function in the module
     for (Module::iterator MM = base_module->begin(); MM != base_module->end(); MM++) {
         Function *current_func = &*MM;
         for (inst_iterator I = inst_begin(current_func), E = inst_end(current_func); I != E;) {
             Instruction *inst = &*I; I++;
             if (auto *CI = dyn_cast<CallInst>(inst)) {
                 if (CI->getCalledFunction()->getName() == "KernelEnter" || CI->getCalledFunction()->getName() == "KernelExit") {
-                    errs() << "Replacing a call to " << CI->getCalledFunction()->getName() << " with a nop addition\n";
+                    // errs() << "Replacing a call to " << CI->getCalledFunction()->getName() << " with a nop addition\n";
                     Value *val1 = ConstantInt::get(Type::getInt32Ty(current_func->getContext()), 0);
                     Value *val2 = ConstantInt::get(Type::getInt32Ty(current_func->getContext()), 0);
                     BinaryOperator *op = BinaryOperator::Create(Instruction::Add, val1, val2);

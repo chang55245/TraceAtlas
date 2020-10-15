@@ -63,19 +63,7 @@ void Process(string &key, string &value)
         int64_t block = stol(value, nullptr, 0);
         labels[block].insert(currentLabels.begin(), currentLabels.end());
         blockStack.pop_back();
-//        for (auto& label : currentLabels) {
-//            labelToBBs[label].push_back(block);
-//        }
-        // Block == 237 == beginning of "make_label" function (ends around 244)
-//        if (inKernel && block < 237) {
-//            auto &blockVec = labelsAndBBVecs.back().second;
-//            if (find(blockVec.begin(), blockVec.end(), block) == blockVec.end()) {
-//                labelsAndBBVecs.back().second.push_back(block);
-//            }
-//        }
-//        if (!labelsAndBBVecs.empty() && labelsAndBBVecs.back().first != "__NOP__") {
-//            labelsAndBBVecs.back().second.push_back(block);
-//        }
+        
         if (!currentLabels.empty()) {
             labelsAndBBVecs.back().blocks.insert(block);
         }
@@ -124,6 +112,22 @@ int main(int argc, char **argv)
     {
         string label = std::to_string(pair.first);
         jOut[label] = pair.second;
+    }
+    // Fixup labelsAndBBVecs by looking for missing intermediate blocks that were never entered and thus skipped from tracing
+    for (auto &struc : labelsAndBBVecs) {
+        auto &blks = struc.blocks;
+        if (blks.empty()) {
+            continue;
+        }
+        const auto minBlk = *struc.blocks.begin();
+        const auto maxBlk = *struc.blocks.rbegin();
+        for (auto blkNum = minBlk; blkNum < maxBlk; blkNum++) {
+            // If we have blkNum and blkNum + 2 but not blkNum + 1, add it
+            if (blks.find(blkNum) != blks.end() && blks.find(blkNum+2) != blks.end() && blks.find(blkNum+1) == blks.end()) {
+                cout << "Inserting a block that was missing between " << blkNum << " and " << blkNum + 2 << endl;
+                blks.insert(blkNum+1);
+            }
+        }
     }
     for (const auto &struc : labelsAndBBVecs) {
         jOut2["kernels"].push_back(nlohmann::json(struc));

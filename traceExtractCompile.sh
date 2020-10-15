@@ -11,9 +11,12 @@ RELAX_LOOPS=false
 UNROLL_NONKERNELS=false
 LOOP_PARTITION=false;
 AUTO_PARALLEL=false;
+SEED_WITH_JR=false;
 SKIP_TRACE=false
 SKIP_TRACE_ANALYSIS=false
 SKIP_FINAL_COMPILATION=false
+CXX_DEBUG_ARGS=""
+DEBUG_ENABLE=false
 CPP=false
 CC=clang
 COMP_LEVEL=9
@@ -56,6 +59,8 @@ cat << EOF
         Partition the main function based on top level loops present. If a top level loop matches a kernel, it will be treated as such
       [--auto-parallelize]
         Attempt to parallelize nodes in the output JSON based on whether DagExtractor detects them as independent
+      [--seed-with-jr]
+        Seed the kernels in DAG generation with the output from JR rather than cartographer
       [--skip-trace]
         Skip the trace instrumentation and trace collection steps
       [--skip-trace-analysis]
@@ -116,6 +121,10 @@ while (( "$#" )); do
       AUTO_PARALLEL=true;
       shift 1;
       ;;
+    --seed-with-jr)
+      SEED_WITH_JR=true;
+      shift 1;
+      ;;
     --skip-trace)
       SKIP_TRACE=true
       shift 1
@@ -129,7 +138,8 @@ while (( "$#" )); do
       shift 1
       ;;
     --debug)
-      DEBUG="-g3 -ggdb"
+      CXX_DEBUG_ARGS="-g3 -ggdb"
+      DEBUG_ENABLE=true
       shift 1
       ;;
     --cpp)
@@ -247,7 +257,7 @@ if [ "$SKIP_TRACE" = false ]; then
   echo "Stage: Initial compilation"
   # -S -flto -fPIC -static
   # -fuse-ld=lld-9 -Wl,--plugin-opt=emit-llvm
-  ${LLVM_HOME}/${CC} -DENABLE_TRACING ${INCLUDES[@]} -O0 -S ${DEBUG} -flto -fPIC -static ${C_FILE} -o output-${C_FILE_NO_EXT}.ll
+  ${LLVM_HOME}/${CC} -DENABLE_TRACING ${INCLUDES[@]} -O0 -S ${CXX_DEBUG_ARGS} -flto -fPIC -static ${C_FILE} -o output-${C_FILE_NO_EXT}.ll
   # Note: this stage might need all necessary functions to have the "always inline" attribute
   if [ "$INLINE" = true ]; then
     echo "Stage: Inlining function calls"
@@ -255,6 +265,8 @@ if [ "$SKIP_TRACE" = false ]; then
   fi
   echo "Stage: Splitting allocas"
   ${LLVM_HOME}/opt -load $TRACEHOME/lib/AtlasPasses.so -SplitAllocas output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}.ll
+  echo "Stage: Splitting Kernel exit/enters"
+  ${LLVM_HOME}/opt -load $TRACEHOME/lib/AtlasPasses.so -SplitKernExitEnter output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}.ll
   echo "Stage: Encoded annotation"
   ${LLVM_HOME}/opt -load $TRACEHOME/lib/AtlasPasses.so -EncodedAnnotate output-${C_FILE_NO_EXT}.ll -S -o output-${C_FILE_NO_EXT}-annotate.ll
   echo "Stage: Encoded trace instrumentation"
@@ -275,12 +287,23 @@ if [ "$SKIP_TRACE_ANALYSIS" = false ]; then
     echo "Removing previous outfile.txt"
     rm outfile.txt
   fi
-  echo "Stage: Kernel extraction"
-  $TRACEHOME/bin/cartographer -i ${TRC_NAME} -b output-${C_FILE_NO_EXT}-annotate.ll -k kernel-${C_FILE_NO_EXT}.json -L=true
-  echo "Stage: JR execution"
-  $TRACEHOME/bin/JR -i ${TRC_NAME} -o kernel-jr-${C_FILE_NO_EXT}.json
-  echo "Stage: DAG extraction"
-  $TRACEHOME/bin/dagExtractor -t ${TRC_NAME} -k kernel-${C_FILE_NO_EXT}.json -o kernel-${C_FILE_NO_EXT}-dagExtractor.json
+  
+  # Only run either cartographer or JR depending on which option was selected
+  if [ "$SEED_WITH_JR" = false ]; then
+    echo "Stage: Kernel extraction"
+    $TRACEHOME/bin/cartographer -i ${TRC_NAME} -b output-${C_FILE_NO_EXT}-annotate.ll -k kernel-${C_FILE_NO_EXT}.json -L=true
+    echo "Stage: Skipping JR execution"
+    touch kernel-jr-${C_FILE_NO_EXT}.json
+    echo "Stage: DAG extraction"
+    $TRACEHOME/bin/dagExtractor -t ${TRC_NAME} -k kernel-${C_FILE_NO_EXT}.json -o kernel-${C_FILE_NO_EXT}-dagExtractor.json
+  else
+    echo "Stage: Skipping kernel extraction"
+    touch kernel-${C_FILE_NO_EXT}.json
+    echo "Stage: JR execution"
+    $TRACEHOME/bin/JR -i ${TRC_NAME} -o kernel-jr-${C_FILE_NO_EXT}.json
+    echo "Stage: Skipping DAG extraction"
+    touch kernel-${C_FILE_NO_EXT}-dagExtractor.json
+  fi
 fi
 
 if [ "$SKIP_FINAL_COMPILATION" = false ]; then
@@ -292,6 +315,8 @@ if [ "$SKIP_FINAL_COMPILATION" = false ]; then
                        -unroll-nonkernels=${UNROLL_NONKERNELS} \
                        -loop-partition=${LOOP_PARTITION} \
                        -auto-parallelize=${AUTO_PARALLEL} \
+                       -seed-with-jr=${SEED_WITH_JR} \
+                       -print-debug=${DEBUG_ENABLE} \
                        -a output-${C_FILE_NO_EXT}-annotate.ll \
                        -k kernel-${C_FILE_NO_EXT}.json \
                        -j kernel-jr-${C_FILE_NO_EXT}.json \
@@ -301,9 +326,9 @@ if [ "$SKIP_FINAL_COMPILATION" = false ]; then
                        -o2 ${C_FILE_NO_EXT}-${ARCH}.json
   echo "Stage: Shared object compilation"
   if [ "$ARCH" = "x86" ]; then
-    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} ${DEBUG} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
+    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} ${CXX_DEBUG_ARGS} -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} ${DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
   else
-    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} ${DEBUG} -Woverride-module -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} ${OUT_DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
+    ${LLVM_HOME}/${CC} ${ARCH_FLAGS} ${CXX_DEBUG_ARGS} -Woverride-module -shared -fPIC -fuse-ld=lld-9 ${LIBS[@]} $COMPILERRT ${DEPS[@]} ${OUT_DEPS[@]} output-${C_FILE_NO_EXT}-extracted.ll -o ${C_FILE_NO_EXT}-${ARCH}.so
   fi
 fi
 echo "Complete!"
