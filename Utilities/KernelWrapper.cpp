@@ -1210,6 +1210,8 @@ int main(int argc, char **argv)
                             plat2["shared_object"] = "fft.so";
                             nodeJson["platforms"].push_back(plat2);
                             knownKernelReplaced = true;
+                        } else if (label == "GEMM[Ar-4][Ac-64][Bc-4][float32][complex]") {
+                            outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << " and I think I can optimize that\n";
                         } else {
                             outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ", but no optimized implementation is available\n";
                         }

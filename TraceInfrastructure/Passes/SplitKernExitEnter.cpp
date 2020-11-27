@@ -20,6 +20,10 @@ namespace DashTracer::Passes {
             entranceCall = nullptr;
 
             //outs() << "Processing a new basic block\n";
+            if (BB->size() == 1 || BB->size() == 2) {
+                BB++;
+                continue;
+            }
             for (auto ii = BB->begin(); ii != BB->end(); ii++) {
                 Instruction *inst = &*ii;
                 if (auto *CI = dyn_cast<CallInst>(inst)) {
@@ -27,19 +31,22 @@ namespace DashTracer::Passes {
                         //outs() << "Found a Kernel Exit\n";
                         exitCall = CI;
                     }
-                    if (exitCall != nullptr && CI->getCalledFunction()->getName() == "KernelEnter") {
+                    if (CI->getCalledFunction()->getName() == "KernelEnter") {
                         //outs() << "Found a Kernel Entrance\n";
                         entranceCall = CI;
                     }
                 }
-                if (exitCall != nullptr && entranceCall != nullptr) {
+                if (exitCall != nullptr || entranceCall != nullptr) {
                     //outs() << "Splitting a basic block!\n";
-                    BB->splitBasicBlock(ii);
+                    BasicBlock* newBB = BB->splitBasicBlock(ii);
+                    if (newBB->getInstList().size() > 1) {
+                        newBB->splitBasicBlock(newBB->front().getNextNode());
+                    }
                     isModified = true;
                     break;
                 }
             }
-            if (exitCall == nullptr || entranceCall == nullptr) {
+            if (exitCall == nullptr && entranceCall == nullptr) {
                 BB++;
             }
         }
