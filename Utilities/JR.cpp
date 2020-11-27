@@ -63,7 +63,7 @@ void Process(string &key, string &value)
         int64_t block = stol(value, nullptr, 0);
         labels[block].insert(currentLabels.begin(), currentLabels.end());
         blockStack.pop_back();
-        
+
         if (!currentLabels.empty()) {
             labelsAndBBVecs.back().blocks.insert(block);
         }
@@ -76,7 +76,7 @@ void Process(string &key, string &value)
         } else {
             kernelInstanceCounter[value]++;
         }
-//        labelToBBs[value] = {};
+
         labelsAndBBVecs.emplace_back();
         labelsAndBBVecs.back().kernelLabel = value;
         labelsAndBBVecs.back().blocks = {};

@@ -812,7 +812,9 @@ int main(int argc, char **argv)
             NODE_UID++;
 
             // If this function has an associated kernel label, propogate it
-            bbToFunctionNode[group.first.front()]->outlined_func = OutF;
+            if (bbToFunctionNode[group.first.front()] != nullptr) {
+                bbToFunctionNode[group.first.front()]->outlined_func = OutF;
+            }
             if (bbToKernLabel.find(group.first.front()) != bbToKernLabel.end()) {
                 outlined_functions[OutF->getName()] = {OutF, bbToKernLabel.at(group.first.front())};
             } else {
@@ -1195,8 +1197,20 @@ int main(int argc, char **argv)
                             plat2["shared_object"] = "fft.so";
                             nodeJson["platforms"].push_back(plat2);
                             knownKernelReplaced = true;
-                        }
-                        else {
+                        } else if (label == "FFT[1D][complex2complex]") {
+                            outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ". Adding in optimized implementation\n";
+                            plat["name"] = "cpu";
+                            plat["nodecost"] = 10;
+                            plat["runfunc"] = called_func->getName();
+                            nodeJson["platforms"].push_back(plat);
+                            nlohmann::json plat2 = json::object();
+                            plat2["name"] = "fft";
+                            plat2["nodecost"] = 5;
+                            plat2["runfunc"] = "fft256_accel_gsl";
+                            plat2["shared_object"] = "fft.so";
+                            nodeJson["platforms"].push_back(plat2);
+                            knownKernelReplaced = true;
+                        } else {
                             outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ", but no optimized implementation is available\n";
                         }
                     }
