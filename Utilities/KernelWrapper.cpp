@@ -1188,30 +1188,42 @@ int main(int argc, char **argv)
                             plat["name"] = "cpu";
                             plat["nodecost"] = 10;
                             plat["runfunc"] = "fft256_cpu";
-                            plat["shared_object"] = "fft.so";
+                            plat["shared_object"] = "fft-aarch64.so";
                             nodeJson["platforms"].push_back(plat);
                             nlohmann::json plat2 = json::object();
                             plat2["name"] = "fft";
                             plat2["nodecost"] = 5;
                             plat2["runfunc"] = "fft256_accel";
-                            plat2["shared_object"] = "fft.so";
+                            plat2["shared_object"] = "fft-aarch64.so";
                             nodeJson["platforms"].push_back(plat2);
                             knownKernelReplaced = true;
                         } else if (label == "FFT[1D][complex2complex]") {
                             outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ". Adding in optimized implementation\n";
                             plat["name"] = "cpu";
                             plat["nodecost"] = 10;
-                            plat["runfunc"] = called_func->getName();
+                            plat["runfunc"] = "fft256_cpu";
+                            plat["shared_object"] = "fft-aarch64.so";
                             nodeJson["platforms"].push_back(plat);
                             nlohmann::json plat2 = json::object();
                             plat2["name"] = "fft";
                             plat2["nodecost"] = 5;
                             plat2["runfunc"] = "fft256_accel_gsl";
-                            plat2["shared_object"] = "fft.so";
+                            plat2["shared_object"] = "fft-aarch64.so";
                             nodeJson["platforms"].push_back(plat2);
                             knownKernelReplaced = true;
                         } else if (label == "GEMM[Ar-4][Ac-64][Bc-4][float32][complex]") {
-                            outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << " and I think I can optimize that\n";
+                            outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ". Adding in optimized implementation\n";
+                            plat["name"] = "cpu";
+                            plat["nodecost"] = 10;
+                            plat["runfunc"] = called_func->getName();
+                            nodeJson["platforms"].push_back(plat);
+                            nlohmann::json plat2 = json::object();
+                            plat2["name"] = "mmult";
+                            plat2["nodecost"] = 5;
+                            plat2["runfunc"] = "mmult_fpga";
+                            plat2["shared_object"] = "mmult-aarch64.so";
+                            nodeJson["platforms"].push_back(plat2);
+                            knownKernelReplaced = true;
                         } else {
                             outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ", but no optimized implementation is available\n";
                         }
