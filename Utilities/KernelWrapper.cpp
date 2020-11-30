@@ -1220,7 +1220,7 @@ int main(int argc, char **argv)
                             nlohmann::json plat2 = json::object();
                             plat2["name"] = "mmult";
                             plat2["nodecost"] = 5;
-                            plat2["runfunc"] = "mmult_fpga";
+                            plat2["runfunc"] = "mmult_fpga_kern";
                             plat2["shared_object"] = "mmult-aarch64.so";
                             nodeJson["platforms"].push_back(plat2);
                             knownKernelReplaced = true;
@@ -1233,15 +1233,6 @@ int main(int argc, char **argv)
                         plat["nodecost"] = 10;
                         plat["runfunc"] = called_func->getName();
                         nodeJson["platforms"].push_back(plat);
-                    }
-                    if (outputJson["AppName"] == "temporal_mitigation-aarch64" && (called_func->getName() == "main.Node_4" || called_func->getName() == "main.Node_6")) {
-                        outs() << "Detected matrix multiply kernel with " << called_func->getName() << ". Adding support for this as well\n";
-                        nlohmann::json plat2 = json::object();
-                        plat2["name"] = "fft";
-                        plat2["nodecost"] = 5;
-                        plat2["runfunc"] = "mmult_fpga_kern";
-                        plat2["shared_object"] = "mmult-aarch64.so";
-                        nodeJson["platforms"].push_back(plat2);
                     }
                     outputDagJson["FuncCall_" + to_string(call_idx)] = nodeJson;
                     call_idx++;
