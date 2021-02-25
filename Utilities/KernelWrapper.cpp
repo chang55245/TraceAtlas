@@ -762,12 +762,16 @@ int main(int argc, char **argv)
         for (inst_iterator I = inst_begin(current_func), E = inst_end(current_func); I != E;) {
             Instruction *inst = &*I; I++;
             if (auto *CI = dyn_cast<CallInst>(inst)) {
-                if (CI->getCalledFunction()->getName() == "KernelEnter" || CI->getCalledFunction()->getName() == "KernelExit") {
-                    // errs() << "Replacing a call to " << CI->getCalledFunction()->getName() << " with a nop addition\n";
-                    Value *val1 = ConstantInt::get(Type::getInt32Ty(current_func->getContext()), 0);
-                    Value *val2 = ConstantInt::get(Type::getInt32Ty(current_func->getContext()), 0);
-                    BinaryOperator *op = BinaryOperator::Create(Instruction::Add, val1, val2);
-                    ReplaceInstWithInst(inst, op);
+                Function* fun = CI->getCalledFunction();
+                /* The called function can be null in the case of an indirect call https://stackoverflow.com/a/11687221 */
+                if (fun) {
+                    if (CI->getCalledFunction()->getName() == "KernelEnter" || CI->getCalledFunction()->getName() == "KernelExit") {
+                        // errs() << "Replacing a call to " << CI->getCalledFunction()->getName() << " with a nop addition\n";
+                        Value *val1 = ConstantInt::get(Type::getInt32Ty(current_func->getContext()), 0);
+                        Value *val2 = ConstantInt::get(Type::getInt32Ty(current_func->getContext()), 0);
+                        BinaryOperator *op = BinaryOperator::Create(Instruction::Add, val1, val2);
+                        ReplaceInstWithInst(inst, op);
+                    }
                 }
             }
         }
@@ -1194,6 +1198,19 @@ int main(int argc, char **argv)
                             plat2["name"] = "fft";
                             plat2["nodecost"] = 5;
                             plat2["runfunc"] = "fft256_accel";
+                            plat2["shared_object"] = "fft-aarch64.so";
+                            nodeJson["platforms"].push_back(plat2);
+                            knownKernelReplaced = true;
+                        } else if (label == "FFT[1D][512][complex][float64][forward]") {
+                            outs() << "Function " << called_func->getName() << " is labeled as kernel " << label << ". Adding in optimized implementation\n";
+                            plat["name"] = "cpu";
+                            plat["nodecost"] = 10;
+                            plat["runfunc"] = called_func->getName();
+                            nodeJson["platforms"].push_back(plat);
+                            nlohmann::json plat2 = json::object();
+                            plat2["name"] = "fft";
+                            plat2["nodecost"] = 5;
+                            plat2["runfunc"] = "fft512_accel_gsl_mex";
                             plat2["shared_object"] = "fft-aarch64.so";
                             nodeJson["platforms"].push_back(plat2);
                             knownKernelReplaced = true;

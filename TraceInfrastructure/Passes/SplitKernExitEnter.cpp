@@ -27,13 +27,17 @@ namespace DashTracer::Passes {
             for (auto ii = BB->begin(); ii != BB->end(); ii++) {
                 Instruction *inst = &*ii;
                 if (auto *CI = dyn_cast<CallInst>(inst)) {
-                    if (CI->getCalledFunction()->getName() == "KernelExit") {
-                        //outs() << "Found a Kernel Exit\n";
-                        exitCall = CI;
-                    }
-                    if (CI->getCalledFunction()->getName() == "KernelEnter") {
-                        //outs() << "Found a Kernel Entrance\n";
-                        entranceCall = CI;
+                    Function *fun = CI->getCalledFunction();
+                    /* The called function can be null in the event of an indirect call https://stackoverflow.com/a/11687221 */
+                    if (fun) {
+                        if (CI->getCalledFunction()->getName() == "KernelExit") {
+                            //outs() << "Found a Kernel Exit\n";
+                            exitCall = CI;
+                        }
+                        if (CI->getCalledFunction()->getName() == "KernelEnter") {
+                            //outs() << "Found a Kernel Entrance\n";
+                            entranceCall = CI;
+                        }
                     }
                 }
                 if (exitCall != nullptr || entranceCall != nullptr) {
