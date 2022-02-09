@@ -12,6 +12,7 @@
 #include <llvm/Support/SourceMgr.h>
 #include <map>
 #include <nlohmann/json.hpp>
+#include <queue>
 #include <set>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/spdlog.h>
@@ -594,8 +595,6 @@ void print_user(Instruction *CI, map<Instruction *, tuple<int64_t, int64_t>> mem
     }
 }
 
-
-
 int parsingKernelInfo(string KernelFilename)
 {
     ifstream inputJson(KernelFilename);
@@ -613,7 +612,7 @@ int parsingKernelInfo(string KernelFilename)
     for (auto &[k, l] : j["Control"].items())
     {
         int index = stoul(k, nullptr, 0);
-        nlohmann::json kernel = l["Blocks"]; 
+        nlohmann::json kernel = l["Blocks"];
         kernelControlMap[index] = kernel.get<set<int>>();
         kernelIdMap[index] = l["Label"];
     }
@@ -938,7 +937,6 @@ tuple<int, int, float, int> calTotalSize(wsTupleMap a, int liveness)
     return res;
 }
 
-
 bool DepCheck(wsTuple t_new, wsTupleMap processMap)
 {
     if (processMap.size() == 0)
@@ -982,37 +980,37 @@ bool DepCheck(wsTuple t_new, wsTupleMap processMap)
         }
         else
         {
-            return true;  
+            return true;
         }
     }
     return false;
 }
 
-bool DepCheckMaps(int checkpoint,vector<int>nodeCheckVector)
+bool DepCheckMaps(int checkpoint, vector<int> nodeCheckVector)
 {
     bool dep = false;
-    int current= checkpoint -1;
-    while (current>=0)
+    int current = checkpoint - 1;
+    while (current >= 0)
     {
-        for (auto i: storewsTupleMap[nodeCheckVector[current]])
+        for (auto i : storewsTupleMap[nodeCheckVector[current]])
         {
-            dep = DepCheck(i.second,loadwsTupleMap[nodeCheckVector[checkpoint]]);
+            dep = DepCheck(i.second, loadwsTupleMap[nodeCheckVector[checkpoint]]);
             if (dep == true)
             {
                 return true;
             }
         }
         current--;
-    }    
+    }
     return dep;
 }
 
-void checkNodeDep(vector<int>nodeCheckVector)
+void checkNodeVecDep(vector<int> nodeCheckVector)
 {
     int iter = 0;
     int prevNode;
 
-    if (nodeCheckVector.size()<2)
+    if (nodeCheckVector.size() < 2)
     {
         return;
     }
@@ -1027,16 +1025,16 @@ void checkNodeDep(vector<int>nodeCheckVector)
     //     }
     //     if(!DepCheckMaps(storewsTupleMap[prevNode],loadwsTupleMap[i]))
     //     {
-    //         // barrier removal i 
+    //         // barrier removal i
     //         barrierRemoval.insert(i);
     //     }
     //     prevNode = i;
     //     iter++;
     // }
 
-    for (int i = 1; i < nodeCheckVector.size();i++)
+    for (int i = 1; i < nodeCheckVector.size(); i++)
     {
-        if(!DepCheckMaps(i,nodeCheckVector))
+        if (!DepCheckMaps(i, nodeCheckVector))
         {
             barrierRemoval.insert(nodeCheckVector[i]);
         }
@@ -1056,24 +1054,243 @@ void DAGGenerationCEDR()
             if (nonKernelCounter == 2)
             {
                 //check the kernel nodes
-                checkNodeDep(nodeCheckVector);
+                checkNodeVecDep(nodeCheckVector);
 
                 //reset the non kernel counter
                 nonKernelCounter = 0;
                 //reset the kernel check set
                 nodeCheckVector.clear();
-            }    
+            }
         }
         else
         {
             // push the node into kernel check set
-            nodeCheckVector.push_back(i.first);        
+            nodeCheckVector.push_back(i.first);
+        }
+    }
+}
+
+// set<pair<int, int>> NormalDAG;
+// map<int, int> indegree;
+// void topo(queue<int> &output, int size)
+// {
+//     stack<int> tempStack;
+//     queue<int> out;
+//     // store the temporal result
+//     queue<int> q;
+//     map<int, int> indegreeInner = indegree;
+
+//     for (int i = 0; i < size; i++)
+//     {
+//         if (indegree[i] == 0)
+//         {
+//             q.push(i);
+//         }
+//     }
+
+//     int temp;
+//     while (!q.empty())
+//     {
+//         temp = q.front();
+//         q.pop();
+ 
+//         tempStack.push(temp);
+      
+//         // temp degree = 0
+
+//         // i cant represent node
+//         for (int i = temp + 1; i < size; i++)
+//         {
+//             pair<int, int> edge = {temp, i};
+//             if (NormalDAG.find(edge) != NormalDAG.end())
+//             {
+//                 indegreeInner[i] = 0;
+//                 if (indegreeInner[i] == 0)
+//                 {  
+//                     q.push(i);
+//                 }
+//             }
+//         }
+//     }
+//     //reverse the queue
+//     while (!tempStack.empty())
+//     {
+//         int temp = tempStack.top();
+//         tempStack.pop();
+//         out.push(temp);
+//     }
+//     output = out;
+// }
+
+bool CheckNodeDep(int source, int target)
+{
+    int dep = false;
+    for (auto i : storewsTupleMap[source])
+    {
+        dep = DepCheck(i.second, loadwsTupleMap[target]);
+        if (dep == true)
+        {
+            return true;
+        }
+    }
+    return dep;
+}
+
+// void DAGGenNormal()
+// {
+//     queue<int> DAGTopoOrder;
+//     int processedSize = 0;
+//     for (auto i : kernelIdMap)
+//     {
+//         processedSize++;
+//         bool inserted = false;
+//         if (DAGTopoOrder.size() == 0)
+//         {
+//             DAGTopoOrder.push(i.first);
+//             inserted = true;
+//             indegree[i.first] = 0;
+//         }
+//         else
+//         {
+//             queue<int> innerTopo = DAGTopoOrder;
+//             int temp;
+//             // set<int> checkedNodes;
+
+//             // for every node in topo queue, check the dep
+//             while (!innerTopo.empty())
+//             {
+//                 temp = innerTopo.front();
+//                 innerTopo.pop();
+//                 // bool repeat = false;
+//                 // check the depedence
+
+//                 // if checked node have edge with temp, then break
+//                 // for (auto checked :checkedNodes)
+//                 // {
+//                 //     pair<int, int> edge = {temp, checked};
+//                 //     if (NormalDAG.find(edge) != NormalDAG.end())
+//                 //     {
+                        
+//                 //         repeat = true;
+//                 //         break;
+//                 //     }
+//                 // }
+//                 // if(repeat && inserted)
+//                 // {
+//                 //     // checkedNodes.clear();
+//                 //     continue;
+//                 // }
+//                 // checkedNodes.insert(temp);
+//                 if (CheckNodeDep(temp, i.first))
+//                 {
+
+//                     // insert to the pair result
+//                     pair<int, int> edge = {temp, i.first};
+//                     NormalDAG.insert(edge);
+
+//                     // update the indegree
+//                     indegree[i.first] = indegree[temp] + 1;
+
+//                     // update the topo vector
+//                     topo(DAGTopoOrder, processedSize);
+//                     inserted = true;
+                    
+//                 }
+//             }
+//             // checkedNodes.clear();
+//         }
+//         if (!inserted)
+//         {
+//             indegree[i.first] = 0;
+//             topo(DAGTopoOrder, processedSize);
+//         }
+//     }
+// }
+
+
+set<pair<int, int>> DAGEdge;
+
+map <int,set<int>> DAGPrevNodeMap;
+set <int> LiveNodeSet;
+
+
+// node position for networks graph 
+map <int,int> NodePosition;
+
+int RecursiveCheckPrevNode(int liveNode, int newNode)
+{
+    int checkNode = liveNode;
+
+    if (CheckNodeDep(liveNode,newNode))
+    {
+
+        // find an edge
+        
+        // update DAGEdge
+        pair<int, int> edge = {liveNode, newNode};
+        DAGEdge.insert(edge);
+        if(NodePosition[newNode] < NodePosition[liveNode]+1)
+        {
+            NodePosition[newNode] = NodePosition[liveNode]+1;
+        }
+        
+        return 1;
+    }
+    else // continue the recursion
+    {
+        if (DAGPrevNodeMap[checkNode].size()>0)
+        {
+            for (auto prevNode : DAGPrevNodeMap[checkNode])
+            {
+                int res = RecursiveCheckPrevNode(prevNode,newNode);
+                if (res != 0)
+                {
+                    return 2;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+void DAGGenNormal()
+{
+    bool inserted = false;
+    set<int> tempNodeSet = LiveNodeSet;
+    for (auto i : kernelIdMap)
+    {
+        // check the dep with live node, and recursive check all the prev node of live node
+        for (auto node : LiveNodeSet)
+        {
+            // check dep node and i.first
+            if (RecursiveCheckPrevNode(node, i.first) == 1)
+            {
+                inserted = true;
+                tempNodeSet.erase(node);
+                tempNodeSet.insert(i.first);
+                // update DAGPrevNodeMap
+                DAGPrevNodeMap[i.first].insert(node);
+            }
+            else if (RecursiveCheckPrevNode(node, i.first) == 2)
+            {
+                inserted = true;
+                tempNodeSet.insert(i.first);
+            }         
         }
 
+        LiveNodeSet = tempNodeSet;
+
+        if(!inserted)
+        {
+            // update live node set
+            LiveNodeSet.insert(i.first);
+            NodePosition[i.first] = 0;
+        }
+        inserted = false;
     }
-
-
 }
+
+
 
 int main(int argc, char **argv)
 {
@@ -1140,6 +1357,7 @@ int main(int argc, char **argv)
     // jOut["aggreatedSize"] = aggreatedSize;
 
     DAGGenerationCEDR();
+    DAGGenNormal();
 
     for (auto sti : storewsTupleMap)
     {
@@ -1170,6 +1388,9 @@ int main(int argc, char **argv)
         }
     }
     jOut["barrierRemoval"] = barrierRemoval;
+    jOut["DAGEdge"] = DAGEdge;
+    jOut["NodePosition"] = NodePosition;
+  
 
     // for (auto d :dependency)
     // {

@@ -1,12 +1,19 @@
 #include "AtlasUtil/Traces.h"
+#include "AtlasUtil/Annotate.h"
 #include <algorithm>
 #include <fstream>
-#include <llvm/Support/CommandLine.h>
+
 #include <map>
 #include <nlohmann/json.hpp>
 #include <set>
 #include <string>
-#include <iostream>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/IRReader/IRReader.h>
+#include <llvm/Support/CommandLine.h>
+#include <llvm/Support/SourceMgr.h>
+#include <llvm/Analysis/DependenceAnalysis.h>
+#include "llvm/ADT/SmallVector.h"
+
 
 using namespace llvm;
 using namespace std;
@@ -14,144 +21,188 @@ using namespace std;
 cl::opt<std::string> InputFilename("i", cl::desc("Specify input trace"), cl::value_desc("trace filename"), cl::Required);
 cl::opt<std::string> OutputFilename("o", cl::desc("Specify output json"), cl::value_desc("output filename"), cl::Required);
 llvm::cl::opt<bool> noBar("nb", llvm::cl::desc("No progress bar"), llvm::cl::value_desc("No progress bar"));
-
-namespace myns {
-    struct labelGroup_s {
-        string kernelLabel;
-        set<int64_t> blocks;
-        uint64_t instanceNum;
-        uint64_t globalUID;
-    };
-    typedef struct labelGroup_s labelGroup;
-    void to_json(nlohmann::json &j, const labelGroup &l) {
-        j = nlohmann::json{{"kernelLabel", l.kernelLabel}, {"blocks", l.blocks}, {"instanceNum", l.instanceNum}, {"globalUID", l.globalUID}};
-    }
-}
-
-static int64_t GLOBAL_UID = 0;
+llvm::cl::opt<string> bitcodeFile("b", llvm::cl::desc("Specify bitcode name"), llvm::cl::value_desc("bitcode filename"), llvm::cl::Required);
 
 map<int64_t, set<string>> labels;
-//map<string, vector<int64_t>> labelToBBs;
-//vector<pair<string, vector<int64_t>>> labelsAndBBVecs;
-set<string> currentLabels;
-bool inKernel = false;
-vector<myns::labelGroup> labelsAndBBVecs;
-map<string, uint64_t> kernelInstanceCounter;
+string currentLabel = "-1";
+map<string,set<int64_t>> labelsToblock;
+int64_t currentblock;
 
-vector<int64_t> blockStack;
+//== for DAG node map
+set <int64_t> legalBBs;
+typedef struct nodeInfo
+{
+    string label;
+    set <int64_t> bbs;
+} nodeInfo;
 
-bool structEq(myns::labelGroup &gp1, myns::labelGroup &gp2) {
-    if (gp1.kernelLabel != gp2.kernelLabel) {
+
+
+map<string, int64_t> kernellabelID;
+
+
+map<int64_t,nodeInfo> nodeKiidMap;
+int64_t kernelIdCounter = 0;
+int64_t kernelInstanceIdCounter = 0;
+set <int64_t> kernelInstanceBBs;
+
+
+// check if the previous node is a legal non kernel
+// case 1 back to back labeled kernels
+// case 2 no load and store in the interval? 
+bool CheckPrevKernelNode()
+{
+    // no blocks
+    if (kernelInstanceBBs.size() ==0)
+    {
         return false;
     }
-    if (gp1.blocks.size() != gp2.blocks.size()) {
-        return false;
+    // to do add no load/store things
+
+    for(auto i :kernelInstanceBBs)
+    {
+        if (legalBBs.find(i)!= legalBBs.end())
+        {
+            return true;
+        }
     }
-    if (gp1.blocks != gp2.blocks) {
-        return false;
-    }
-    return true;
+    return false;
 }
 
+// assume no nested kernels
 void Process(string &key, string &value)
 {
-    if (key == "BBEnter") {
-        blockStack.push_back(stol(value, nullptr, 0));
-    }
-    if (key == "BBExit")
-    {
-        int64_t block = stol(value, nullptr, 0);
-        labels[block].insert(currentLabels.begin(), currentLabels.end());
-        blockStack.pop_back();
+    //kernel enter concludes the previous node, kernel or non-kernel
+    if (key == "KernelEnter")
+    {   
+        if(CheckPrevKernelNode())
+        {
+            nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
+            nodeKiidMap[kernelInstanceIdCounter] = newNode;
 
-        if (!currentLabels.empty()) {
-            labelsAndBBVecs.back().blocks.insert(block);
+            kernelInstanceIdCounter++;   
+            currentLabel = value;
+            kernelInstanceBBs.clear();
         }
-    }
-    else if (key == "KernelEnter")
-    {
-        currentLabels.insert(value);
-        if (kernelInstanceCounter.find(value) == kernelInstanceCounter.end()) {
-            kernelInstanceCounter[value] = 1;
-        } else {
-            kernelInstanceCounter[value]++;
+        else
+        {
+            currentLabel = value;
         }
-
-        labelsAndBBVecs.emplace_back();
-        labelsAndBBVecs.back().kernelLabel = value;
-        labelsAndBBVecs.back().blocks = {};
-        labelsAndBBVecs.back().instanceNum = kernelInstanceCounter[value];
-        labelsAndBBVecs.back().globalUID = GLOBAL_UID++;
+        
+        
     }
+    //kernel exit concludes the previous kernel node
     else if (key == "KernelExit")
     {
-        // Note: we need to capture the current basic block as part of the kernel potentially as well.
-        // The top element of the basic block stack should correspond to the block that this kernel exit resides in (?)
-        labelsAndBBVecs.back().blocks.insert(blockStack.back());
-        currentLabels.erase(value);
-        for (auto idx = 0; idx < labelsAndBBVecs.size()-1; idx++) {
-            if (structEq(labelsAndBBVecs.at(idx), labelsAndBBVecs.back())) {
-                //cout << "I found a duplicate struct and I'm dropping it" << endl;
-                labelsAndBBVecs.pop_back();
-                kernelInstanceCounter[value]--;
-                GLOBAL_UID--;
+    
+        labelsToblock[currentLabel].insert(currentblock);
+
+        // extra illegal bbs outside the kernel
+        for (auto i :kernelInstanceBBs)
+        {
+            labelsToblock[currentLabel].insert(i);
+        }
+
+        // adding nodes for kernels
+        nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
+        nodeKiidMap[kernelInstanceIdCounter] = newNode;
+        currentLabel = "-1";
+        kernelInstanceBBs.clear();
+        kernelInstanceIdCounter++;
+    }
+
+    else if (key == "BBExit")
+    {
+        int64_t block = stol(value, nullptr, 0);
+        if (currentLabel != "-1" && !currentLabel.empty())
+        {
+            labelsToblock[currentLabel].insert(block);
+        }
+    }
+    else if (key == "BBEnter")
+    {     
+       currentblock = stol(value, nullptr, 0);
+       kernelInstanceBBs.insert(currentblock);
+    }
+}
+
+void GetLegalBBs()
+{
+    LLVMContext context;
+    SMDiagnostic smerror;
+    unique_ptr<Module> sourceBitcode;
+    sourceBitcode = parseIRFile(bitcodeFile, smerror, context);
+    Module *M = sourceBitcode.get();
+    Annotate(M);
+    for (auto &mi : *M)
+    {
+        for (auto fi = mi.begin(); fi != mi.end(); fi++)
+        {
+            auto *bb = cast<BasicBlock>(fi);
+            auto dl = bb->getModule()->getDataLayout();
+            int64_t id = GetBlockID(bb);
+            int64_t instIndex = 0;
+            for (auto bi = fi->begin(); bi != fi->end(); bi++)
+            {
+                if (auto *inst = dyn_cast<LoadInst>(bi))
+                {
+                    legalBBs.insert(id);
+                    break;
+                }
+                else if (auto *inst = dyn_cast<StoreInst>(bi))
+                {
+                    legalBBs.insert(id);
+                    break;
+                }
+                // else if (isa<CallInst>(&(*bi)) || isa<InvokeInst>(&(*bi)))
+                // {
+                //     legalBBs.insert(id);
+                //     break;
+                // }
+                else if (auto *inst = dyn_cast<AllocaInst>(bi))
+                {
+                    legalBBs.insert(id);
+                    break;
+                }
             }
         }
     }
-}
 
+}
 int main(int argc, char **argv)
 {
     cl::ParseCommandLineOptions(argc, argv);
+
+    GetLegalBBs();
+
     ProcessTrace(InputFilename, Process, "Generating JR", noBar);
+    if(CheckPrevKernelNode())
+    {
+        nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
+        nodeKiidMap[kernelInstanceIdCounter] = newNode;
+    }
+
     std::ofstream file;
     nlohmann::json jOut;
-    nlohmann::json jOut2;
-    jOut2["kernels"] = nlohmann::json::array();
-    for (const auto &pair : labels)
+ 
+    int count = 0;
+    for (auto i : labelsToblock)
     {
-        string label = std::to_string(pair.first);
-        jOut[label] = pair.second;
+        jOut["Kernels"][to_string(count)]["Blocks"] = i.second;
+        jOut["Kernels"][to_string(count)]["Label"] = i.first;
+        count++;
     }
-    // Fixup labelsAndBBVecs by looking for missing intermediate blocks that were never entered and thus skipped from tracing
-    for (auto &struc : labelsAndBBVecs) {
-        auto &blks = struc.blocks;
-        if (blks.empty()) {
-            continue;
-        }
-        const auto minBlk = *struc.blocks.begin();
-        const auto maxBlk = *struc.blocks.rbegin();
-        for (auto blkNum = minBlk; blkNum < maxBlk; blkNum++) {
-            // If we have blkNum and blkNum + 2 but not blkNum + 1, add it
-            if (blks.find(blkNum) != blks.end() && blks.find(blkNum+2) != blks.end() && blks.find(blkNum+1) == blks.end()) {
-                cout << "Inserting a block that was missing between " << blkNum << " and " << blkNum + 2 << endl;
-                blks.insert(blkNum+1);
-            }
-        }
+
+    for (auto i : nodeKiidMap)
+    {
+        jOut["Control"][to_string(i.first)]["Blocks"] = i.second.bbs;
+        jOut["Control"][to_string(i.first)]["Label"] = i.second.label;
     }
-    for (const auto &struc : labelsAndBBVecs) {
-        jOut2["kernels"].push_back(nlohmann::json(struc));
-    }
-//    for (const auto &pair : labelToBBs) {
-//        cout << "Key: " << pair.first << endl;
-//        cout << "BBs: {";
-//        for (const auto &bb : pair.second) {
-//            cout << bb << ", ";
-//        }
-//        cout << "}" << endl;
-//    }
-//    for (const auto &elem : labelsAndBBVecs) {
-//        cout << "Kernel: " << elem.kernelLabel << endl;
-//        cout << "Instance num: " << elem.instanceNum << endl;
-//        cout << "Blocks: {";
-//        for (auto &blk : elem.blocks) {
-//            cout << blk << ", ";
-//        }
-//        cout << "}" << endl;
-//        cout << endl;
-//    };
+
+    // jOut["legalBBs"] = legalBBs;
+  
+
     file.open(OutputFilename);
-    //file << jOut.dump(4);
-    file << jOut2.dump(4);
+    file << std::setw(4) << jOut << std::endl;
     file.close();
 }
