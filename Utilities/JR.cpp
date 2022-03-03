@@ -69,27 +69,33 @@ bool CheckPrevKernelNode()
     return false;
 }
 
+// for usage to split the non-kernel when a conditional branch is seen
+bool inKernel = false;
 // assume no nested kernels
 void Process(string &key, string &value)
 {
     //kernel enter concludes the previous node, kernel or non-kernel
     if (key == "KernelEnter")
-    {   
+    {
+        inKernel = true;
+
+        // if it is neccessary to merge the bb before kernel into the kernel   
         if(CheckPrevKernelNode())
         {
+            // kernel enter bb need to be the start bb of current node
+            kernelInstanceBBs.erase(currentblock);
             nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
             nodeKiidMap[kernelInstanceIdCounter] = newNode;
 
             kernelInstanceIdCounter++;   
             currentLabel = value;
             kernelInstanceBBs.clear();
+            kernelInstanceBBs.insert(currentblock);
         }
         else
         {
             currentLabel = value;
-        }
-        
-        
+        }    
     }
     //kernel exit concludes the previous kernel node
     else if (key == "KernelExit")
@@ -109,6 +115,7 @@ void Process(string &key, string &value)
         currentLabel = "-1";
         kernelInstanceBBs.clear();
         kernelInstanceIdCounter++;
+        inKernel = false;
     }
 
     else if (key == "BBExit")
@@ -124,8 +131,24 @@ void Process(string &key, string &value)
        currentblock = stol(value, nullptr, 0);
        kernelInstanceBBs.insert(currentblock);
     }
+    else if (key == "NonKernelSplit")
+    {
+        // printf("get!!!!!!!!!!!\n");
+        if(inKernel == false)
+        {
+            kernelInstanceBBs.erase(currentblock);
+            nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
+            nodeKiidMap[kernelInstanceIdCounter] = newNode;
+            kernelInstanceIdCounter++;   
+            kernelInstanceBBs.clear();
+            kernelInstanceBBs.insert(currentblock);
+        }
+    }
 }
 
+
+// legal bbs mean that if these bbs in nonkernel, then they can be downward merged into kernels
+// to reduce the complexity
 void GetLegalBBs()
 {
     LLVMContext context;
@@ -176,6 +199,8 @@ int main(int argc, char **argv)
     GetLegalBBs();
 
     ProcessTrace(InputFilename, Process, "Generating JR", noBar);
+
+    // this is to fix the case that the last node is not counted
     if(CheckPrevKernelNode())
     {
         nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
