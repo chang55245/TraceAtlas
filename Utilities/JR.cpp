@@ -83,14 +83,14 @@ void Process(string &key, string &value)
         if(CheckPrevKernelNode())
         {
             // kernel enter bb need to be the start bb of current node
-            kernelInstanceBBs.erase(currentblock);
+            // kernelInstanceBBs.erase(currentblock);
             nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
             nodeKiidMap[kernelInstanceIdCounter] = newNode;
 
             kernelInstanceIdCounter++;   
             currentLabel = value;
             kernelInstanceBBs.clear();
-            kernelInstanceBBs.insert(currentblock);
+            // kernelInstanceBBs.insert(currentblock);
         }
         else
         {
@@ -133,7 +133,7 @@ void Process(string &key, string &value)
     }
     else if (key == "NonKernelSplit")
     {
-        // printf("get!!!!!!!!!!!\n");
+        printf("get!!!!!!!!!!!\n");
         if(inKernel == false)
         {
             kernelInstanceBBs.erase(currentblock);
