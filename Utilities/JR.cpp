@@ -48,6 +48,7 @@ set <int64_t> kernelInstanceBBs;
 
 
 // check if the previous node is a legal non kernel
+// legal non kernel means it has to have memory activities
 // case 1 back to back labeled kernels
 // case 2 no load and store in the interval? 
 bool CheckPrevKernelNode()
@@ -61,6 +62,7 @@ bool CheckPrevKernelNode()
 
     for(auto i :kernelInstanceBBs)
     {
+        //legal bb, there is loads and stores
         if (legalBBs.find(i)!= legalBBs.end())
         {
             return true;
@@ -79,9 +81,11 @@ void Process(string &key, string &value)
     {
         inKernel = true;
 
-        // if it is neccessary to merge the bb before kernel into the kernel   
+        // if it is neccessary to merge the bb before kernel into the former kernel
+        // return true if former bb has load/store   
         if(CheckPrevKernelNode())
         {
+            
             // kernel enter bb need to be the start bb of current node
             // kernelInstanceBBs.erase(currentblock);
             nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
@@ -92,8 +96,12 @@ void Process(string &key, string &value)
             kernelInstanceBBs.clear();
             // kernelInstanceBBs.insert(currentblock);
         }
-        else
+        else //empty bb with only bb-enter/exit 
         {
+            for(auto i:kernelInstanceBBs)
+            {
+                nodeKiidMap[kernelInstanceIdCounter-1].bbs.insert(i);
+            }
             currentLabel = value;
         }    
     }
@@ -134,7 +142,7 @@ void Process(string &key, string &value)
     else if (key == "NonKernelSplit")
     {
         printf("get!!!!!!!!!!!\n");
-        if(inKernel == false)
+        if(inKernel == false&&CheckPrevKernelNode())
         {
             kernelInstanceBBs.erase(currentblock);
             nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};

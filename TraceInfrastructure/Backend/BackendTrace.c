@@ -171,6 +171,15 @@ void StoreDump(void *address)
     char fin[128];
     sprintf(fin, "StoreAddress:%#lX\n", (uint64_t)address);
     WriteStream(fin);
+    // printf("StoreAddress:%#lX\n", (uint64_t)address);
+}
+
+void MemCpyDump(void *dest,void *src,void *len)
+{
+    char fin[128];
+    sprintf(fin, "MemCpy:%#lX,%#lX,%lu\n", (uint64_t)src,(uint64_t)dest,(uint64_t)len);
+    WriteStream(fin);
+    // printf("MemCpy:%#lX,%#lX,%lu\n", (uint64_t)src,(uint64_t)dest,(uint64_t)len);
 }
 
 void DumpStoreValue(void *MemValue, int size)
@@ -223,5 +232,12 @@ void KernelExit(char *label)
     strcpy(fin, "KernelExit:");
     strcat(fin, label);
     strcat(fin, "\n");
+    WriteStream(fin);
+}
+
+void NonKernelSplit()
+{
+    char fin[128];
+    strcpy(fin, "NonKernelSplit:get\n");
     WriteStream(fin);
 }

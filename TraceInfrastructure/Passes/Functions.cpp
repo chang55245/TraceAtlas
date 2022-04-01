@@ -13,4 +13,9 @@ namespace DashTracer::Passes
     Function *DumpLoadValue;
     Function *fullFunc;
     Function *fullAddrFunc;
+    Function *MemCpyDump;
+    Function *StartKernelStage;
+    Function *EndKernelStage;
+    Function *MiddleKernelStage;
+
 } // namespace DashTracer::Passes

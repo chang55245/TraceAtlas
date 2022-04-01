@@ -2367,7 +2367,7 @@ void SingThreadSchedule(set<int> schedulableNonKernel,set<int> schedulableKernel
         }
         if(lastSchedKernelID != -1)
         {
-            
+            middleKernelIndex.erase(StartBBinNode[lastSchedKernelID]);
             EndKernelIndexToCounter[StartBBinNode[lastSchedKernelID]]= {stage,kernelSchedCounter};
             stage++;
         }
