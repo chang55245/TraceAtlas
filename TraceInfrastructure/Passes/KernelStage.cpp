@@ -37,7 +37,30 @@ namespace DashTracer::Passes
             auto dl = block->getModule()->getDataLayout();
             int64_t blockId = GetBlockID(block);
 
-            if (startKernelIndexTrans.find(blockId) != startKernelIndexTrans.end())
+            if  (startKernelIndexTrans.find(blockId) != startKernelIndexTrans.end() && EndKernelIndexToCounterTrans.find(blockId) != EndKernelIndexToCounterTrans.end())
+            {
+                std::vector<Value *> args;
+                Value *StageValue = ConstantInt::get(Type::getInt64Ty(BB->getContext()), (uint64_t)EndKernelIndexToCounterTrans[blockId].first);
+                args.push_back(StageValue);
+                Value *numValue = ConstantInt::get(Type::getInt64Ty(BB->getContext()), (uint64_t)EndKernelIndexToCounterTrans[blockId].second);
+                args.push_back(numValue);
+
+                for (BasicBlock::iterator BI = block->begin(), BE = block->end(); BI != BE; ++BI)
+                {
+                    if (auto *CI = dyn_cast<CallInst>(BI))
+                    {
+                        Function *calledFunc = CI->getCalledFunction();
+                        if (calledFunc->getName() == "DASH_FFT")
+                        {
+                            IRBuilder<> Builder(CI);
+                            Builder.CreateCall(SingleKernelStage, args);
+                            break;
+                        }
+                    }
+                }                
+                errs() << "bb:" << *block << "\n";
+            }
+            else if (startKernelIndexTrans.find(blockId) != startKernelIndexTrans.end())
             {
 
                 std::vector<Value *> args;
@@ -58,9 +81,7 @@ namespace DashTracer::Passes
                 }
                 errs() << "bb:" << *block << "\n";
                 // call kernelstagestart
-            }
-
-            if (EndKernelIndexToCounterTrans.find(blockId) != EndKernelIndexToCounterTrans.end())
+            }else if (EndKernelIndexToCounterTrans.find(blockId) != EndKernelIndexToCounterTrans.end())
             {
                 // call kernelstagestart
                 std::vector<Value *> args;
@@ -128,6 +149,7 @@ namespace DashTracer::Passes
         StartKernelStage = cast<Function>(M.getOrInsertFunction("StartKernelStage", Type::getVoidTy(M.getContext()), Type::getInt64Ty(M.getContext())).getCallee());
 
         EndKernelStage = cast<Function>(M.getOrInsertFunction("EndKernelStage", Type::getVoidTy(M.getContext()), Type::getInt64Ty(M.getContext()),Type::getInt64Ty(M.getContext())).getCallee());
+        SingleKernelStage = cast<Function>(M.getOrInsertFunction("SingleKernelStage", Type::getVoidTy(M.getContext()), Type::getInt64Ty(M.getContext()),Type::getInt64Ty(M.getContext())).getCallee());
         MiddleKernelStage = cast<Function>(M.getOrInsertFunction("MiddleKernelStage", Type::getVoidTy(M.getContext()), Type::getInt64Ty(M.getContext())).getCallee());
 
         return false;

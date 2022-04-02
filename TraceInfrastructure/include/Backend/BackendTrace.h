@@ -55,6 +55,8 @@ void BB_ID_Dump(uint64_t block, bool enter);
 
 void StartKernelStage(uint64_t stage){ };
 void EndKernelStage(uint64_t stage,uint64_t number){ };
+
+void SingleKernelStage(uint64_t stage,uint64_t number){ };
 void MiddleKernelStage(uint64_t stage){};
 
 #ifdef __cplusplus

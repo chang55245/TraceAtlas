@@ -22,6 +22,7 @@ namespace DashTracer
         extern Function *StartKernelStage;
         extern Function *EndKernelStage;
         extern Function *MiddleKernelStage;
+        extern Function *SingleKernelStage;
     } // namespace Passes
 } // namespace DashTracer
 

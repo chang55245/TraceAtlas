@@ -17,5 +17,6 @@ namespace DashTracer::Passes
     Function *StartKernelStage;
     Function *EndKernelStage;
     Function *MiddleKernelStage;
+    Function *SingleKernelStage;
 
 } // namespace DashTracer::Passes
