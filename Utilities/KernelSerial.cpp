@@ -2563,8 +2563,8 @@ int main(int argc, char **argv)
     // jOut["aggreatedSize"] = aggreatedSize;
 
     DAGGenerationCEDR();
-    DAGGenNormal();
-    // DAGGenColoring();
+    // DAGGenNormal();
+    DAGGenColoring();
     CheckWAW();
 
     // GenTestSchedule();
