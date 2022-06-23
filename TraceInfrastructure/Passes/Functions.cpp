@@ -18,5 +18,7 @@ namespace DashTracer::Passes
     Function *EndKernelStage;
     Function *MiddleKernelStage;
     Function *SingleKernelStage;
-
+    Function *LoopTrace;
+    Function *LoopTraceInitialization;
+    Function *LoopTraceDestroy;
 } // namespace DashTracer::Passes

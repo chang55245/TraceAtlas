@@ -6,3 +6,4 @@ testing/
 .vs/
 CMakeSettings.json
 out/
+.cache/

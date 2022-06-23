@@ -23,6 +23,10 @@ namespace DashTracer
         extern Function *EndKernelStage;
         extern Function *MiddleKernelStage;
         extern Function *SingleKernelStage;
+        extern Function *LoopTrace;
+        extern Function *LoopTraceInitialization;
+        extern Function *LoopTraceDestroy;
+     
     } // namespace Passes
 } // namespace DashTracer
 

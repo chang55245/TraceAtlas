@@ -5,6 +5,7 @@ cl::opt<std::string> KernelFilename("k", cl::desc("Specify filename for kernel")
 
 cl::opt<std::string> DAGBBIOFile("dg", cl::desc("Specify filename for dag"), cl::value_desc("dag filename"));
 
+cl::opt<std::string> LoopTraceFile("lt", cl::desc("LoopTraceFile"), cl::value_desc("LoopTraceFile filename"));
 cl::opt<bool> DumpLoads("DL", cl::desc("Dump load instruction information"), cl::desc("Dump load instruction information"), cl::init(true));
 cl::opt<bool> DumpStores("DS", cl::desc("Dump store instruction information"), cl::desc("Dump store instruction information"), cl::init(true));
 
