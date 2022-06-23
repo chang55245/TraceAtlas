@@ -195,6 +195,24 @@ void GetLegalBBs()
                     legalBBs.insert(id);
                     break;
                 }
+                // malloc
+                else if (auto *inst = dyn_cast<AllocaInst>(bi))
+                {
+                    legalBBs.insert(id);
+                    break;
+                }
+
+                if (auto *CI = dyn_cast<CallInst>(bi)) {
+                    Function *fun = CI->getCalledFunction();
+                    /* The called function can be null in the event of an indirect call https://stackoverflow.com/a/11687221 */
+                    if (fun) {
+                        if (CI->getCalledFunction()->getName() == "malloc") {
+                            legalBBs.insert(id);
+                            break;
+                        }
+                    }
+                }
+
             }
         }
     }

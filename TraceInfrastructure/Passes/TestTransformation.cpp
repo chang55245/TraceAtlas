@@ -42,7 +42,7 @@ namespace DashTracer::Passes
                     auto *CI = dyn_cast<Instruction>(BI);
                     if (auto *branch = dyn_cast<BranchInst>(CI))
                     {
-                        errs()<<*branch<<"\n";
+                        // errs()<<*branch<<"\n";
                         int64_t num = branch->getNumSuccessors();
                         for (unsigned int i = 0;i< num;i++)
                         {
@@ -52,9 +52,10 @@ namespace DashTracer::Passes
                                 // change successor into the second
                                 auto newBB = BBidToPtr[BBMapingTransform[blockId].second];
                                 branch->setSuccessor(i,newBB);
+                                errs()<<"done from bb:"<<blockId<< " to bb:"<<BBMapingTransform[blockId].second<<"\n";
                             }
                         }
-                        errs()<<*branch<<"\n";
+                        
                     }
                 }
             }
