@@ -2322,76 +2322,112 @@ map<int,int> middleKernelIndex;
 // end kernel stage basic block, number of kernels counter
 map<int,pair<int,int>> EndKernelIndexToCounter;
 
-
-void SingThreadSchedule(set<int> schedulableNonKernel,set<int> schedulableKernel,map<int,set<int>> NextNodeMap,map<int,set<int>> PrevNodeMap,map<int,int> KernelPosition)
+void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKernel, map<int, set<int>> NextNodeMap, map<int, set<int>> PrevNodeMap, map<int, int> KernelPosition)
 {
     int stage = 1;
-    while(schedulableKernel.size()>0 ||schedulableNonKernel.size()>0)
+    while (schedulableKernel.size() > 0 || schedulableNonKernel.size() > 0)
     {
         // schedule the non-kernels
-        for (auto nk:schedulableNonKernel)
+
+        while (!schedulableNonKernel.empty())
         {
-            ScheduleForSingThread.push_back(nk);
-
-            for (auto it: NextNodeMap[nk])
+            for (auto nk : schedulableNonKernel)
             {
-                PrevNodeMap[it].erase(nk); 
+                ScheduleForSingThread.push_back(nk);
+
+                for (auto it : NextNodeMap[nk])
+                {
+                    PrevNodeMap[it].erase(nk);
+                }
+                PrevNodeMap.erase(nk);
             }
-            PrevNodeMap.erase(nk);
+
+            schedulableNonKernel.clear();
+
+            for (auto i : kernelIdMap)
+            {
+                if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].size() == 0)
+                {
+                    if (i.second == "-1")
+                    {
+                        schedulableNonKernel.insert(i.first);
+                    }
+                }
+            }
         }
-        //schedule kernels
-        int kernelSchedCounter = 0;
-        int lastSchedKernelID = -1;
-
-        for (auto k:schedulableKernel)
-        {
-            kernelSchedCounter++;
-            // 
-            if (kernelSchedCounter ==1)
-            {
-                // startKernelIndex.insert(KernelPosition[k]);
-                startKernelIndex[StartBBinNode[k]]=stage;
-            }
-            else
-            {
-                middleKernelIndex[StartBBinNode[k]]=stage;
-            }
-
-            ScheduleForSingThread.push_back(k);
-            for (auto it: NextNodeMap[k])
-            {
-                PrevNodeMap[it].erase(k); 
-            }
-            PrevNodeMap.erase(k);
-            lastSchedKernelID = k;
-        }
-        if(lastSchedKernelID != -1)
-        {
-            middleKernelIndex.erase(StartBBinNode[lastSchedKernelID]);
-            EndKernelIndexToCounter[StartBBinNode[lastSchedKernelID]]= {stage,kernelSchedCounter};
-            stage++;
-        }
-
-        //update the schedule node set
-        schedulableNonKernel.clear();
-        schedulableKernel.clear();
 
         for (auto i : kernelIdMap)
         {
-            if(PrevNodeMap.find(i.first) !=PrevNodeMap.end() && PrevNodeMap[i.first].size()==0)
+            if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].size() == 0)
             {
-                if(i.second=="-1")
-                {
-                    schedulableNonKernel.insert(i.first);
-                }
-                else
+                if (i.second != "-1")
                 {
                     schedulableKernel.insert(i.first);
                 }
             }
-        } 
+        }
+
+        while (!schedulableKernel.empty())
+        {
+            // schedule kernels
+            int kernelSchedCounter = 0;
+            int lastSchedKernelID = -1;
+
+            for (auto k : schedulableKernel)
+            {
+                kernelSchedCounter++;
+                //
+                if (kernelSchedCounter == 1)
+                {
+                    // startKernelIndex.insert(KernelPosition[k]);
+                    startKernelIndex[StartBBinNode[k]] = stage;
+                }
+                else
+                {
+                    middleKernelIndex[StartBBinNode[k]] = stage;
+                }
+
+                ScheduleForSingThread.push_back(k);
+                for (auto it : NextNodeMap[k])
+                {
+                    PrevNodeMap[it].erase(k);
+                }
+                PrevNodeMap.erase(k);
+                lastSchedKernelID = k;
+            }
+            if (lastSchedKernelID != -1)
+            {
+                middleKernelIndex.erase(StartBBinNode[lastSchedKernelID]);
+                EndKernelIndexToCounter[StartBBinNode[lastSchedKernelID]] = {stage, kernelSchedCounter};
+                stage++;
+            }
+
+            schedulableKernel.clear();
+
+            for (auto i : kernelIdMap)
+            {
+                if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].size() == 0)
+                {
+                    if (i.second != "-1")
+                    {
+                        schedulableKernel.insert(i.first);
+                    }
+                }
+            }
+        }
+        for (auto i : kernelIdMap)
+        {
+            if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].size() == 0)
+            {
+                if (i.second == "-1")
+                {
+                    schedulableNonKernel.insert(i.first);
+                }
+            }
+        }
     }
 }
+
 void DAGScheduleSingleThread()
 {
 

@@ -6,6 +6,7 @@
 #include "Passes/TraceMemIO.h"
 #include "llvm/IR/DataLayout.h"
 #include <fstream>
+#include <llvm/IR/Verifier.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instruction.h>
@@ -53,6 +54,8 @@ namespace DashTracer::Passes
                                 auto newBB = BBidToPtr[BBMapingTransform[blockId].second];
                                 branch->setSuccessor(i,newBB);
                                 errs()<<"done from bb:"<<blockId<< " to bb:"<<BBMapingTransform[blockId].second<<"\n";
+                                bool verifyRes = verifyFunction(F);
+                                errs() << "verfiy:" <<verifyRes<<"\n";
                             }
                         }
                         
