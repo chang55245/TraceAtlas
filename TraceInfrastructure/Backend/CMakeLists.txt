@@ -1,4 +1,4 @@
-set(SOURCES BackendTrace.c LoopTrace.cpp)
+set(SOURCES BackendTrace.c LoopTrace.cpp BackendKernelLocation.cpp)
 if(NOT WIN32)
     list(APPEND SOURCES BackendPapi.c)
 endif()
