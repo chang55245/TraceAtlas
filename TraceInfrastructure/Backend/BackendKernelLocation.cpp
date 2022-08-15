@@ -18,9 +18,14 @@ extern "C"
 
     // callID, inline function nameID
     map<uint64_t,uint64_t> inlineMap;
-    void CallTrace(uint64_t callID)
+    void CallStartTrace(uint64_t callID)
     {
         currentCall = callID;
+    }
+
+    void CallEndTrace(uint64_t callID)
+    {
+        currentCall = 0;
     }
     void CallTraceInitialization()
     {

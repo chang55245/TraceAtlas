@@ -7,7 +7,8 @@
 extern "C"
 {
 #endif
-    void CallTrace(uint64_t callID);
+    void CallStartTrace(uint64_t callID);
+    void CallEndTrace(uint64_t callID);
     void CallTraceInitialization();
     void CallTraceDestroy();
 

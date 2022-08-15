@@ -120,7 +120,12 @@ namespace DashTracer::Passes
                         Value *StageValue = ConstantInt::get(Type::getInt64Ty(dyn_cast<BasicBlock>(BB)->getContext()), (uint64_t)callID);
                         args.push_back(StageValue);
                         IRBuilder<> Builder(CI);
-                        Builder.CreateCall(CallTrace, args);
+                        Builder.CreateCall(CallStartTrace, args);
+
+                        //todo check if the callEnd is in the right place, after the call instruction
+                        // here next node can't be empty, since there shoule be branch at the end
+                        Builder.SetInsertPoint(CI->getNextNode());
+                        Builder.CreateCall(CallEndTrace, args);
                         checkloop = true;
                         errs()<<"found a function pointer \n";
                     }
@@ -163,9 +168,11 @@ namespace DashTracer::Passes
         LoopTraceDestroy = cast<Function>(M.getOrInsertFunction("LoopTraceDestroy", Type::getVoidTy(M.getContext())).getCallee());
 
 
-        LoopTrace = cast<Function>(M.getOrInsertFunction("CallTrace", Type::getVoidTy(M.getContext()), Type::getInt64Ty(M.getContext())).getCallee());
-        LoopTraceInitialization = cast<Function>(M.getOrInsertFunction("CallTraceInitialization", Type::getVoidTy(M.getContext())).getCallee());
-        LoopTraceDestroy = cast<Function>(M.getOrInsertFunction("CallTraceDestroy", Type::getVoidTy(M.getContext())).getCallee());
+        CallStartTrace = cast<Function>(M.getOrInsertFunction("CallStartTrace", Type::getVoidTy(M.getContext()), Type::getInt64Ty(M.getContext())).getCallee());
+        CallEndTrace = cast<Function>(M.getOrInsertFunction("CallEndTrace", Type::getVoidTy(M.getContext()), Type::getInt64Ty(M.getContext())).getCallee());
+
+        CallTraceInitialization = cast<Function>(M.getOrInsertFunction("CallTraceInitialization", Type::getVoidTy(M.getContext())).getCallee());
+        CallTraceDestroy = cast<Function>(M.getOrInsertFunction("CallTraceDestroy", Type::getVoidTy(M.getContext())).getCallee());
 
         // how llvm function call passing string in front end?
         KernelNameTrace = cast<Function>(M.getOrInsertFunction("KernelNameTrace", Type::getVoidTy(M.getContext()), Type::getInt64Ty(M.getContext())).getCallee());
