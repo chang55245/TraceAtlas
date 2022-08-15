@@ -26,6 +26,11 @@ namespace DashTracer
         extern Function *LoopTrace;
         extern Function *LoopTraceInitialization;
         extern Function *LoopTraceDestroy;
+
+        extern Function *CallTrace;
+        extern Function *CallTraceInitialization;
+        extern Function *CallTraceDestroy;
+        extern Function *KernelNameTrace;
      
     } // namespace Passes
 } // namespace DashTracer

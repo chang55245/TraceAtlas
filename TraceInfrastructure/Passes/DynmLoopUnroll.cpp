@@ -114,14 +114,14 @@ namespace DashTracer::Passes
 
 
         endloop:
-            if (unrolled == false) {
+            if (!unrolled) {
             break;
             }
         }
         return true;
     }
 
-    bool DynmLoopUnroll::doInitialization(Module &M)
+    bool DynmLoopUnroll::doInitialization(Module & /*unused*/)
     {
         nlohmann::json j;
         std::ifstream inputStream(LoopTraceFile);

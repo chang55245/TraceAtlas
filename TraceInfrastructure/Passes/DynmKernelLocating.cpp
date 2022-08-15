@@ -54,6 +54,7 @@ namespace DashTracer::Passes
                     firstInst = cast<Instruction>(firstInsertion);
                     IRBuilder<> initBuilder(firstInst);
                     initBuilder.CreateCall(LoopTraceInitialization);
+                    initBuilder.CreateCall(CallTraceInitialization);
                 }
                 else if (auto retInst = dyn_cast<ReturnInst>(BB->getTerminator()))
                 {
@@ -61,6 +62,7 @@ namespace DashTracer::Passes
                     auto *lastInst = cast<Instruction>(endInsertion);
                     IRBuilder<> lastBuilder(lastInst);
                     lastBuilder.CreateCall(LoopTraceDestroy);
+                    lastBuilder.CreateCall(CallTraceDestroy);
                 }
                 else if (auto resumeInst = dyn_cast<ResumeInst>(BB->getTerminator()))
                 {
@@ -68,6 +70,7 @@ namespace DashTracer::Passes
                     auto *lastInst = cast<Instruction>(endInsertion);
                     IRBuilder<> lastBuilder(lastInst);
                     lastBuilder.CreateCall(LoopTraceDestroy);
+                    lastBuilder.CreateCall(CallTraceDestroy);
                 }
                 else if (auto unreachableInst = dyn_cast<UnreachableInst>(BB->getTerminator()))
                 {
@@ -75,12 +78,26 @@ namespace DashTracer::Passes
                     auto *lastInst = cast<Instruction>(endInsertion);
                     IRBuilder<> lastBuilder(lastInst);
                     lastBuilder.CreateCall(LoopTraceDestroy);
+                    lastBuilder.CreateCall(CallTraceDestroy);
                 }
             }
 
             if (F.getName() == "DASH_FFT")
             {
                 // todo: need kernel trace function, KernelTrace (kernelName)
+
+                if (BB == F.begin())
+                {
+                    auto firstInsertion = BB->getFirstInsertionPt();
+                    auto *firstInst = cast<Instruction>(firstInsertion);
+                    firstInsertion = BB->getFirstInsertionPt();
+                    firstInst = cast<Instruction>(firstInsertion);
+                    IRBuilder<> initBuilder(firstInst);
+                    std::vector<Value *> args;
+                    Value *StageValue = ConstantInt::get(Type::getInt64Ty(dyn_cast<BasicBlock>(BB)->getContext()), (uint64_t)1);
+                    args.push_back(StageValue);
+                    initBuilder.CreateCall(KernelNameTrace, args);
+                }    
 
             }
 
@@ -89,13 +106,21 @@ namespace DashTracer::Passes
             {
                 if (auto *CI = dyn_cast<CallInst>(BI))
                 {
-                    // errs()<< *CI <<"\n";
                     Function *calledFunc = CI->getCalledFunction();
                     bool checkloop = false;
 
                     // check if function pointer is detected
                     if (calledFunc == nullptr) {
                         currentCallIndex++;
+
+                        //todo add a call to callTrace(callIndx)
+
+                        uint64_t callID = currentCallIndex;
+                        std::vector<Value *> args;
+                        Value *StageValue = ConstantInt::get(Type::getInt64Ty(dyn_cast<BasicBlock>(BB)->getContext()), (uint64_t)callID);
+                        args.push_back(StageValue);
+                        IRBuilder<> Builder(CI);
+                        Builder.CreateCall(CallTrace, args);
                         checkloop = true;
                         errs()<<"found a function pointer \n";
                     }
@@ -114,8 +139,9 @@ namespace DashTracer::Passes
                         if (outterLoop != nullptr)
                         {
                             currentLoopIndex++;
-                            uint64_t loopID = currentLoopIndex;
 
+
+                            uint64_t loopID = currentLoopIndex;
                             std::vector<Value *> args;
                             Value *StageValue = ConstantInt::get(Type::getInt64Ty(dyn_cast<BasicBlock>(BB)->getContext()), (uint64_t)loopID);
                             args.push_back(StageValue);
@@ -135,6 +161,14 @@ namespace DashTracer::Passes
         LoopTrace = cast<Function>(M.getOrInsertFunction("LoopTrace", Type::getVoidTy(M.getContext()), Type::getInt64Ty(M.getContext())).getCallee());
         LoopTraceInitialization = cast<Function>(M.getOrInsertFunction("LoopTraceInitialization", Type::getVoidTy(M.getContext())).getCallee());
         LoopTraceDestroy = cast<Function>(M.getOrInsertFunction("LoopTraceDestroy", Type::getVoidTy(M.getContext())).getCallee());
+
+
+        LoopTrace = cast<Function>(M.getOrInsertFunction("CallTrace", Type::getVoidTy(M.getContext()), Type::getInt64Ty(M.getContext())).getCallee());
+        LoopTraceInitialization = cast<Function>(M.getOrInsertFunction("CallTraceInitialization", Type::getVoidTy(M.getContext())).getCallee());
+        LoopTraceDestroy = cast<Function>(M.getOrInsertFunction("CallTraceDestroy", Type::getVoidTy(M.getContext())).getCallee());
+
+        // how llvm function call passing string in front end?
+        KernelNameTrace = cast<Function>(M.getOrInsertFunction("KernelNameTrace", Type::getVoidTy(M.getContext()), Type::getInt64Ty(M.getContext())).getCallee());
         return false;
     }
 

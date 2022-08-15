@@ -21,4 +21,9 @@ namespace DashTracer::Passes
     Function *LoopTrace;
     Function *LoopTraceInitialization;
     Function *LoopTraceDestroy;
+
+    Function *CallTrace;
+    Function *CallTraceInitialization;
+    Function *CallTraceDestroy;
+    Function *KernelNameTrace;
 } // namespace DashTracer::Passes

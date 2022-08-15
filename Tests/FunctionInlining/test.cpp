@@ -4,9 +4,9 @@
 // and void return type
 void DASH_FFT(int a)
 {
-    printf("DASH_FFT is called %d\n",a);
+    printf("DASH_FFT is called %d\n", a);
 }
-  
+
 int main()
 {
 
