@@ -50,7 +50,7 @@ namespace DashTracer::Passes
                     if (auto *CI = dyn_cast<CallInst>(BI))
                     {
                         Function *calledFunc = CI->getCalledFunction();
-                        if (calledFunc->getName() == "DASH_FFT")
+                        if (calledFunc->getName() == "DASH_FFT"||calledFunc->getName() == "DASH_GEMM")
                         {
                             IRBuilder<> Builder(CI);
                             Builder.CreateCall(SingleKernelStage, args);
@@ -71,7 +71,7 @@ namespace DashTracer::Passes
                     if (auto *CI = dyn_cast<CallInst>(BI))
                     {
                         Function *calledFunc = CI->getCalledFunction();
-                        if (calledFunc->getName() == "DASH_FFT")
+                        if (calledFunc->getName() == "DASH_FFT"||calledFunc->getName() == "DASH_GEMM")
                         {
                             IRBuilder<> Builder(CI);
                             Builder.CreateCall(StartKernelStage, args);
@@ -95,7 +95,7 @@ namespace DashTracer::Passes
                     if (auto *CI = dyn_cast<CallInst>(BI))
                     {
                         Function *calledFunc = CI->getCalledFunction();
-                        if (calledFunc->getName() == "DASH_FFT")
+                        if (calledFunc->getName() == "DASH_FFT"||calledFunc->getName() == "DASH_GEMM")
                         {
                             IRBuilder<> Builder(CI);
                             Builder.CreateCall(EndKernelStage, args);
@@ -118,7 +118,7 @@ namespace DashTracer::Passes
                     if (auto *CI = dyn_cast<CallInst>(BI))
                     {
                         Function *calledFunc = CI->getCalledFunction();
-                        if (calledFunc->getName() == "DASH_FFT")
+                        if (calledFunc->getName() == "DASH_FFT"||calledFunc->getName() == "DASH_GEMM")
                         {
                             IRBuilder<> Builder(CI);
                             Builder.CreateCall(MiddleKernelStage, args);

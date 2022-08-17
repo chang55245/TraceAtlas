@@ -82,7 +82,7 @@ namespace DashTracer::Passes
                 }
             }
 
-            if (F.getName() == "DASH_FFT")
+            if (F.getName() == "DASH_FFT"||F.getName() == "DASH_GEMM" )
             {
                 // todo: need kernel trace function, KernelTrace (kernelName)
 
@@ -129,7 +129,7 @@ namespace DashTracer::Passes
                         checkloop = true;
                         errs()<<"found a function pointer \n";
                     }
-                    else if (calledFunc->getName() == "DASH_FFT")
+                    else if (calledFunc->getName() == "DASH_FFT"||calledFunc->getName() == "DASH_GEMM")
                     {
                         checkloop = true;
                     }

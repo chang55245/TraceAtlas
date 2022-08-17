@@ -20,6 +20,7 @@
 #include <string>
 #include <time.h>
 #include <tuple>
+#include <utility>
 #include <vector>
 #include <zlib.h>
 
@@ -2321,11 +2322,15 @@ map<int,int> startKernelIndex;
 map<int,int> middleKernelIndex;
 // end kernel stage basic block, number of kernels counter
 map<int,pair<int,int>> EndKernelIndexToCounter;
+// node id, stage index
+map<int,int> nodeIndexStage;
+
 
 void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKernel, map<int, set<int>> NextNodeMap, map<int, set<int>> PrevNodeMap, map<int, int> KernelPosition)
 {
     int stage = 1;
-    while (schedulableKernel.size() > 0 || schedulableNonKernel.size() > 0)
+    int nodeStage = 1;
+    while (!schedulableKernel.empty() || !schedulableNonKernel.empty())
     {
         // schedule the non-kernels
 
@@ -2334,19 +2339,25 @@ void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKerne
             for (auto nk : schedulableNonKernel)
             {
                 ScheduleForSingThread.push_back(nk);
+                nodeIndexStage[nk] = nodeStage;
 
                 for (auto it : NextNodeMap[nk])
                 {
                     PrevNodeMap[it].erase(nk);
+                    //todo: test delete duplicated edges
+                    // if (!PrevNodeMap[it].empty())
+                    // {
+                    //     DAGEdge.erase(pair<int, int>{nk,it});
+                    // }
                 }
                 PrevNodeMap.erase(nk);
             }
-
+            nodeStage++;
             schedulableNonKernel.clear();
 
             for (auto i : kernelIdMap)
             {
-                if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].size() == 0)
+                if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].empty())
                 {
                     if (i.second == "-1")
                     {
@@ -2358,7 +2369,7 @@ void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKerne
 
         for (auto i : kernelIdMap)
         {
-            if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].size() == 0)
+            if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].empty())
             {
                 if (i.second != "-1")
                 {
@@ -2388,9 +2399,15 @@ void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKerne
                 }
 
                 ScheduleForSingThread.push_back(k);
+                nodeIndexStage[k] = nodeStage;
                 for (auto it : NextNodeMap[k])
                 {
                     PrevNodeMap[it].erase(k);
+                    //todo: test delete duplicated edges
+                    // if (!PrevNodeMap[it].empty())
+                    // {
+                    //     DAGEdge.erase(pair<int, int>{k,it});
+                    // }
                 }
                 PrevNodeMap.erase(k);
                 lastSchedKernelID = k;
@@ -2403,10 +2420,10 @@ void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKerne
             }
 
             schedulableKernel.clear();
-
+            nodeStage++;
             for (auto i : kernelIdMap)
             {
-                if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].size() == 0)
+                if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].empty())
                 {
                     if (i.second != "-1")
                     {
@@ -2417,7 +2434,7 @@ void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKerne
         }
         for (auto i : kernelIdMap)
         {
-            if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].size() == 0)
+            if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].empty())
             {
                 if (i.second == "-1")
                 {
@@ -2669,6 +2686,8 @@ int main(int argc, char **argv)
     jOut["startKernelIndex"] = startKernelIndex;
     jOut["EndKernelIndexToCounter"] = EndKernelIndexToCounter;
     jOut["middleKernelIndex"] = middleKernelIndex;
+    jOut["nodeIndexStage"] = nodeIndexStage;
+    
 
 
     
