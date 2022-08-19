@@ -1518,23 +1518,6 @@ void checkNodeVecDep(vector<int> nodeCheckVector)
         return;
     }
 
-    // for (auto i :nodeCheckVector)
-    // {
-    //     if (iter == 0)
-    //     {
-    //         prevNode = i;
-    //         iter++;
-    //         continue;
-    //     }
-    //     if(!DepCheckMaps(storewsTupleMap[prevNode],loadwsTupleMap[i]))
-    //     {
-    //         // barrier removal i
-    //         barrierRemoval.insert(i);
-    //     }
-    //     prevNode = i;
-    //     iter++;
-    // }
-
     for (int i = 1; i < nodeCheckVector.size(); i++)
     {
         if (!DepCheckMaps(i, nodeCheckVector))
@@ -1573,57 +1556,6 @@ void DAGGenerationCEDR()
     }
 }
 
-// set<pair<int, int>> NormalDAG;
-// map<int, int> indegree;
-// void topo(queue<int> &output, int size)
-// {
-//     stack<int> tempStack;
-//     queue<int> out;
-//     // store the temporal result
-//     queue<int> q;
-//     map<int, int> indegreeInner = indegree;
-
-//     for (int i = 0; i < size; i++)
-//     {
-//         if (indegree[i] == 0)
-//         {
-//             q.push(i);
-//         }
-//     }
-
-//     int temp;
-//     while (!q.empty())
-//     {
-//         temp = q.front();
-//         q.pop();
-
-//         tempStack.push(temp);
-
-//         // temp degree = 0
-
-//         // i cant represent node
-//         for (int i = temp + 1; i < size; i++)
-//         {
-//             pair<int, int> edge = {temp, i};
-//             if (NormalDAG.find(edge) != NormalDAG.end())
-//             {
-//                 indegreeInner[i] = 0;
-//                 if (indegreeInner[i] == 0)
-//                 {
-//                     q.push(i);
-//                 }
-//             }
-//         }
-//     }
-//     //reverse the queue
-//     while (!tempStack.empty())
-//     {
-//         int temp = tempStack.top();
-//         tempStack.pop();
-//         out.push(temp);
-//     }
-//     output = out;
-// }
 
 bool CheckNodeDep(int source, int target)
 {
@@ -2560,65 +2492,26 @@ int main(int argc, char **argv)
     start_time = clock();
     cl::ParseCommandLineOptions(argc, argv);
 
-    
-
-    //read the json
     parsingKernelInfo(KernelFilename);
     application a;
     ProcessTrace(InputFilename, Process, "Generating DAG", noBar);
 
     end_time = clock();
     printf("\n time %ld \n", (end_time - start_time));
-
     printf("peakTupleNum %d\n", peakLoadTNum + peakStoreTNum);
-    // for (auto &i : storewsTupleMap)
-    // {
-    //     nontrivialMerge(i.second);
-    // }
-    // for (auto &i : loadwsTupleMap)
-    // {
-    //     nontrivialMerge(i.second);
-    // }
 
-    // map<int64_t, wsTupleMap> aggreated;
-    // map<string, wsTupleMap> aggreatedKernel;
-    // // aggregate sizes and access number
-    // map<int64_t,tuple<int,int,float,int>> aggreatedSize;
-    // map<string,tuple<int,int,float,int>> aggreatedSizeKernel;
-    // for (auto i :loadwsTupleMap)
-    // {
-    //     //todo here and notrivial is too complicated wtring
-    //     aggreated[i.first] = Aggregate(i.second,storewsTupleMap[i.first]);
-    //     nontrivialMerge(aggreated[i.first]);
-    //     aggreatedSize[i.first] = calTotalSize(aggreated[i.first],maxLivenessPerKI[i.first]);
-    // }
-
-    // //map<int, string> kernelIdMap;
-
-    // for(auto i : aggreated)
-    // {
-    //     string kernelid = kernelIdMap[i.first];
-    //     for (auto itp :i.second)
-    //     {
-    //         aggreatedKernel[kernelid] = Aggregate(i.second,aggreated[i.first]);
-    //     }
-    // }
-
-    // map<int, vector<pair<int64_t, int64_t>>> addrTouchedPerInst;
-    // map<int, int64_t> totalMemUsage;
-    // calMemUsePerIns (totalMemUsage, addrTouchedPerInst);
-    // // ki1: kernel instance, ki2: the former , map of (first addr, tuple)
-    // map<int, map<int, wsTupleMap>> dependency;
-    // calDependency(dependency);
 
     nlohmann::json jOut;
     jOut["KernelInstanceMap"] = kernelIdMap;
     // jOut["aggreatedSize"] = aggreatedSize;
 
-    DAGGenerationCEDR();
+    // DAGGenerationCEDR();
+    
+    
+    
     // DAGGenNormal();
     DAGGenColoring();
-    CheckWAW();
+    // CheckWAW();
 
     // GenTestSchedule();
     // GenBBMapping();
@@ -2631,7 +2524,7 @@ int main(int argc, char **argv)
     
 
     //for the case that binary changed
-    GetBasicBlockNames();
+    // GetBasicBlockNames();
 
     for (auto sti : storewsTupleMap)
     {
