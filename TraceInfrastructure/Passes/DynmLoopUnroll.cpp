@@ -51,7 +51,7 @@ namespace DashTracer::Passes
         ULO.PreserveCondBr = false;
         ULO.PreserveOnlyFirst = false;
         ULO.TripMultiple = 0;
-        ULO.PeelCount = 0;
+        ULO.PeelCount = ULO.Count;
         ULO.UnrollRemainder = true;
         ULO.ForgetAllSCEV = true;
 
@@ -91,6 +91,7 @@ namespace DashTracer::Passes
                                 // errs()<<*loopTest;
 
                                 UnrollLoop(loopTest, ULO, &LI, &SE, &DT, &AC, &ORE, PreserveLCSSA, nullptr);
+                                // simplifyLoopAfterUnroll(loopTest, true,&LI, &SE, &DT, &AC);
                                 unrolled = true;
                                 goto endloop;
                                 // clean the binary, delete the everything irrelavate
