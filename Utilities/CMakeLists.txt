@@ -81,3 +81,14 @@ set_target_properties(KernelSerial
 	PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin" 
 )
+
+
+add_executable(PointBasedDAG PointBasedDAG.cpp)
+target_link_libraries(PointBasedDAG ${llvm_libs} nlohmann_json nlohmann_json::nlohmann_json AtlasUtil)
+target_include_directories(PointBasedDAG SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
+target_compile_definitions(PointBasedDAG PRIVATE ${LLVM_DEFINITIONS})
+
+set_target_properties(PointBasedDAG
+	PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin" 
+)
