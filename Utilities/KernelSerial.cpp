@@ -2508,53 +2508,62 @@ int main(int argc, char **argv)
     // DAGGenerationCEDR();
     
     
-    
+    spdlog::info("DAGGenColoring start");
     // DAGGenNormal();
     DAGGenColoring();
+
+    spdlog::info("DAGGenColoring end");
     // CheckWAW();
 
     // GenTestSchedule();
     // GenBBMapping();
     //for transformed schedule generation
     DAGScheduleSingleThread();
+    spdlog::info("DAGScheduleSingleThread end");
     //for transformed DAG generation
     // DAGTransformSingleThread();
 
     GenBBMapping();
+    spdlog::info("GenBBMapping end");
     
 
     //for the case that binary changed
     // GetBasicBlockNames();
 
-    for (auto sti : storewsTupleMap)
+    bool storeTupleInJson =true;
+    if (storeTupleInJson)
     {
-        for (auto stii : sti.second)
+        for (auto sti : storewsTupleMap)
         {
-            // if (stii.second.ref_count > 1 && stii.second.byte_count > 1)
+            for (auto stii : sti.second)
             {
-                jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["1"] = stii.second.start;
-                jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["2"] = stii.second.end;
-                jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["3"] = stii.second.byte_count;
-                jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["4"] = stii.second.ref_count;
-                jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["5"] = stii.second.reuse_distance;
+                // if (stii.second.ref_count > 1 && stii.second.byte_count > 1)
+                {
+                    jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["1"] = stii.second.start;
+                    jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["2"] = stii.second.end;
+                    jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["3"] = stii.second.byte_count;
+                    jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["4"] = stii.second.ref_count;
+                    jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["5"] = stii.second.reuse_distance;
+                }
+            }
+        }
+        for (auto sti : loadwsTupleMap)
+        {
+            for (auto stii : sti.second)
+            {
+                // if (stii.second.ref_count > 1 && stii.second.byte_count > 1)
+                {
+                    jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["1"] = stii.second.start;
+                    jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["2"] = stii.second.end;
+                    jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["3"] = stii.second.byte_count;
+                    jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["4"] = stii.second.ref_count;
+                    jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["5"] = stii.second.reuse_distance;
+                }
             }
         }
     }
-    for (auto sti : loadwsTupleMap)
-    {
-        for (auto stii : sti.second)
-        {
-            // if (stii.second.ref_count > 1 && stii.second.byte_count > 1)
-            {
-                jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["1"] = stii.second.start;
-                jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["2"] = stii.second.end;
-                jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["3"] = stii.second.byte_count;
-                jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["4"] = stii.second.ref_count;
-                jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["5"] = stii.second.reuse_distance;
-            }
-        }
-    }
-    jOut["barrierRemoval"] = barrierRemoval;
+    
+    // jOut["barrierRemoval"] = barrierRemoval;
     jOut["DAGEdge"] = DAGEdge;
     jOut["NodePosition"] = NodePosition;
 
@@ -2569,7 +2578,7 @@ int main(int argc, char **argv)
         jOut["NodeIO"][to_string(sti.first)] = {sti.second,endBBinNode[sti.first]};     
     }
 
-    jOut["testSchedule"] = testSchedule;
+    // jOut["testSchedule"] = testSchedule;
 
 
 
@@ -2581,26 +2590,6 @@ int main(int argc, char **argv)
     jOut["middleKernelIndex"] = middleKernelIndex;
     jOut["nodeIndexStage"] = nodeIndexStage;
     
-
-
-    
-   
-
-
-    // for (auto d :dependency)
-    // {
-    //     for (auto di: d.second)
-    //     {
-    //         for (auto dii: di.second)
-    //         {
-    //             jOut["dependency"][to_string(d.first)][to_string(di.first)][to_string(dii.first)]["1"] = dii.second.start;
-    //             jOut["dependency"][to_string(d.first)][to_string(di.first)][to_string(dii.first)]["2"] = dii.second.end;
-    //             jOut["dependency"][to_string(d.first)][to_string(di.first)][to_string(dii.first)]["3"] = dii.second.byte_count;
-    //             jOut["dependency"][to_string(d.first)][to_string(di.first)][to_string(dii.first)]["4"] = dii.second.ref_count;
-    //             jOut["dependency"][to_string(d.first)][to_string(di.first)][to_string(dii.first)]["5"] = dii.second.reuse_distance;
-    //         }
-    //     }
-    // }
 
     std::ofstream file;
     file.open(OutputFilename);
