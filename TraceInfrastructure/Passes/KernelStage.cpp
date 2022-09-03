@@ -58,7 +58,7 @@ namespace DashTracer::Passes
                         }
                     }
                 }                
-                errs() << "bb:" << *block << "\n";
+                // errs() << "bb:" << *block << "\n";
             }
             else if (startKernelIndexTrans.find(blockId) != startKernelIndexTrans.end())
             {
@@ -79,7 +79,7 @@ namespace DashTracer::Passes
                         }
                     }
                 }
-                errs() << "bb:" << *block << "\n";
+                // errs() << "bb:" << *block << "\n";
                 // call kernelstagestart
             }else if (EndKernelIndexToCounterTrans.find(blockId) != EndKernelIndexToCounterTrans.end())
             {
@@ -103,7 +103,7 @@ namespace DashTracer::Passes
                         }
                     }
                 }                
-                errs() << "bb:" << *block << "\n";
+                // errs() << "bb:" << *block << "\n";
             }
 
             if (middleKernelIndexTrans.find(blockId) != middleKernelIndexTrans.end())
@@ -126,7 +126,7 @@ namespace DashTracer::Passes
                         }
                     }
                 } 
-                errs() << "bb:" << *block << "\n";
+                // errs() << "bb:" << *block << "\n";
             }
         }
         return true;

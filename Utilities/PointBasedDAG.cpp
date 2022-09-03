@@ -136,9 +136,9 @@ int main(int argc, char **argv)
     spdlog::info("DAGGenColoring start");
     DAGColoring();
     spdlog::info("DAGGenColoring end");
-    for (auto i : dagEdge) {
-        cout << get<0>(i) <<","<<get<1>(i)<<"\n";
-    } 
+    // for (auto i : dagEdge) {
+    //     cout << get<0>(i) <<","<<get<1>(i)<<"\n";
+    // } 
     
 
 
