@@ -52,7 +52,6 @@ void parsingKernelInfo(const string& KernelFilename)
     }
 }
 
-int NodeNum = 0;
 void Process(string &key, string &value)
 {
     static int currentNode = 0;
@@ -94,7 +93,6 @@ void Process(string &key, string &value)
         }
 
     }
-    NodeNum = currentNode;
 }
 
 map<uint64_t,int> lastWriter; 
