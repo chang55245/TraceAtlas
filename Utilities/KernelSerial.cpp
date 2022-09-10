@@ -2692,16 +2692,15 @@ void GetBasicBlockNames()
 int main(int argc, char **argv)
 {
 
-    clock_t start_time, end_time;
-    start_time = clock();
+    
+
     cl::ParseCommandLineOptions(argc, argv);
 
     parsingKernelInfo(KernelFilename);
     application a;
     ProcessTrace(InputFilename, Process, "Generating DAG", noBar);
 
-    end_time = clock();
-    printf("\n time %ld \n", (end_time - start_time));
+    
     printf("peakTupleNum %d\n", peakLoadTNum + peakStoreTNum);
 
 
@@ -2713,9 +2712,14 @@ int main(int argc, char **argv)
     
     
     spdlog::info("DAGGenColoring start");
+    clock_t start_time;
+    clock_t end_time;
     // DAGGenNormal();
+    start_time = clock();
     DAGGenColoringRefector();
     // DAGGenColoring();
+    end_time = clock();
+    printf("\n time %ld \n", (end_time - start_time));
 
     spdlog::info("DAGGenColoring end");
     // CheckWAW();

@@ -2,6 +2,7 @@
 #include "AtlasUtil/Traces.h"
 #include "llvm/ADT/SmallVector.h"
 #include <algorithm>
+#include <cstdio>
 #include <fstream>
 #include <indicators/progress_bar.hpp>
 #include <iostream>
@@ -37,6 +38,8 @@ map<int, set<int>> kernelControlMap;
 
 // (node id, load:0 or store:1) -> set of addresses
 map<int,map<int,set<uint64_t>>> nodeAddrs;
+int peakLoadNum =0;
+int peakStoreNum =0;
 
 void parsingKernelInfo(const string& KernelFilename)
 {
@@ -68,11 +71,21 @@ void Process(string &key, string &value)
     {
         uint64_t address = stoul(value, nullptr, 0);
         nodeAddrs[currentNode][STOREKEY].insert(address);  
+
+        if (nodeAddrs[currentNode][STOREKEY].size() > peakStoreNum)
+        {
+            peakStoreNum = nodeAddrs[currentNode][STOREKEY].size();
+        }
+
     }
     else if (key == "LoadAddress")
     {
         uint64_t address = stoul(value, nullptr, 0);
         nodeAddrs[currentNode][LOADKEY].insert(address);
+        if (nodeAddrs[currentNode][LOADKEY].size() > peakLoadNum)
+        {
+            peakLoadNum = nodeAddrs[currentNode][LOADKEY].size();
+        }
     }
     else if (key == "MemCpy")
     {
@@ -133,8 +146,18 @@ int main(int argc, char **argv)
     parsingKernelInfo(KernelFilename);
     ProcessTrace(InputFilename, Process, "Generating DAG", false);
 
+    printf("max number is %d \n",peakLoadNum+peakStoreNum);
+
     spdlog::info("DAGGenColoring start");
+
+    clock_t start_time;
+    clock_t end_time;
+    // DAGGenNormal();
+    start_time = clock();
+    // DAGGenColoring();
     DAGColoring();
+    end_time = clock();
+    printf("\n time %ld \n", (end_time - start_time));
     spdlog::info("DAGGenColoring end");
     // for (auto i : dagEdge) {
     //     cout << get<0>(i) <<","<<get<1>(i)<<"\n";
