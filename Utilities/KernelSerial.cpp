@@ -2064,7 +2064,8 @@ void DAGGenColoringRefector()
 
         for (auto tp : loadwsTupleMap[i] )
         {
-            int node;                
+            int node;   // why this only return one node? need to be fixed, load tuple map should be kept in the outer loop, this should return multiple nodes and add more edges
+            //require further tests             
             if(DepCheckRefactor(tp.second, lastWriterTupleMap,node))
             {
                 if (node != i) {
