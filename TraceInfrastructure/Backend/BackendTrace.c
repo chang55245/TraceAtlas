@@ -16,7 +16,8 @@ char *TraceFilename;
 /// <summary>
 /// The maximum ammount of bytes to store in a buffer before flushing it.
 /// </summary>
-#define BUFSIZE 128 * 1024
+// #define BUFSIZE 128 * 1024
+#define BUFSIZE 1024 * 1024
 unsigned int bufferIndex = 0;
 uint8_t temp_buffer[BUFSIZE];
 uint8_t storeBuffer[BUFSIZE];
@@ -41,7 +42,13 @@ void BufferData()
     strm_DashTracer.avail_out = BUFSIZE;
     while (strm_DashTracer.avail_in != 0)
     {
-        deflate(&strm_DashTracer, Z_NO_FLUSH);
+        int defResult = deflate(&strm_DashTracer, Z_NO_FLUSH);
+
+        if (defResult != Z_OK)
+        {
+            fprintf(stderr, "Zlib compression error");
+            exit(-1);
+        }
 
         if (strm_DashTracer.avail_out == 0)
         {
