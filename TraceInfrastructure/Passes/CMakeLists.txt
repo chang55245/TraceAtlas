@@ -1,4 +1,4 @@
-add_library(AtlasPasses MODULE Trace.cpp TraceMem.cpp TraceMemIO.cpp Annotate.cpp TraceIO.cpp CommandArgs.cpp PapiExport.cpp PapiIO.cpp Functions.cpp AddLibrary.cpp TestTransformation.cpp FunctionInliner.cpp SplitKernExitEnter.cpp SwapAPIs.cpp KernelStage.cpp KernelLocating.cpp DynmLoopUnroll.cpp DynmKernelLocating.cpp DynmFunctionInlining.cpp OmpNonkernelParallel.cpp)
+add_library(AtlasPasses MODULE Trace.cpp TraceMem.cpp TraceMemIO.cpp Annotate.cpp TraceIO.cpp CommandArgs.cpp PapiExport.cpp PapiIO.cpp Functions.cpp AddLibrary.cpp TestTransformation.cpp FunctionInliner.cpp SplitKernExitEnter.cpp SwapAPIs.cpp KernelStage.cpp KernelLocating.cpp DynmLoopUnroll.cpp DynmKernelLocating.cpp DynmFunctionInlining.cpp OmpNonkernelParallel.cpp NonKernelOutliner.cpp)
 target_link_libraries(AtlasPasses PRIVATE nlohmann_json nlohmann_json::nlohmann_json AtlasUtil)
 target_compile_definitions(AtlasPasses PRIVATE ${LLVM_DEFINITIONS})
 if(WIN32)
