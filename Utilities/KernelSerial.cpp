@@ -1022,11 +1022,11 @@ tuple<int, int, float, int> calTotalSize(wsTupleMap a, int liveness)
 map<int64_t, int> lastWriterNodeIDMap;
 wsTupleMap lastWriterTupleMap;
 
-bool DepCheckRefactor(wsTuple t_new, wsTupleMap &processMap,int &node)
+void DepCheckRefactor(wsTuple t_new, wsTupleMap &processMap,set <int> &node)
 {
     if (processMap.empty())
     {
-        return false;
+        return;
     }
     if (processMap.size() == 1)
     {
@@ -1034,8 +1034,7 @@ bool DepCheckRefactor(wsTuple t_new, wsTupleMap &processMap,int &node)
         // the condition to decide (add and delete) or update
         if (overlap(t_new, iter->second, 0))
         {
-            node = lastWriterNodeIDMap[iter->first];
-            return true;        
+            node.insert(lastWriterNodeIDMap[iter->first]);      
         }
     }
     else
@@ -1047,27 +1046,19 @@ bool DepCheckRefactor(wsTuple t_new, wsTupleMap &processMap,int &node)
             // need to delete someone
             if (processMap.find(prev(iter)->first) != processMap.end() && overlapDependenceChecking(processMap[t_new.start], prev(iter)->second, 0))
             {
-                node = lastWriterNodeIDMap[prev(iter)->first];
-                processMap.erase(iter);
-                return true;
-                
+                node.insert( lastWriterNodeIDMap[prev(iter)->first]);
+                processMap.erase(iter);                
             }
             if (processMap.find(next(iter)->first) != processMap.end() && overlapDependenceChecking(processMap[t_new.start], next(iter)->second, 0))
             {
-                node = lastWriterNodeIDMap[next(iter)->first];
-                processMap.erase(iter);
-                return true;          
+                node.insert(lastWriterNodeIDMap[next(iter)->first]);
+                processMap.erase(iter);          
             }
-            processMap.erase(iter);
-            return false;      
+            processMap.erase(t_new.start);      
         }
 
-
-        node = lastWriterNodeIDMap[t_new.start];
-        
-        return true;    
+        node.insert(lastWriterNodeIDMap[t_new.start]);    
     }
-    return false;
 }
 
 
@@ -2064,18 +2055,16 @@ void DAGGenColoringRefector()
 
         for (auto tp : loadwsTupleMap[i] )
         {
-            int node;   // why this only return one node? need to be fixed, load tuple map should be kept in the outer loop, this should return multiple nodes and add more edges
-            //require further tests             
-            if(DepCheckRefactor(tp.second, lastWriterTupleMap,node))
-            {
-                if (node != i) {
-                    pair<int, int> edge = {node, i};
+            set <int> node;
+            DepCheckRefactor(tp.second, lastWriterTupleMap,node);
+
+            for (auto n: node) {
+                if (n != i) {
+                    pair<int, int> edge = {n, i};
                     DAGEdge.insert(edge);  
-                }          
+                } 
             }
-        }
-        
-        
+        }    
     }
 }
 

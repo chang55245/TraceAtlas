@@ -82,7 +82,8 @@ void Process(string &key, string &value)
         inKernel = true;
 
         // if it is neccessary to merge the bb before kernel into the former kernel
-        // return true if former bb has load/store   
+        // return true if former bb has load/store, it is used to deal with hanging 
+        // nodes not connecting with others in the DAG 
         if(CheckPrevKernelNode())
         {
             
@@ -103,7 +104,7 @@ void Process(string &key, string &value)
                 nodeKiidMap[kernelInstanceIdCounter-1].bbs.insert(i);
             }
             currentLabel = value;
-        }    
+        }  
     }
     //kernel exit concludes the previous kernel node
     else if (key == "KernelExit")
