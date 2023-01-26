@@ -2452,7 +2452,7 @@ map<int,pair<int,int>> EndKernelIndexToCounter;
 map<int,int> nodeIndexStage;
 
 
-void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKernel, map<int, set<int>> NextNodeMap, map<int, set<int>> PrevNodeMap, map<int, int> KernelPosition)
+void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKernel, map<int, set<int>> NextNodeMap, map<int, set<int>> PrevNodeMap)
 {
     int stage = 1;
     int nodeStage = 1;
@@ -2587,20 +2587,9 @@ void DAGScheduleSingleThread()
     set<int> schedulableKernel;
     set<int> schedulableNonKernel;
 
-    // map kernel id to kernel binary position
-    map<int,int> KernelPosition;
-    int kernelPosCounter = 0;
     for (auto i : kernelIdMap)
     {
-        if(i.second !="-1")
-        {
-            kernelPosCounter++;
-            KernelPosition[i.first] = kernelPosCounter;
-        }
-
-
-
-        if(PrevNodeMap[i.first].size()==0)
+        if(PrevNodeMap[i.first].empty())
         {
             if(i.second=="-1")
             {
@@ -2613,7 +2602,7 @@ void DAGScheduleSingleThread()
         }
     }
 
-    SingThreadSchedule(schedulableNonKernel,schedulableKernel,NextNodeMap,PrevNodeMap,KernelPosition); 
+    SingThreadSchedule(schedulableNonKernel,schedulableKernel,NextNodeMap,PrevNodeMap); 
 
 }
 
@@ -2633,51 +2622,6 @@ void GenBBMapping()
     }
 }
 
-
-// set<string>startKernelNames;
-// map <string,int64_t> EndKernelNameToCounter;
-
-void GetBasicBlockNames()
-{
-
-    // LLVMContext context;
-    // SMDiagnostic smerror;
-    // unique_ptr<Module> sourceBitcode;
-    // try
-    // {
-    //     sourceBitcode = parseIRFile(bitcodeFile, smerror, context);
-    // }
-    // catch (exception &e)
-    // {
-    //     return;
-    // }
-
-    // Module *M = sourceBitcode.get();
-    // Annotate(M);
-
-    // for (auto &mi : *M)
-    // {
-    //     for (auto fi = mi.begin(); fi != mi.end(); fi++)
-    //     {
-    //         auto *bb = cast<BasicBlock>(fi);
-    //         auto dl = bb->getModule()->getDataLayout();
-    //         int64_t id = GetBlockID(bb);
-    //         std::string Str;
-    //         raw_string_ostream OS(Str);
-    //         bb->printAsOperand(OS, false);                     
-    //         if (startKernelIndex.find(id)!=startKernelIndex.end())
-    //         {             
-    //             startKernelNames.insert(OS.str());
-    //         }
-    //         if (EndKernelIndexToCounter.find(id)!=EndKernelIndexToCounter.end())
-    //         {     
-    //             EndKernelNameToCounter[OS.str()] =EndKernelIndexToCounter[id];
-    //         }
-    //     }
-    // }
-
-
-}
 
 int main(int argc, char **argv)
 {
@@ -2725,9 +2669,6 @@ int main(int argc, char **argv)
     GenBBMapping();
     spdlog::info("GenBBMapping end");
     
-
-    //for the case that binary changed
-    // GetBasicBlockNames();
 
     bool storeTupleInJson =true;
     if (storeTupleInJson)
