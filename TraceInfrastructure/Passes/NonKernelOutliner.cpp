@@ -30,13 +30,22 @@ using namespace std;
 
 namespace DashTracer::Passes
 {
+    using nodeInfo = struct nodeInfo
+    {
+        string label;
+        set <int64_t> bbs;
+    };
 
+    void from_json(const nlohmann::json& j, nodeInfo& p) 
+    {
+        j.at("Blocks").get_to(p.bbs);
+        j.at("Label").get_to(p.label);
+    }
+
+    map<int64_t,nodeInfo> NodeBB;
     bool NonKernelOutliner::runOnFunction(Function &F)
     {
-        DominatorTree DT(F);
-        LoopInfo LI(DT);
-        set<Loop *> loopSet;
-        int loop_counter = 0;
+        errs() << &NodeBB;
         for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
         {
             auto *block = cast<BasicBlock>(BB);
@@ -44,58 +53,21 @@ namespace DashTracer::Passes
             // for (BasicBlock::iterator BI = block->begin(), BE = block->end(); BI != BE; ++BI)
             {
 
-                auto *loopTest = LI.getLoopFor(block);
-                if (loopTest != nullptr && loopSet.find(loopTest) == loopSet.end())
-                {
-                    loop_counter++;
-                    loopSet.insert(loopTest);
-                    if (loop_counter == 1)
-                    {
-                        errs() << "got the first loop \n";
-                    }
-                    // a loop should be put in subsections
-                    if (loop_counter < 6)
-                    {
-                        errs() << "loop id:" << loop_counter << "\n";
-                    }
-                }
             }
         }
-
-        // using InsertPointTy = OpenMPIRBuilder::InsertPointTy;
-        // using BodyGenCallbackTy = llvm::OpenMPIRBuilder::StorableBodyGenCallbackTy;
-        // OpenMPIRBuilder OMPBuilder(*M);
-        // OMPBuilder.initialize();
-        // F->setName("func");
-        // IRBuilder<> Builder(BB);
-
-        // BasicBlock *EnterBB = BasicBlock::Create(Ctx, "sections.enter", F);
-        // Builder.CreateBr(EnterBB);
-        // Builder.SetInsertPoint(EnterBB);
-        // OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
-
-        // llvm::SmallVector<BodyGenCallbackTy, 4> SectionCBVector;
-        // llvm::SmallVector<BasicBlock *, 4> CaseBBs;
-
-        // auto FiniCB = [&](InsertPointTy IP) {};
-        // auto SectionCB = [&](InsertPointTy AllocaIP, InsertPointTy CodeGenIP) {};
-        // SectionCBVector.push_back(SectionCB);
-
-        // auto PrivCB = [](InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
-        //                  llvm::Value &, llvm::Value &Val,
-        //                  llvm::Value *&ReplVal)
-        // { return CodeGenIP; };
-        // IRBuilder<>::InsertPoint AllocaIP(&F->getEntryBlock(),
-        //                                   F->getEntryBlock().getFirstInsertionPt());
-        // Builder.restoreIP(OMPBuilder.createSections(Loc, AllocaIP, SectionCBVector,
-        //                                             PrivCB, FiniCB, false, false));
-        // Builder.CreateRetVoid(); // Required at the end of the function
-
         return true;
     }
 
     bool NonKernelOutliner::doInitialization(Module &M)
     {
+
+        nlohmann::json j;
+        std::ifstream inputStream(NodeBBs);
+        inputStream >> j;
+        inputStream.close();
+        nlohmann::json mapping;
+        mapping = j["Control"];
+        NodeBB = mapping.get<map<int64_t,nodeInfo>>();
         return false;
     }
 

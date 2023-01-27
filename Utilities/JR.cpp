@@ -30,11 +30,11 @@ int64_t currentblock;
 
 //== for DAG node map
 set <int64_t> legalBBs;
-typedef struct nodeInfo
+using nodeInfo = struct nodeInfo
 {
     string label;
     set <int64_t> bbs;
-} nodeInfo;
+};
 
 
 

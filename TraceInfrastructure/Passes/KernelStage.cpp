@@ -161,5 +161,5 @@ namespace DashTracer::Passes
         AU.setPreservesCFG();
     }
     char KernelStage::ID = 1;
-    static RegisterPass<KernelStage> Y("KernelStage", "generate test tranformation", true, false);
+    static RegisterPass<KernelStage> Y("KernelStage", "add kernel stage information", true, false);
 } // namespace DashTracer::Passes

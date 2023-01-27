@@ -2452,14 +2452,32 @@ map<int,pair<int,int>> EndKernelIndexToCounter;
 map<int,int> nodeIndexStage;
 
 
-void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKernel, map<int, set<int>> NextNodeMap, map<int, set<int>> PrevNodeMap)
+void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevNodeMap)
 {
     int stage = 1;
     int nodeStage = 1;
+
+    set<int> schedulableKernel;
+    set<int> schedulableNonKernel;
+
+    for (auto i : kernelIdMap)
+    {
+        if(PrevNodeMap[i.first].empty())
+        {
+            if(i.second=="-1")
+            {
+                schedulableNonKernel.insert(i.first);
+            }
+            else
+            {
+                schedulableKernel.insert(i.first);
+            }
+        }
+    }
+
     while (!schedulableKernel.empty() || !schedulableNonKernel.empty())
     {
         // schedule the non-kernels
-
         while (!schedulableNonKernel.empty())
         {
             for (auto nk : schedulableNonKernel)
@@ -2470,11 +2488,6 @@ void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKerne
                 for (auto it : NextNodeMap[nk])
                 {
                     PrevNodeMap[it].erase(nk);
-                    //todo: test delete duplicated edges
-                    // if (!PrevNodeMap[it].empty())
-                    // {
-                    //     DAGEdge.erase(pair<int, int>{nk,it});
-                    // }
                 }
                 PrevNodeMap.erase(nk);
             }
@@ -2483,16 +2496,12 @@ void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKerne
 
             for (auto i : kernelIdMap)
             {
-                if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].empty())
+                if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].empty()&&i.second == "-1")
                 {
-                    if (i.second == "-1")
-                    {
-                        schedulableNonKernel.insert(i.first);
-                    }
+                    schedulableNonKernel.insert(i.first);                 
                 }
             }
         }
-
         for (auto i : kernelIdMap)
         {
             if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].empty())
@@ -2504,11 +2513,12 @@ void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKerne
             }
         }
 
+        // schedule kernels
         while (!schedulableKernel.empty())
         {
-            // schedule kernels
+            // record how many kernels in the middle stage
             int kernelSchedCounter = 0;
-            int lastSchedKernelID = -1;
+            int lastSchedKernelID = -1; //?
 
             for (auto k : schedulableKernel)
             {
@@ -2516,7 +2526,7 @@ void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKerne
                 //
                 if (kernelSchedCounter == 1)
                 {
-                    // startKernelIndex.insert(KernelPosition[k]);
+                    //stage means the schedule order of kernels? needs to be changed, why this index is the basic block?
                     startKernelIndex[StartBBinNode[k]] = stage;
                 }
                 else
@@ -2525,15 +2535,10 @@ void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKerne
                 }
 
                 ScheduleForSingThread.push_back(k);
-                nodeIndexStage[k] = nodeStage;
+                nodeIndexStage[k] = nodeStage; // this is the overall stage with non kernel?
                 for (auto it : NextNodeMap[k])
                 {
                     PrevNodeMap[it].erase(k);
-                    //todo: test delete duplicated edges
-                    // if (!PrevNodeMap[it].empty())
-                    // {
-                    //     DAGEdge.erase(pair<int, int>{k,it});
-                    // }
                 }
                 PrevNodeMap.erase(k);
                 lastSchedKernelID = k;
@@ -2574,7 +2579,6 @@ void SingThreadSchedule(set<int> schedulableNonKernel, set<int> schedulableKerne
 void DAGScheduleSingleThread()
 {
 
-    
     map<int,set<int>> NextNodeMap;
     map<int,set<int>> PrevNodeMap;
 
@@ -2584,25 +2588,7 @@ void DAGScheduleSingleThread()
         PrevNodeMap[i.second].insert(i.first);
     }
 
-    set<int> schedulableKernel;
-    set<int> schedulableNonKernel;
-
-    for (auto i : kernelIdMap)
-    {
-        if(PrevNodeMap[i.first].empty())
-        {
-            if(i.second=="-1")
-            {
-                schedulableNonKernel.insert(i.first);
-            }
-            else
-            {
-                schedulableKernel.insert(i.first);
-            }
-        }
-    }
-
-    SingThreadSchedule(schedulableNonKernel,schedulableKernel,NextNodeMap,PrevNodeMap); 
+    SingThreadSchedule(NextNodeMap,PrevNodeMap); 
 
 }
 
@@ -2708,8 +2694,8 @@ int main(int argc, char **argv)
     jOut["NodePosition"] = NodePosition;
 
 
-    jOut["SingleThreadDAGEdge"] = SingleThreadDAGEdge;
-    jOut["SingleThreadNodePosition"] = SingleThreadNodePosition;
+    // jOut["SingleThreadDAGEdge"] = SingleThreadDAGEdge;
+    // jOut["SingleThreadNodePosition"] = SingleThreadNodePosition;
 
 
 

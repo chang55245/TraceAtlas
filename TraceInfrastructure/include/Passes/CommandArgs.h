@@ -14,6 +14,7 @@ extern cl::opt<int> KernelIndex;
 /// </summary>
 extern cl::opt<std::string> KernelFilename;
 extern cl::opt<std::string> DAGBBIOFile;
+extern cl::opt<std::string> NodeBBs;
 extern cl::opt<std::string> LoopTraceFile;
 extern cl::opt<std::string> InlineMap;
 extern cl::opt<bool> DumpLoads;
