@@ -2421,22 +2421,6 @@ void DAGTransformSingleThread()
     SingThreadDAG(schedulableNonKernel,schedulableKernel,NextNodeMap,PrevNodeMap);   
 }
 
-// source node end bb -> old target start bb, new target start bb
-
-// void GenBBMapping()
-// {
-//     int lastNode= -1;
-//     for(auto i: testSchedule)
-//     {
-//         if(lastNode != -1)
-//         {
-//             // update the node mapping
-//             BBMapingTransform[endBBinNode[lastNode]] = pair<int,int>{StartBBinNode[lastNode+1],StartBBinNode[i]};
-//         }
-//         lastNode = i;
-//     }
-// }
-
 
 
 vector <int> ScheduleForSingThread;
@@ -2448,14 +2432,16 @@ map<int,int> startKernelIndex;
 map<int,int> middleKernelIndex;
 // end kernel stage basic block, number of kernels counter
 map<int,pair<int,int>> EndKernelIndexToCounter;
-// node id, stage index
-map<int,int> nodeIndexStage;
+
+// stage index, non kernel id
+map<int,set<int>> nonkernelStage;
 
 
 void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevNodeMap)
 {
     int stage = 1;
     int nodeStage = 1;
+    int nonkernelStageId = 1;
 
     set<int> schedulableKernel;
     set<int> schedulableNonKernel;
@@ -2474,7 +2460,6 @@ void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevN
             }
         }
     }
-
     while (!schedulableKernel.empty() || !schedulableNonKernel.empty())
     {
         // schedule the non-kernels
@@ -2483,7 +2468,9 @@ void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevN
             for (auto nk : schedulableNonKernel)
             {
                 ScheduleForSingThread.push_back(nk);
-                nodeIndexStage[nk] = nodeStage;
+
+
+                nonkernelStage[nonkernelStageId].insert(nk);
 
                 for (auto it : NextNodeMap[nk])
                 {
@@ -2492,6 +2479,7 @@ void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevN
                 PrevNodeMap.erase(nk);
             }
             nodeStage++;
+            nonkernelStageId++;
             schedulableNonKernel.clear();
 
             for (auto i : kernelIdMap)
@@ -2535,7 +2523,7 @@ void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevN
                 }
 
                 ScheduleForSingThread.push_back(k);
-                nodeIndexStage[k] = nodeStage; // this is the overall stage with non kernel?
+
                 for (auto it : NextNodeMap[k])
                 {
                     PrevNodeMap[it].erase(k);
@@ -2714,7 +2702,8 @@ int main(int argc, char **argv)
     jOut["startKernelIndex"] = startKernelIndex;
     jOut["EndKernelIndexToCounter"] = EndKernelIndexToCounter;
     jOut["middleKernelIndex"] = middleKernelIndex;
-    jOut["nodeIndexStage"] = nodeIndexStage;
+    jOut["nonkernelStage"] = nonkernelStage;
+    
     
 
     std::ofstream file;

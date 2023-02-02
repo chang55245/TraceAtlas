@@ -5,7 +5,9 @@
 #include "Passes/Functions.h"
 #include "Passes/TraceMemIO.h"
 #include "llvm/IR/DataLayout.h"
+#include <cstdint>
 #include <fstream>
+#include <llvm-9/llvm/IR/BasicBlock.h>
 #include <llvm-9/llvm/IR/Dominators.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
@@ -19,6 +21,7 @@
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
+#include "llvm/Transforms/Utils/CodeExtractor.h"
 
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopPass.h"
@@ -30,11 +33,15 @@ using namespace std;
 
 namespace DashTracer::Passes
 {
+   
     using nodeInfo = struct nodeInfo
     {
         string label;
-        set <int64_t> bbs;
+        vector <int64_t> bbs;
     };
+    map<string,nodeInfo> NodeBB;
+    map<int,set<int>> nonkernelStage;
+    map<int64_t, BasicBlock *> BBidToPtr;
 
     void from_json(const nlohmann::json& j, nodeInfo& p) 
     {
@@ -42,32 +49,93 @@ namespace DashTracer::Passes
         j.at("Label").get_to(p.label);
     }
 
-    map<int64_t,nodeInfo> NodeBB;
+    
+
+
+    void Outline(vector<int64_t> BBs)
+    {
+        vector<BasicBlock*> candidates;
+        candidates.reserve(BBs.size());
+        for (auto blockID: BBs) 
+        {
+            candidates.push_back(BBidToPtr[blockID]);
+        }
+        CodeExtractor CE(candidates);
+        Function *Outlined = CE.extractCodeRegion();
+        errs()<<" ce eligible: " << CE.isEligible() << ", outlined function:" << Outlined<<"\n";
+    }
+    
     bool NonKernelOutliner::runOnFunction(Function &F)
     {
-        errs() << &NodeBB;
-        for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
+        BBidToPtr = getAnalysis<DashTracer::Passes::EncodedAnnotate>().getIDmap();
+
+        // for (auto i:nonkernelStage[11]) {
+        //     errs() << i;
+        // }
+        
+        if (F.getName() != "main")
         {
-            auto *block = cast<BasicBlock>(BB);
-
-            // for (BasicBlock::iterator BI = block->begin(), BE = block->end(); BI != BE; ++BI)
-            {
-
-            }
+            return false;
         }
+        for (const auto& node: NodeBB) 
+        {
+            // this is a non kernel
+            if (node.second.label=="-1") 
+            {
+                vector<int64_t> BBs = node.second.bbs;
+                vector<BasicBlock*> candidates;
+                for (auto blockID: BBs) 
+                {
+                    BasicBlock* block = BBidToPtr[blockID];
+                    if(block->getParent()->getName() =="main")
+                    {
+                        candidates.push_back(block);
+                    }
+                }
+                errs()<<"candidate size:" << candidates.size()<<"\n";
+                
+                // aggregate for pthread 
+                CodeExtractor CE(candidates,NULL,true,NULL, NULL,NULL, true,true);
+                // CodeExtractor CE(candidates);
+                Function *Outlined = CE.extractCodeRegion();
+                errs()<<" ce eligible: " << CE.isEligible()<< ", node: "<<node.first <<", outlined function:" << Outlined<<"\n";
+            }      
+        }    
+    
         return true;
     }
 
     bool NonKernelOutliner::doInitialization(Module &M)
     {
-
+        
         nlohmann::json j;
         std::ifstream inputStream(NodeBBs);
         inputStream >> j;
         inputStream.close();
         nlohmann::json mapping;
         mapping = j["Control"];
-        NodeBB = mapping.get<map<int64_t,nodeInfo>>();
+        // int64_t counter = 0;
+        // for(auto it = mapping.begin(); it != mapping.end(); ++it)
+        // {
+        //     NodeBB[counter] = mapping.at(to_string( counter)).get<nodeInfo>();
+        //     counter++;
+        // }
+        NodeBB = mapping.get<map<string,nodeInfo>>();
+
+
+        nlohmann::json k;
+        std::ifstream inputStreamDAG(DAGBBIOFile);
+        inputStreamDAG >> k;
+        inputStreamDAG.close();
+        nlohmann::json DAGmapping;
+        DAGmapping = k["nonkernelStage"];
+        // int64_t counter = 0;
+        // for(auto it = mapping.begin(); it != mapping.end(); ++it)
+        // {
+        //     NodeBB[counter] = mapping.at(to_string( counter)).get<nodeInfo>();
+        //     counter++;
+        // }
+        nonkernelStage = DAGmapping.get<map<int,set<int>>>();
         return false;
     }
 
