@@ -59,6 +59,11 @@ void EndKernelStage(uint64_t stage,uint64_t number){ };
 void SingleKernelStage(uint64_t stage,uint64_t number){ };
 void MiddleKernelStage(uint64_t stage){};
 
+
+void MainStart(uint64_t stage){ };
+void StartNonKernelStage(uint64_t stage){ };
+void EndNonKernelStage(uint64_t stage){ };
+
 #ifdef __cplusplus
 extern "C"
 {
