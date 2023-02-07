@@ -50,22 +50,6 @@ namespace DashTracer::Passes
         j.at("Blocks").get_to(p.bbs);
         j.at("Label").get_to(p.label);
     }
-
-    
-
-
-    void Outline(vector<int64_t> BBs)
-    {
-        vector<BasicBlock*> candidates;
-        candidates.reserve(BBs.size());
-        for (auto blockID: BBs) 
-        {
-            candidates.push_back(BBidToPtr[blockID]);
-        }
-        CodeExtractor CE(candidates);
-        Function *Outlined = CE.extractCodeRegion();
-        errs()<<" ce eligible: " << CE.isEligible() << ", outlined function:" << Outlined<<"\n";
-    }
     
     bool NonKernelOutliner::runOnFunction(Function &F)
     {
@@ -139,7 +123,7 @@ namespace DashTracer::Passes
                     for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
                     {
                         std::vector<Value *> args;
-                        Value *StageValue = ConstantInt::get(Type::getInt64Ty(BB->getContext()), stage_size);
+                        Value *StageValue = ConstantInt::get(Type::getInt64Ty(BB->getContext()), (uint64_t)stage.first);
                         args.push_back(StageValue);
 
                         for (BasicBlock::iterator BI = BB->begin(), BE = BB->end(); BI != BE; ++BI)
