@@ -133,73 +133,44 @@ bool DashTracer::Passes::SwapNonkernel::runOnFunction(Function &F) {
                     // errs()<<"name: " <<name << " index in stage: "<< indexInStage <<"\n";
                     indexInStage++;
                 }
-                // Instruction* currentNode = BI->getNextNode();
-                // int nk_counter = 0;
-                
-                // regex pattern("/nk_.*");
-                
-                // while (true) 
-                // {
-                //     if (auto *currentCall = dyn_cast<CallInst>(currentNode)) 
-                //     {
-                //         auto name = currentCall->getCalledFunction()->getName();
-                //         auto nameString = string(name);
-                //         auto words_begin = sregex_iterator(nameString.begin(), nameString.end(), pattern);
-                //         auto words_end = std::sregex_iterator();
-
-                //         if (distance(words_begin, words_end)!= 0) 
-                //         {
-                //             const smatch& match = *words_begin;
-                //             errs()<< "match:" << match.str()<<"\n";
-                //             nk_counter++;
-                //             break;
-                //         }    
-                //     }
-                //     // if (auto  *returnInst = dyn_cast<ReturnInst>(currentNode))  {
-                //     //     errs()<< "no match return \n";
-                //     //     break;
-                //     // }
-                //     // if (currentNode == nullptr) 
-                //     // {
-                //     //     errs()<< "node is null \n";
-                //     //     break;
-                //     // }
-                //     currentNode = currentNode->getNextNode();
-                //     errs()<< "node is "<<*currentNode<<"\n";
-                // }
-                
-                // construct a store instruction, store alloca +1 to that register
-
-                // errs()<<"call inst:"<< *thread_create<<"\n";
-                //swap nk call to pthread create
+                // todo  delete dummy function
                 // CI->eraseFromParent();
                 // calledFunc->eraseFromParent();
 
             }
             if (calledFunc->getName() =="EndNonKernelStage")
             {
+                auto *cons = dyn_cast<ConstantInt>(CI->arg_begin()->get());
+                auto number = (uint64_t) cons->getSExtValue();
+                uint64_t stageSize = nonkernelStage[int(number)].size();
+                for (uint64_t i=0; i< stageSize; i++) {
+                
+
+                    // create pthread join calls              
+                    IRBuilder<> builder(CI->getNextNode());
+                    SmallVector<Value *, 8> pthread_join_args;
+                    auto *zero = ConstantInt::get(BB.getContext(), llvm::APInt(32, 0, true));
+                    auto *index = ConstantInt::get(BB.getContext(), llvm::APInt(32, i, true));
+                    Type *VoidPointerType = Type::getInt8PtrTy(module->getContext());
+                    auto *nulltype = ConstantPointerNull::get(PointerType::get(VoidPointerType, 0));
+                    
+                    auto *threadIDPtr = builder.CreateGEP(ThreadAlloca, { zero, index });
+                    auto *loadThreadID = builder.CreateLoad(Type::getInt64Ty(module->getContext()),threadIDPtr);
+
+                    pthread_join_args.push_back(loadThreadID);
+                    pthread_join_args.push_back(nulltype);
+
+                    builder.CreateCall(pthread_join, pthread_join_args);
+                }
                 //add pthread join
                 // CI->eraseFromParent();
                 // calledFunc->eraseFromParent();
             }
-
-
-            regex pattern("^nk_.*$");
-            auto name = calledFunc->getName();
-            auto nameString = string(name);
-            auto words_begin = sregex_iterator(nameString.begin(), nameString.end(), pattern);
-            auto words_end = std::sregex_iterator();
-
-            if (distance(words_begin, words_end)!= 0) 
-            {
-                const smatch& match = *words_begin;
-                // errs()<< "match:" << match.str()<<"\n";
-            }
-
         }
     }
   }
-
+  
+  regex pattern("^nk_.*$");
   for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
   {
     for (BasicBlock::iterator BI = BB->begin(), BE = BB->end(); BI != BE; ++BI)
@@ -207,9 +178,14 @@ bool DashTracer::Passes::SwapNonkernel::runOnFunction(Function &F) {
         if (auto *CI = dyn_cast<CallInst>(BI))
         {
             Function *calledFunc = CI->getCalledFunction();
+            auto name = string(calledFunc->getName());
+            auto words_begin = sregex_iterator(name.begin(), name.end(), pattern);
+            auto words_end = sregex_iterator();
             
-            if (calledFunc->getName() =="nk_1")
+            
+            if (distance(words_begin, words_end)!= 0)
             {
+                // const smatch& match = *words_begin;
                 nkFunc = calledFunc;
                 // int8 pointer is the typical pointer type
                 auto *FT = FunctionType::get(Type::getInt8PtrTy(module->getContext()), Type::getInt8PtrTy(module->getContext()), false);
@@ -221,12 +197,16 @@ bool DashTracer::Passes::SwapNonkernel::runOnFunction(Function &F) {
                 
                 IRBuilder<> builder(CI->getNextNode());
                 SmallVector<Value *, 8> pthread_create_args;
-                auto zero = ConstantInt::get(BB->getContext(), llvm::APInt(32, 0, true));
-                auto index = ConstantInt::get(BB->getContext(), llvm::APInt(32, 5, true));
-                auto nulltype = ConstantPointerNull::get(PointerType::get(att_type, 0));
+
+
+                int ThreadIDIndex = functionThreadID[name];
+
+                auto *zero = ConstantInt::get(BB->getContext(), llvm::APInt(32, 0, true));
+                auto *index = ConstantInt::get(BB->getContext(), llvm::APInt(32, (uint64_t)ThreadIDIndex, true));
+                auto *nulltype = ConstantPointerNull::get(PointerType::get(att_type, 0));
                 
                 // index list, first is the pointer address offset, second is the array index
-                auto threadIDPtr = builder.CreateGEP(ThreadAlloca, { zero, index });
+                auto *threadIDPtr = builder.CreateGEP(ThreadAlloca, { zero, index });
                 // Value * value = ConstantInt::get(BB->getContext(), llvm::APInt(64, 5, true));
                 // builder.CreateStore(value, threadIDPtr);
 
@@ -236,16 +216,16 @@ bool DashTracer::Passes::SwapNonkernel::runOnFunction(Function &F) {
 
                 pthread_create_args.push_back(funcPtr);
 
-                IRBuilder<> Builder(CI->getNextNode());
+                // IRBuilder<> Builder(CI->getNextNode());
                 Type *VoidPointerTy = Type::getInt8PtrTy(module->getContext());
-                auto argmentNK = Builder.CreateBitCast(argment, VoidPointerTy);
+                auto *argmentNK = builder.CreateBitCast(argment, VoidPointerTy);
 
                 pthread_create_args.push_back(argmentNK);
 
                 // errs()<<"type:"<<*(funcPtr->getType()) <<"\n";
                 // pthread_create_args.push_back(nulltype);
                 // thread id, 
-                CallInst *thread_create = builder.CreateCall(pthread_create, pthread_create_args);
+                builder.CreateCall(pthread_create, pthread_create_args);
 
                 //funcPtr =  ConstantExpr::getBitCast(calledFunc, Type::getInt8PtrTy(module->getContext()));
                 // errs()<<"number arg:"<< *(calledFunc->arg_begin())<<"\n";
