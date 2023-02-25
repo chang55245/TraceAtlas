@@ -99,7 +99,8 @@ namespace DashTracer::Passes
                     }
                     // errs()<<"candidate size:" << candidates.size()<<"\n";
          
-                    // aggregate for pthread 
+                    // aggregate for pthread
+                     
                     CodeExtractor CE(candidates,NULL,true,NULL, NULL,NULL, false,false);
                     // CodeExtractor CE(candidates);
                     Function *Outlined = CE.extractCodeRegion();    

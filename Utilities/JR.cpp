@@ -145,12 +145,12 @@ void Process(string &key, string &value)
         printf("get!!!!!!!!!!!\n");
         if(inKernel == false&&CheckPrevKernelNode())
         {
-            kernelInstanceBBs.erase(currentblock);
+            // kernelInstanceBBs.erase(currentblock);
             nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
             nodeKiidMap[kernelInstanceIdCounter] = newNode;
             kernelInstanceIdCounter++;   
             kernelInstanceBBs.clear();
-            kernelInstanceBBs.insert(currentblock);
+            // kernelInstanceBBs.insert(currentblock);
         }
     }
 }

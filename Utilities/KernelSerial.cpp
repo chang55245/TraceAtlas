@@ -2435,7 +2435,7 @@ map<int,pair<int,int>> EndKernelIndexToCounter;
 
 // stage index, non kernel id
 map<int,set<int>> nonkernelStage;
-
+map<int,int> nodeIndexStage;
 
 void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevNodeMap)
 {
@@ -2468,6 +2468,7 @@ void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevN
             for (auto nk : schedulableNonKernel)
             {
                 ScheduleForSingThread.push_back(nk);
+                nodeIndexStage[nk] = nodeStage;
 
 
                 nonkernelStage[nonkernelStageId].insert(nk);
@@ -2523,6 +2524,7 @@ void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevN
                 }
 
                 ScheduleForSingThread.push_back(k);
+                nodeIndexStage[k] = nodeStage;
 
                 for (auto it : NextNodeMap[k])
                 {
@@ -2703,6 +2705,7 @@ int main(int argc, char **argv)
     jOut["EndKernelIndexToCounter"] = EndKernelIndexToCounter;
     jOut["middleKernelIndex"] = middleKernelIndex;
     jOut["nonkernelStage"] = nonkernelStage;
+    jOut["nodeIndexStage"] = nodeIndexStage;
     
     
 
