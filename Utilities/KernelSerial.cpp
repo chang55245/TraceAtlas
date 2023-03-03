@@ -455,13 +455,18 @@ bool CheckLoadAfterStoreref(wsTupleMap storeMap, wsTuple t_new)
 bool covered(wsTuple big, wsTuple small)
 {
     
-    bool result = big.start<small.start && big.end>small.end;
+    bool result = big.start<=small.start && big.end>=small.end;
+
+    // bool result = max(big.start, small.start) <= (min(big.end, small.end));
     return result;   
 
 }
 bool CheckLoadAfterStore(wsTupleMap &storeMap, wsTuple t_new)
 {
     bool overlaps = false;
+    if (storeMap.empty()) {
+        return overlaps;
+    }
     if (storeMap.find(t_new.start) != storeMap.end())
     {
         overlaps = covered(storeMap[t_new.start],t_new);
@@ -613,6 +618,7 @@ void Process(string &key, string &value)
             loadwksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
 
             // if the load address is from the kernel's store tuple, then not counting this load
+            // this currently only works for the case that the load address is completely covered by the store tuple, so the load tuple map will be larger than it should be, more dependencies will be counted
             if (!CheckLoadAfterStore(storewsTupleMap[currentNodeID], loadwksTuple))
             {
                 trivialMergeRefector(loadwsTupleMap[currentNodeID], loadwksTuple);
@@ -2038,25 +2044,228 @@ void DAGGenColoring()
 }
 
 
+
+void LastwriterMapUpdate(wsTuple t, int id)
+{
+
+    if (lastWriterTupleMap.empty())
+    {
+        lastWriterTupleMap[t.start] = t;
+        lastWriterNodeIDMap[t.start] = id;
+    }
+    else if(lastWriterTupleMap.find(t.start) != lastWriterTupleMap.end())
+    {
+        wsTuple t_old = lastWriterTupleMap[t.start];
+        if (t_old.end > t.end)
+        {
+            wsTuple t_new = (wsTuple){t.end, t_old.end, 0, 0, 0, 0};
+            lastWriterTupleMap[t_new.start] = t_new;
+            lastWriterNodeIDMap[t_new.start] = lastWriterNodeIDMap[t_old.start];
+            lastWriterTupleMap[t.start] = t;
+            lastWriterNodeIDMap[t.start] = id;
+        }
+        else {
+            auto old = lastWriterTupleMap.find(t.start);
+            auto iter = next(old);
+           
+            while (lastWriterTupleMap.find(iter->second.start) != lastWriterTupleMap.end())
+            {
+                // tuples in process map exceed the range of subtractor
+                if (t.end <= iter->second.start)
+                {
+                    break;
+                }
+                if (t.end < iter->second.end)
+                {
+                    wsTuple res_tuple = (wsTuple){t.end, iter->second.end, 0, 0, 0, 0};
+                    lastWriterTupleMap[res_tuple.start] = res_tuple;
+                    lastWriterNodeIDMap[res_tuple.start]= lastWriterNodeIDMap[iter->second.start];
+                    auto deleteIter = iter;
+                    iter = next(iter);    
+                    lastWriterNodeIDMap.erase(deleteIter->second.start);
+                    lastWriterTupleMap.erase(deleteIter);
+                }
+                else if (t.end >= iter->second.end)
+                {
+                    auto deleteIter = iter;
+                    iter = next(iter);
+                    lastWriterNodeIDMap.erase(deleteIter->second.start);
+                    lastWriterTupleMap.erase(deleteIter);   
+                }
+                else
+                {
+                    iter = next(iter);
+                }
+            }
+            lastWriterTupleMap[t.start] = t;
+            lastWriterNodeIDMap[t.start] = id;
+        }
+        
+
+
+    }
+    else
+    {
+        lastWriterTupleMap[t.start] = t;
+        lastWriterNodeIDMap[t.start] = id;
+        auto old = lastWriterTupleMap.find(t.start);
+
+        // check the tuple in process map that before substractor
+        auto iter = old;
+        iter = prev(iter);
+        // there is one prev tuple
+        if (lastWriterTupleMap.find(iter->second.start) != lastWriterTupleMap.end())
+        {
+            // overlaps
+            if (iter->second.end > t.start)
+            {
+                // 1 tuple res
+                if (iter->second.end <= t.end)
+                {
+                    wsTuple res_tuple = (wsTuple){iter->second.start, t.start, 0, 0, 0, 0};
+                    lastWriterTupleMap[res_tuple.start] = res_tuple;
+                    // node id doesnt change
+                } // 2 tuple res
+                else
+                {
+                    wsTuple res_tuple1 = (wsTuple){iter->second.start, t.start, 0, 0, 0, 0};
+                    lastWriterTupleMap[res_tuple1.start] = res_tuple1;
+                    wsTuple res_tuple2 = (wsTuple){t.end, iter->second.end, 0, 0, 0, 0};
+                    lastWriterTupleMap[res_tuple2.start] = res_tuple2;
+                    lastWriterNodeIDMap[res_tuple2.start] = lastWriterNodeIDMap[res_tuple1.start];
+                }
+            }
+        }
+
+        // check the following tuples
+        iter = old;
+        iter = next(iter);
+
+        while (lastWriterTupleMap.find(iter->second.start) != lastWriterTupleMap.end())
+        {
+            // tuples in process map exceed the range of subtractor
+            if (t.end <= iter->second.start)
+            {
+                break;
+            }
+            if (t.end < iter->second.end)
+            {
+                wsTuple res_tuple = (wsTuple){t.end, iter->second.end, 0, 0, 0, 0};
+                lastWriterTupleMap[res_tuple.start] = res_tuple;
+                lastWriterNodeIDMap[res_tuple.start]= lastWriterNodeIDMap[iter->second.start];
+                auto deleteIter = iter;
+                iter = next(iter);
+                lastWriterTupleMap.erase(deleteIter);
+                lastWriterNodeIDMap.erase(deleteIter->second.start);
+            }
+            else if (t.end >= iter->second.end)
+            {
+                auto deleteIter = iter;
+                iter = next(iter);
+                lastWriterTupleMap.erase(deleteIter);
+                lastWriterNodeIDMap.erase(deleteIter->second.start);
+            }
+            else
+            {
+                iter = next(iter);
+            }
+        }
+    }
+}
+
+void DependenceInLastWriterMap(wsTuple t, set <int> &node)
+{
+
+    if (lastWriterTupleMap.empty())
+    {
+        return;
+    }
+    if(lastWriterTupleMap.find(t.start) != lastWriterTupleMap.end())
+    {
+        wsTuple t_old = lastWriterTupleMap[t.start];
+        
+        if (t_old.end > t.end)
+        {
+            node.insert(lastWriterNodeIDMap[t.start]);
+        }
+        else {
+            node.insert(lastWriterNodeIDMap[t.start]);
+            auto old = lastWriterTupleMap.find(t.start);
+            auto iter = next(old);
+           
+            while (lastWriterTupleMap.find(iter->second.start) != lastWriterTupleMap.end())
+            {
+                // tuples in process map exceed the range of subtractor
+                if (t.end <= iter->second.start)
+                {
+                    break;
+                }
+                
+                node.insert(lastWriterNodeIDMap[iter->second.start]);             
+                iter = next(iter);
+                
+            }
+        }
+        
+    }
+    else
+    {
+        lastWriterTupleMap[t.start] = t;
+        auto old = lastWriterTupleMap.find(t.start);
+
+        // check the tuple in process map that before substractor
+        auto iter = old;
+        iter = prev(iter);
+        // there is one prev tuple
+        if (lastWriterTupleMap.find(iter->second.start) != lastWriterTupleMap.end())
+        {
+            // overlaps
+            if (iter->second.end > t.start)
+            {
+                node.insert(lastWriterNodeIDMap[iter->second.start]); 
+            
+            }
+        }
+
+        // check the following tuples
+        iter = old;
+        iter = next(iter);
+
+        while (lastWriterTupleMap.find(iter->second.start) != lastWriterTupleMap.end())
+        {
+            // tuples in process map exceed the range of subtractor
+            if (t.end <= iter->second.start)
+            {
+                break;
+            }
+            node.insert(lastWriterNodeIDMap[iter->second.start]); 
+            iter = next(iter);
+            
+        }
+        lastWriterTupleMap.erase(t.start);
+    }
+
+
+}
+
 void DAGGenColoringRefector()
 {
 
     int nodeNum  = kernelIdMap.size();
 
-    for (int i = 0; i< nodeNum; i++) {        
-        
-        for (auto st : storewsTupleMap[i])
-        {
-            //1.update the node that laster writer map points to 
-            //2.update the tuple ranges
-            ConstructColoringStructureRefactor(st.second, i, lastWriterTupleMap,lastWriterNodeIDMap);
+    for (int i = 0; i< nodeNum; i++) {
 
-        }
+
+        // store tuple map should be updated later, because 1.the loads will not be considered if they are from the same node
+        // 2. if the loads are still considered, they are loading from the previous node
+
 
         for (auto tp : loadwsTupleMap[i] )
         {
             set <int> node;
-            DepCheckRefactor(tp.second, lastWriterTupleMap,node);
+            // DepCheckRefactor(tp.second, lastWriterTupleMap,node);
+
+            DependenceInLastWriterMap(tp.second, node);
 
             for (auto n: node) {
                 if (n != i) {
@@ -2064,7 +2273,28 @@ void DAGGenColoringRefector()
                     DAGEdge.insert(edge);  
                 } 
             }
-        }    
+        }
+
+
+
+        for (auto st : storewsTupleMap[i])
+        {
+            //1.update the node that laster writer map points to 
+            //2.update the tuple ranges
+            // ConstructColoringStructureRefactor(st.second, i, lastWriterTupleMap,lastWriterNodeIDMap);
+            LastwriterMapUpdate(st.second,i);
+
+        }
+
+
+        
+
+
+        
+
+        
+
+                   
     }
 }
 

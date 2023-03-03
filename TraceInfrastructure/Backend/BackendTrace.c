@@ -17,7 +17,7 @@ char *TraceFilename;
 /// The maximum ammount of bytes to store in a buffer before flushing it.
 /// </summary>
 // #define BUFSIZE 128 * 1024
-#define BUFSIZE 1024 * 1024
+#define BUFSIZE 512 * 1024
 unsigned int bufferIndex = 0;
 uint8_t temp_buffer[BUFSIZE];
 uint8_t storeBuffer[BUFSIZE];
@@ -40,6 +40,8 @@ void BufferData()
     strm_DashTracer.avail_in = bufferIndex;
     strm_DashTracer.next_out = temp_buffer;
     strm_DashTracer.avail_out = BUFSIZE;
+
+
     while (strm_DashTracer.avail_in != 0)
     {
         int defResult = deflate(&strm_DashTracer, Z_NO_FLUSH);
