@@ -82,6 +82,11 @@ namespace DashTracer::Passes
                                 const Use *use = arg;
                                 Value *val = use->get();
                                 ConstantInt *cons = dyn_cast<ConstantInt>(val);
+
+                                if (loopIteration[cons->getSExtValue()]==0) {
+                                    goto endloop;
+                                }
+
                                 ULO.Count = loopIteration[cons->getSExtValue()];
                                 ULO.TripCount = ULO.Count+1;
                                 // delete loopTrace
