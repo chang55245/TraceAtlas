@@ -94,6 +94,8 @@ namespace DashTracer::Passes
                         BasicBlock* block = BBidToPtr[blockID];
                         if(block->getParent()->getName() =="main")
                         {
+                            // errs()<<"bbid"<<blockID<<"\n";
+                            // errs()<<*block<<"\n";
                             candidates.push_back(block);
                         }
                     }
@@ -108,6 +110,7 @@ namespace DashTracer::Passes
 
                     if (Outlined == nullptr) {
                         skip = true;
+                        errs()<<" ce eligible: " << CE.isEligible()<< ", node: "<<nk <<"\n";
                         break;
                         //errs()<<" ce eligible: " << CE.isEligible()<< ", node: "<<nk <<"\n";
                     }
@@ -118,6 +121,7 @@ namespace DashTracer::Passes
                     errs()<<" ce eligible: " << static_cast<int>(CE.isEligible())<< ", node: "<<nk <<", outlined function:" << Outlined->getName()<<"\n";
                    
                 }
+                errs()<<"skip: "<<skip<<"\n";
 
                 if (!skip) // succeffully extracted, should parallel
                 {

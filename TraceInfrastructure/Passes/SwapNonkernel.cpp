@@ -45,6 +45,24 @@ map<int,set<int>> nonkernelStage;
 bool DashTracer::Passes::SwapNonkernel::runOnFunction(Function &F) {
   bool modified = false;
 
+    for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E;) {
+    Instruction *inst = &*I;
+    I++;
+
+    if (auto *CI = dyn_cast<CallInst>(inst)) {
+      Function *calledFunc = CI->getCalledFunction();
+
+      if (calledFunc) {
+        auto funcName = calledFunc->getName();
+        // name start mid
+        if (funcName == "LoadDump"|| funcName == "StoreDump"|| funcName == "MemCpyDump"|| funcName == "BB_ID_Dump") {
+          inst->eraseFromParent();
+        }
+      }
+    }
+  }
+
+
   if (F.getName() != "main") {
     return modified;
   }
@@ -125,7 +143,7 @@ bool DashTracer::Passes::SwapNonkernel::runOnFunction(Function &F) {
                 auto *cons = dyn_cast<ConstantInt>(CI->arg_begin()->get());
                 auto number = (uint64_t) cons->getSExtValue();
 
-
+                // number = 3;
                 int indexInStage = 0;
                 for (auto nk : nonkernelStage[int(number)]) {
                     string name = "nk_"+to_string(nk);
@@ -162,7 +180,7 @@ bool DashTracer::Passes::SwapNonkernel::runOnFunction(Function &F) {
 
                     builder.CreateCall(pthread_join, pthread_join_args);
                 }
-                //add pthread join
+                // add pthread join
                 // CI->eraseFromParent();
                 // calledFunc->eraseFromParent();
             }
@@ -171,6 +189,8 @@ bool DashTracer::Passes::SwapNonkernel::runOnFunction(Function &F) {
   }
   
   regex pattern("^nk_.*$");
+
+  vector<Instruction*> TobeDeleted;
   for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
   {
     for (BasicBlock::iterator BI = BB->begin(), BE = BB->end(); BI != BE; ++BI)
@@ -183,7 +203,7 @@ bool DashTracer::Passes::SwapNonkernel::runOnFunction(Function &F) {
             auto words_end = sregex_iterator();
             
             
-            if (distance(words_begin, words_end)!= 0)
+            if (distance(words_begin, words_end)!= 0 && functionThreadID.find(name) != functionThreadID.end())
             {
                 // const smatch& match = *words_begin;
                 nkFunc = calledFunc;
@@ -227,18 +247,51 @@ bool DashTracer::Passes::SwapNonkernel::runOnFunction(Function &F) {
                 // thread id, 
                 builder.CreateCall(pthread_create, pthread_create_args);
 
+
+
+                // {
+
+
+                //     SmallVector<Value *, 8> pthread_join_args;
+                //     auto *zero = ConstantInt::get(BB->getContext(), llvm::APInt(32, 0, true));
+                //     // auto *index = ConstantInt::get(BB->getContext(), llvm::APInt(32, i, true));
+                //     Type *VoidPointerType = Type::getInt8PtrTy(module->getContext());
+                //     auto *nulltype = ConstantPointerNull::get(PointerType::get(VoidPointerType, 0));
+                    
+                //     auto *threadIDPtr = builder.CreateGEP(ThreadAlloca, { zero, index });
+                //     auto *loadThreadID = builder.CreateLoad(Type::getInt64Ty(module->getContext()),threadIDPtr);
+
+                //     pthread_join_args.push_back(loadThreadID);
+                //     pthread_join_args.push_back(nulltype);
+
+                //     builder.CreateCall(pthread_join, pthread_join_args);
+
+
+                // }
+
+                // CI->setCalledFunction(createCall);
+
                 //funcPtr =  ConstantExpr::getBitCast(calledFunc, Type::getInt8PtrTy(module->getContext()));
                 // errs()<<"number arg:"<< *(calledFunc->arg_begin())<<"\n";
+                TobeDeleted.push_back(CI);
             }
         }
 
     }
   }
 
+  for(auto inst : TobeDeleted)
+  {
+    inst->eraseFromParent();
+  }
+
+
+
+
 
 
  
-  errs()<< "pass";
+//   errs()<< *F.getParent();
   modified = true;
   return modified;
 }
