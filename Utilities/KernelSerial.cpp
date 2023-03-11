@@ -2678,6 +2678,11 @@ void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevN
 
     for (auto i : kernelIdMap)
     {
+        //last node
+        if (i.first == kernelIdMap.size()-1)
+        {
+            continue;
+        }
         if(PrevNodeMap[i.first].empty())
         {
             if(i.second=="-1")
@@ -2715,6 +2720,10 @@ void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevN
 
             for (auto i : kernelIdMap)
             {
+                if (i.first == kernelIdMap.size()-1)
+                {
+                    continue;
+                }
                 if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].empty()&&i.second == "-1")
                 {
                     schedulableNonKernel.insert(i.first);                 
@@ -2723,6 +2732,10 @@ void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevN
         }
         for (auto i : kernelIdMap)
         {
+            if (i.first == kernelIdMap.size()-1)
+            {
+                continue;
+            }
             if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].empty())
             {
                 if (i.second != "-1")
@@ -2774,6 +2787,10 @@ void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevN
             nodeStage++;
             for (auto i : kernelIdMap)
             {
+                if (i.first == kernelIdMap.size()-1)
+                {
+                    continue;
+                }
                 if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].empty())
                 {
                     if (i.second != "-1")
@@ -2785,6 +2802,10 @@ void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevN
         }
         for (auto i : kernelIdMap)
         {
+            if (i.first == kernelIdMap.size()-1)
+            {
+                continue;
+            }
             if (PrevNodeMap.find(i.first) != PrevNodeMap.end() && PrevNodeMap[i.first].empty())
             {
                 if (i.second == "-1")
@@ -2793,7 +2814,10 @@ void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevN
                 }
             }
         }
+
+
     }
+    ScheduleForSingThread.push_back(kernelIdMap.size()-1);
 }
 
 void DAGScheduleSingleThread()

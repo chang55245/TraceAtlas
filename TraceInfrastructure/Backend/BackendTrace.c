@@ -41,14 +41,19 @@ void BufferData()
     strm_DashTracer.next_out = temp_buffer;
     strm_DashTracer.avail_out = BUFSIZE;
 
-
     while (strm_DashTracer.avail_in != 0)
     {
         int defResult = deflate(&strm_DashTracer, Z_NO_FLUSH);
 
         if (defResult != Z_OK)
         {
-            fprintf(stderr, "Zlib compression error");
+            fprintf(stderr, "Zlib compression error %d",defResult);
+            if (defResult ==Z_BUF_ERROR) {
+                fprintf(stderr, "input buffer is too small");
+            }
+            else if (defResult ==Z_MEM_ERROR ) {
+                fprintf(stderr, "ouput buffer is too small");
+            }
             exit(-1);
         }
 
@@ -114,6 +119,8 @@ void OpenFile()
     {
         TraceCompressionLevel = 5;
     }
+
+    TraceCompressionLevel = 1;
     strm_DashTracer.zalloc = Z_NULL;
     strm_DashTracer.zfree = Z_NULL;
     strm_DashTracer.opaque = Z_NULL;
@@ -151,6 +158,7 @@ void CloseFile()
 void LoadDump(void *address)
 {
     char fin[128];
+    // fprintf(stderr, "load \n");
     sprintf(fin, "LoadAddress:%#lX\n", (uint64_t)address);
     WriteStream(fin);
 }
@@ -178,6 +186,7 @@ void DumpLoadValue(void *MemValue, int size)
 void StoreDump(void *address)
 {
     char fin[128];
+    // fprintf(stderr, "store \n");
     sprintf(fin, "StoreAddress:%#lX\n", (uint64_t)address);
     WriteStream(fin);
     // printf("StoreAddress:%#lX\n", (uint64_t)address);

@@ -52,7 +52,8 @@ namespace DashTracer::Passes
                             {
                                 // change successor into the second
                                 auto newBB = BBidToPtr[BBMapingTransform[blockId].second];
-                                branch->setSuccessor(i,newBB);
+                            
+                                branch->setSuccessor(i,newBB);                      
                                 // errs()<<"done from bb:"<<blockId<< " to bb:"<<BBMapingTransform[blockId].second<<"\n";
                                 // bool verifyRes = verifyFunction(F);
                                 // errs() << "verfiy:" <<verifyRes<<"\n";
