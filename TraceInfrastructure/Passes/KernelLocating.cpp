@@ -89,6 +89,11 @@ namespace DashTracer::Passes
                 if (auto *CI = dyn_cast<CallInst>(BI))
                 {
                     Function *calledFunc = CI->getCalledFunction();
+                   
+                    if (calledFunc == nullptr ||!calledFunc->hasName())
+                    {
+                        continue;
+                    }
                     if (calledFunc->getName() == "DASH_FFT"||calledFunc->getName() == "DASH_GEMM")
                     {
                         auto *outterLoop = LI.getLoopFor(dyn_cast<BasicBlock>(BB));

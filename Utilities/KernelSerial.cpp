@@ -2818,6 +2818,7 @@ void SingThreadSchedule(map<int, set<int>> NextNodeMap, map<int, set<int>> PrevN
 
     }
     ScheduleForSingThread.push_back(kernelIdMap.size()-1);
+    nodeIndexStage[kernelIdMap.size()-1] = nodeStage;
 }
 
 void DAGScheduleSingleThread()
