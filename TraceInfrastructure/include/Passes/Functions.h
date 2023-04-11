@@ -40,6 +40,12 @@ namespace DashTracer
         extern Function *CallTraceInitialization;
         extern Function *CallTraceDestroy;
         extern Function *KernelNameTrace;
+
+
+        extern Function *LoadInstructionDump;
+        extern Function *StoreInstructionDump;
+        extern Function *MemProfInitialization;
+        extern Function *MemProfDestroy;
      
     } // namespace Passes
 } // namespace DashTracer

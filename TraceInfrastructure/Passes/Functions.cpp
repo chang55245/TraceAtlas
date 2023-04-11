@@ -33,4 +33,10 @@ namespace DashTracer::Passes
     Function *CallTraceInitialization;
     Function *CallTraceDestroy;
     Function *KernelNameTrace;
+
+
+    Function *LoadInstructionDump;
+    Function *StoreInstructionDump;
+    Function *MemProfInitialization;
+    Function *MemProfDestroy;
 } // namespace DashTracer::Passes
