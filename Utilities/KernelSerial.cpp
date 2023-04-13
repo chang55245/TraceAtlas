@@ -6,6 +6,7 @@
 #include <fstream>
 #include <indicators/progress_bar.hpp>
 #include <iostream>
+#include <llvm-9/llvm/Support/raw_ostream.h>
 #include <llvm/Analysis/DependenceAnalysis.h>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IRReader/IRReader.h>
@@ -175,7 +176,7 @@ int NontriOpen = true;
 float NonTriErrTh = 0.5;
 int NontriTh = 10;
 
-// map<int64_t, BasicBlock *> BBidToPtr;
+map<int64_t, BasicBlock *> BBidToPtr;
 
 bool overlap(wsTuple a, wsTuple b, int64_t error)
 {
@@ -682,132 +683,7 @@ void print_user(Instruction *CI, map<Instruction *, tuple<int64_t, int64_t>> mem
     }
 }
 
-int parsingKernelInfo(string KernelFilename)
-{
-    ifstream inputJson(KernelFilename);
-    nlohmann::json j;
-    inputJson >> j;
-    inputJson.close();
 
-    for (auto &[k, l] : j["Kernels"].items())
-    {
-        string index = k;
-        nlohmann::json kernel = l["Blocks"];
-        kernelMap[index] = kernel.get<set<int>>();
-    }
-
-    for (auto &[k, l] : j["Control"].items())
-    {
-        int index = stoul(k, nullptr, 0);
-        nlohmann::json kernel = l["Blocks"];
-        kernelControlMap[index] = kernel.get<set<int>>();
-        kernelIdMap[index] = l["Label"];
-    }
-
-    // build memory instructions to data size map
-    LLVMContext context;
-    SMDiagnostic smerror;
-    unique_ptr<Module> sourceBitcode;
-    try
-    {
-        sourceBitcode = parseIRFile(bitcodeFile, smerror, context);
-    }
-    catch (exception &e)
-    {
-        return 0;
-    }
-
-    Module *M = sourceBitcode.get();
-    Annotate(M);
-
-    map<Instruction *, tuple<int64_t, int64_t>> memInstIndexMap;
-
-    for (auto &mi : *M)
-    {
-        for (auto fi = mi.begin(); fi != mi.end(); fi++)
-        {
-            auto *bb = cast<BasicBlock>(fi);
-            auto dl = bb->getModule()->getDataLayout();
-            int64_t id = GetBlockID(bb);
-            // BBidToPtr[id] = bb;
-            int64_t instIndex = 0;
-            for (auto bi = fi->begin(); bi != fi->end(); bi++)
-            {
-                if (auto *inst = dyn_cast<LoadInst>(bi))
-                {
-                    auto *type = inst->getType();
-                    uint64_t dataSize = dl.getTypeAllocSize(type);
-                    BBMemInstSize[id].push_back(dataSize);
-                    memInstIndexMap[inst] = tuple<int64_t, int64_t>{id, instIndex};
-                    instIndex++;
-                }
-                else if (auto *inst = dyn_cast<StoreInst>(bi))
-                {
-                    auto *type = inst->getValueOperand()->getType();
-                    uint64_t dataSize = dl.getTypeAllocSize(type);
-                    BBMemInstSize[id].push_back(dataSize);
-                    memInstIndexMap[inst] = tuple<int64_t, int64_t>{id, instIndex};
-                    instIndex++;
-                }
-            }
-        }
-    }
-    vector<Instruction *> storeinstVect;
-    DependenceInfo *depinfo;
-
-    for (auto &mi : *M)
-    {
-        for (auto fi = mi.begin(); fi != mi.end(); fi++)
-        {
-            auto *bb = cast<BasicBlock>(fi);
-            auto dl = bb->getModule()->getDataLayout();
-            int64_t id = GetBlockID(bb);
-            for (auto bi = fi->begin(); bi != fi->end(); bi++)
-            {
-                auto *CI = dyn_cast<Instruction>(bi);
-                // if (auto *inst = dyn_cast<LoadInst>(bi))
-                // {
-                //     errs() << "CI:" << *CI << "\n";
-                //     errs() << "F is used in instruction:\n";
-                //     errs() << "bbid: " << get<0>(memInstIndexMap[inst]) << " index: " << get<1>(memInstIndexMap[inst]) << "\n";
-                //     print_user(inst, memInstIndexMap);
-                // }
-                // else if (auto *ld = dyn_cast<LoadInst>(bi))
-                // {
-                //     for (auto st : storeinstVect)
-                //     {
-                //         errs()<<"ld:"<<*ld<<"\n";
-                //         errs()<<"st::"<<*st<<"\n";
-
-                //         // auto Dep = depinfo->depends(ins, inst, true);
-                //         auto allocald = ld->getPointerOperand();
-                //         // st = dyn_cast<StoreInst>(st);
-                //         auto allocast = st->getOperand(1);
-                //         errs()<<"allocald:"<<*allocald<<"\n";
-                //         errs()<<"allocast::"<<*allocast<<"\n";
-                //         // if (Dep)
-                //         // {
-                //         //     bool res1 = Dep->isFlow();
-                //         //     bool res2 = Dep->isInput();
-                //         //     bool res3 = Dep->isOutput();
-                //         //     bool res4 = Dep->isAnti();
-                //         //     errs()<<"1";
-                //         // }
-                //         // auto res = Dep->isFlow();
-                //         // errs()<<"1";
-                //         if (allocald == allocast)
-                //         {
-                //             errs()<<"g \n";
-                //         }
-
-                //     }
-                // }
-            }
-        }
-    }
-
-    return 0;
-}
 
 void unionVector(AddrRange a, AddrRange b, vector<pair<int64_t, int64_t>> &result)
 {
@@ -2853,6 +2729,129 @@ void GenBBMapping()
     }
 }
 
+bool BBHaveStaticDependence(const BasicBlock *BB1, const BasicBlock *BB2) {
+  // Iterate over the instructions in BB1
+//   errs()<<"BB1:"<<BB1<<"\n";
+//   errs()<<"BB2:"<<BB2<<"\n";
+  for (const Instruction &Inst1 : *BB1) {
+    // Check if Inst1 produces a value used by an instruction in BB2
+    for (const User *U : Inst1.users()) {
+      if (const Instruction *Inst2 = dyn_cast<Instruction>(U)) {
+        if (Inst2->getParent() == BB2) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+
+set<pair<int, int>> StaticDAGEdge;
+
+void staticNodeDependence(int prev, int later)
+{
+    for (auto i: kernelControlMap[prev])
+    {
+
+        for (auto j: kernelControlMap[later])
+        {
+            if (BBHaveStaticDependence(BBidToPtr[i], BBidToPtr[j]))
+            {
+                StaticDAGEdge.insert(pair<int,int>{prev,later});
+                return;
+            }
+        }
+    }
+}
+void StaticDAGGen()
+{
+    int nodenum = kernelIdMap.size();
+    for(int i = 0; i<nodenum; i++)
+    {
+        for(int j = i+1; j<nodenum; j++)
+        {
+            staticNodeDependence(i,j);
+        }
+    }
+
+
+}
+
+int parsingKernelInfo(string KernelFilename)
+{
+    ifstream inputJson(KernelFilename);
+    nlohmann::json j;
+    inputJson >> j;
+    inputJson.close();
+
+    for (auto &[k, l] : j["Kernels"].items())
+    {
+        string index = k;
+        nlohmann::json kernel = l["Blocks"];
+        kernelMap[index] = kernel.get<set<int>>();
+    }
+
+    for (auto &[k, l] : j["Control"].items())
+    {
+        int index = stoul(k, nullptr, 0);
+        nlohmann::json kernel = l["Blocks"];
+        kernelControlMap[index] = kernel.get<set<int>>();
+        kernelIdMap[index] = l["Label"];
+    }
+
+    // build memory instructions to data size map
+    LLVMContext context;
+    SMDiagnostic smerror;
+    unique_ptr<Module> sourceBitcode;
+    try
+    {
+        sourceBitcode = parseIRFile(bitcodeFile, smerror, context);
+    }
+    catch (exception &e)
+    {
+        return 0;
+    }
+
+    Module *M = sourceBitcode.get();
+    Annotate(M);
+
+    map<Instruction *, tuple<int64_t, int64_t>> memInstIndexMap;
+
+    for (auto &mi : *M)
+    {
+        for (auto fi = mi.begin(); fi != mi.end(); fi++)
+        {
+            auto *bb = cast<BasicBlock>(fi);
+            auto dl = bb->getModule()->getDataLayout();
+            int64_t id = GetBlockID(bb);
+            BBidToPtr[id] = bb;
+            int64_t instIndex = 0;
+            for (auto bi = fi->begin(); bi != fi->end(); bi++)
+            {
+                if (auto *inst = dyn_cast<LoadInst>(bi))
+                {
+                    auto *type = inst->getType();
+                    uint64_t dataSize = dl.getTypeAllocSize(type);
+                    BBMemInstSize[id].push_back(dataSize);
+                    memInstIndexMap[inst] = tuple<int64_t, int64_t>{id, instIndex};
+                    instIndex++;
+                }
+                else if (auto *inst = dyn_cast<StoreInst>(bi))
+                {
+                    auto *type = inst->getValueOperand()->getType();
+                    uint64_t dataSize = dl.getTypeAllocSize(type);
+                    BBMemInstSize[id].push_back(dataSize);
+                    memInstIndexMap[inst] = tuple<int64_t, int64_t>{id, instIndex};
+                    instIndex++;
+                }
+            }
+        }
+    }
+
+    StaticDAGGen();
+    return 0;
+}
 
 int main(int argc, char **argv)
 {
@@ -2881,6 +2880,7 @@ int main(int argc, char **argv)
     clock_t end_time;
     // DAGGenNormal();
     start_time = clock();
+
     DAGGenColoringRefector();
     // DAGGenColoring();
     end_time = clock();
@@ -2936,6 +2936,7 @@ int main(int argc, char **argv)
     
     // jOut["barrierRemoval"] = barrierRemoval;
     jOut["DAGEdge"] = DAGEdge;
+    jOut["StaticDAGEdge"] = StaticDAGEdge;
     jOut["NodePosition"] = NodePosition;
 
 
