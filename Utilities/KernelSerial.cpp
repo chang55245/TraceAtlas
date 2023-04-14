@@ -2849,7 +2849,7 @@ int parsingKernelInfo(string KernelFilename)
         }
     }
 
-    StaticDAGGen();
+    // StaticDAGGen();
     return 0;
 }
 

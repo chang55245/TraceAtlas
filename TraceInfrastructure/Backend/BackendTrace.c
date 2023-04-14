@@ -6,6 +6,7 @@
 #include <string.h>
 #include <zlib.h>
 
+
 FILE *myfile;
 
 //trace functions
@@ -21,6 +22,130 @@ char *TraceFilename;
 unsigned int bufferIndex = 0;
 uint8_t temp_buffer[BUFSIZE];
 uint8_t storeBuffer[BUFSIZE];
+
+// Binary search tree node structure
+struct Node {
+    uint64_t key;
+    bool isRed;
+    struct Node* left;
+    struct Node* right;
+};
+
+// Function to create a new node
+struct Node* newNode(uint64_t key) {
+    // Allocate memory for a new node
+    struct Node* node = (struct Node*)malloc(sizeof(struct Node));
+    if (node == NULL) {
+        printf("Error: Out of memory\n");
+        exit(1);
+    }
+    // Initialize node properties
+    node->key = key;
+    node->isRed = true;
+    node->left = NULL;
+    node->right = NULL;
+    return node;
+}
+
+
+// Function to rotate a node to the left
+struct Node* rotateLeft(struct Node* node) {
+    // Perform a left rotation
+    struct Node* newRoot = node->right;
+    node->right = newRoot->left;
+    newRoot->left = node;
+    newRoot->isRed = node->isRed;
+    node->isRed = true;
+    return newRoot;
+}
+
+// Function to rotate a node to the right
+struct Node* rotateRight(struct Node* node) {
+    // Perform a right rotation
+    struct Node* newRoot = node->left;
+    node->left = newRoot->right;
+    newRoot->right = node;
+    newRoot->isRed = node->isRed;
+    node->isRed = true;
+    return newRoot;
+}
+
+// Function to flip the colors of a node and its children
+void flipColors(struct Node* node) {
+    // Flip the colors of a node and its children
+    node->isRed = !node->isRed;
+    node->left->isRed = !node->left->isRed;
+    node->right->isRed = !node->right->isRed;
+}
+
+
+
+struct Node* insert(struct Node* root, uint64_t key) {
+    if (root == NULL) {
+        // If the root is NULL, create a new node and return it
+        return newNode(key);
+    }
+
+    if (key < root->key) {
+        // If the key is smaller, insert it in the left subtree
+        root->left = insert(root->left, key);
+    } else if (key > root->key) {
+        // If the key is larger, insert it in the right subtree
+        root->right = insert(root->right, key);
+    }
+
+    // Fix violations of the Red-Black tree properties
+    if (root->right != NULL && root->right->isRed && (root->left == NULL || !root->left->isRed)) {
+        root = rotateLeft(root);
+    }
+    if (root->left != NULL && root->left->isRed && root->left->left != NULL && root->left->left->isRed) {
+        root = rotateRight(root);
+    }
+    if (root->left != NULL && root->left->isRed && root->right != NULL && root->right->isRed) {
+        flipColors(root);
+    }
+
+    return root;
+}
+
+// Function to search for a key in the binary search tree
+bool search(struct Node* root, uint64_t key) {
+    if (root == NULL) {
+        return false;
+    }
+
+    if (key == root->key) {
+        return true;
+    } else if (key < root->key) {
+        return search(root->left, key);
+    } else {
+        return search(root->right, key);
+    }
+}
+
+
+void clear(struct Node* root) {
+    if (root == NULL) {
+        return;
+    }
+
+    clear(root->left);
+    clear(root->right);
+    free(root);
+}
+
+
+struct Node* loadRoot= NULL;
+struct Node* storeRoot= NULL;
+
+void SwitchKernel()
+{
+    // if see kernel enter or exit, call this to clear the tree for load and store
+    clear(loadRoot);
+    clear(storeRoot);
+    loadRoot= NULL;
+    storeRoot= NULL;
+}
 
 void WriteStream(char *input)
 {
@@ -157,10 +282,14 @@ void CloseFile()
 
 void LoadDump(void *address)
 {
-    char fin[128];
-    // fprintf(stderr, "load \n");
-    sprintf(fin, "LoadAddress:%#lX\n", (uint64_t)address);
-    WriteStream(fin);
+    if (!search(loadRoot, (uint64_t)address))
+    {
+        loadRoot = insert(loadRoot, (uint64_t)address);
+        char fin[128];
+        // fprintf(stderr, "load \n");
+        sprintf(fin, "LoadAddress:%#lX\n", (uint64_t)address);
+        WriteStream(fin);
+    }
 }
 void DumpLoadValue(void *MemValue, int size)
 {
@@ -185,11 +314,15 @@ void DumpLoadValue(void *MemValue, int size)
 }
 void StoreDump(void *address)
 {
-    char fin[128];
-    // fprintf(stderr, "store \n");
-    sprintf(fin, "StoreAddress:%#lX\n", (uint64_t)address);
-    WriteStream(fin);
-    // printf("StoreAddress:%#lX\n", (uint64_t)address);
+
+    if (!search(storeRoot, (uint64_t)address))
+    {
+        storeRoot = insert(storeRoot, (uint64_t)address);
+        char fin[128];
+        // fprintf(stderr, "load \n");
+        sprintf(fin, "StoreAddress:%#lX\n", (uint64_t)address);
+        WriteStream(fin);
+    }
 }
 
 void MemCpyDump(void *dest,void *src,void *len)
@@ -238,6 +371,7 @@ void BB_ID_Dump(uint64_t block, bool enter)
 
 void KernelEnter(char *label)
 {
+    SwitchKernel();
     char fin[128];
     strcpy(fin, "KernelEnter:");
     strcat(fin, label);
@@ -246,6 +380,7 @@ void KernelEnter(char *label)
 }
 void KernelExit(char *label)
 {
+    SwitchKernel();
     char fin[128];
     strcpy(fin, "KernelExit:");
     strcat(fin, label);
@@ -255,6 +390,7 @@ void KernelExit(char *label)
 
 void NonKernelSplit()
 {
+    SwitchKernel();
     char fin[128];
     strcpy(fin, "NonKernelSplit:get\n");
     WriteStream(fin);
