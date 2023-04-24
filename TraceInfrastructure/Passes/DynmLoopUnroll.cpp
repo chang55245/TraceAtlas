@@ -3,7 +3,12 @@
 #include "Passes/Annotate.h"
 #include "AtlasUtil/Annotate.h"
 #include <cstdint>
+#include <llvm-9/llvm/Analysis/LoopAnalysisManager.h>
+#include <llvm-9/llvm/IR/InstrTypes.h>
+#include <llvm-9/llvm/IR/Value.h>
+#include <llvm-9/llvm/InitializePasses.h>
 #include <llvm-9/llvm/Support/raw_ostream.h>
+#include <llvm-9/llvm/Transforms/Scalar/SimpleLoopUnswitch.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
@@ -18,6 +23,8 @@
 #include <llvm/Transforms/Utils/BasicBlockUtils.h>
 #include <llvm/Transforms/Utils/UnrollLoop.h>
 #include <system_error>
+
+
 
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopPass.h"
@@ -43,6 +50,7 @@ namespace DashTracer::Passes
         ScalarEvolution SE(F, TLI, AC, DT, LI);
         OptimizationRemarkEmitter ORE(&F);
         UnrollLoopOptions ULO;
+
         ULO.Count = 5;
         ULO.TripCount = ULO.Count;
         ULO.Force = false;
@@ -95,8 +103,51 @@ namespace DashTracer::Passes
                                 bool PreserveLCSSA = loopTest->isRecursivelyLCSSAForm(DT, LI);
                                 // errs()<<*loopTest;
 
+
+                                Value *IndVar;
+                                
+                               
+                                BasicBlock *Header = loopTest->getHeader();
+                                Instruction *Term = Header->getTerminator();
+                                
+                                for (BasicBlock::iterator BIi = Header->begin(), BEi = Header->end(); BIi != BEi; ++BIi)
+                                {
+                                    if (auto *CIi = dyn_cast<CmpInst>(BIi)) {
+                                        auto cmpVar = CIi->getOperand(0);
+                                        errs()<<"Found cmpVar: "<<*cmpVar<<"\n";
+                                        errs()<<"Found CI: "<<*CIi<<"\n";
+                                        errs()<<"Found terminaler: "<<*(Term)<<"\n";
+                                        if (CIi == Term->getOperand(0)) {
+                                            
+
+                                            IndVar = cmpVar;
+                                            
+                                            Value *NewTripCount = ConstantInt::get(IndVar->getType(), ULO.Count);
+
+                                            IRBuilder<> Builder(Header);
+
+                                            Builder.SetInsertPoint(CIi);
+                                            
+                                            Value *NewCond = Builder.CreateICmpSLT(IndVar, NewTripCount);
+
+                                            
+                                            
+                                            BranchInst *NewTerm = BranchInst::Create(Term->getSuccessor(0),
+                                                                                Term->getSuccessor(1), NewCond);
+                                            ReplaceInstWithInst(Term, NewTerm);
+                                                         
+                                            CIi->eraseFromParent();
+                                            // errs()<<"Found NewCond: "<<*NewCond<<"\n";
+                                            // errs()<<"Found NewTerm: "<<*NewTerm<<"\n";             
+                                            break;
+                                        }
+                                    }
+                                }           
+                                
+
+                                LI.verify(DT);                                
                                 UnrollLoop(loopTest, ULO, &LI, &SE, &DT, &AC, &ORE, PreserveLCSSA, nullptr);
-                                // simplifyLoopAfterUnroll(loopTest, true,&LI, &SE, &DT, &AC);
+                                simplifyLoopAfterUnroll(loopTest, true,&LI, &SE, &DT, &AC);
                                 unrolled = true;
                                 goto endloop;
                                 // clean the binary, delete the everything irrelavate
@@ -124,6 +175,8 @@ namespace DashTracer::Passes
             break;
             }
         }
+
+        // errs() << F;
         return true;
     }
 

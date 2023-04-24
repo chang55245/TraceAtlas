@@ -25,14 +25,14 @@ uint8_t storeBuffer[BUFSIZE];
 
 // Binary search tree node structure
 struct Node {
-    uint64_t key;
+    int64_t key;
     bool isRed;
     struct Node* left;
     struct Node* right;
 };
 
 // Function to create a new node
-struct Node* newNode(uint64_t key) {
+struct Node* newNode(int64_t key) {
     // Allocate memory for a new node
     struct Node* node = (struct Node*)malloc(sizeof(struct Node));
     if (node == NULL) {
@@ -80,47 +80,51 @@ void flipColors(struct Node* node) {
 
 
 
-struct Node* insert(struct Node* root, uint64_t key) {
-    if (root == NULL) {
+struct Node* insert(struct Node** root, int64_t key) {
+    if (*root == NULL) {
         // If the root is NULL, create a new node and return it
+        
         return newNode(key);
     }
 
-    if (key < root->key) {
+    if (key < (*root)->key) {
         // If the key is smaller, insert it in the left subtree
-        root->left = insert(root->left, key);
-    } else if (key > root->key) {
+        insert(&(*root)->left, key);
+    } else if (key > (*root)->key) {
         // If the key is larger, insert it in the right subtree
-        root->right = insert(root->right, key);
+        insert(&(*root)->right, key);
     }
 
     // Fix violations of the Red-Black tree properties
-    if (root->right != NULL && root->right->isRed && (root->left == NULL || !root->left->isRed)) {
-        root = rotateLeft(root);
+    if ((*root)->right != NULL && (*root)->right->isRed && ((*root)->left == NULL || !(*root)->left->isRed)) {
+        (*root) = rotateLeft((*root));
     }
-    if (root->left != NULL && root->left->isRed && root->left->left != NULL && root->left->left->isRed) {
-        root = rotateRight(root);
+    if ((*root)->left != NULL && (*root)->left->isRed && (*root)->left->left != NULL && (*root)->left->left->isRed) {
+        (*root) = rotateRight((*root));
     }
-    if (root->left != NULL && root->left->isRed && root->right != NULL && root->right->isRed) {
-        flipColors(root);
+    if ((*root)->left != NULL && (*root)->left->isRed && (*root)->right != NULL && (*root)->right->isRed) {
+        flipColors((*root));
     }
 
-    return root;
+    return (*root);
 }
 
 // Function to search for a key in the binary search tree
-bool search(struct Node* root, uint64_t key) {
+bool search(struct Node* root, int64_t key) {
     if (root == NULL) {
         return false;
     }
 
     if (key == root->key) {
         return true;
-    } else if (key < root->key) {
+    } 
+    
+    if (key < root->key) {
         return search(root->left, key);
-    } else {
-        return search(root->right, key);
-    }
+    }          
+    
+    return search(root->right, key);
+   
 }
 
 
@@ -130,8 +134,20 @@ void clear(struct Node* root) {
     }
 
     clear(root->left);
+    root->left = NULL;
     clear(root->right);
+    root->right = NULL;
     free(root);
+    root = NULL;
+}
+
+void clear_tree(struct Node** root) {
+    if (*root == NULL) {
+        return;
+    }
+
+    clear(*root);
+    *root = NULL;
 }
 
 
@@ -141,8 +157,8 @@ struct Node* storeRoot= NULL;
 void SwitchKernel()
 {
     // if see kernel enter or exit, call this to clear the tree for load and store
-    clear(loadRoot);
-    clear(storeRoot);
+    clear_tree(&loadRoot);
+    clear_tree(&storeRoot);
     loadRoot= NULL;
     storeRoot= NULL;
 }
@@ -282,9 +298,9 @@ void CloseFile()
 
 void LoadDump(void *address)
 {
-    if (!search(loadRoot, (uint64_t)address))
+    if (!search(loadRoot, (int64_t)address))
     {
-        loadRoot = insert(loadRoot, (uint64_t)address);
+        loadRoot = insert(&loadRoot, (int64_t)address);
         char fin[128];
         // fprintf(stderr, "load \n");
         sprintf(fin, "LoadAddress:%#lX\n", (uint64_t)address);
@@ -315,9 +331,9 @@ void DumpLoadValue(void *MemValue, int size)
 void StoreDump(void *address)
 {
 
-    if (!search(storeRoot, (uint64_t)address))
+    if (!search(storeRoot, (int64_t)address))
     {
-        storeRoot = insert(storeRoot, (uint64_t)address);
+        storeRoot = insert(&storeRoot, (int64_t)address);
         char fin[128];
         // fprintf(stderr, "load \n");
         sprintf(fin, "StoreAddress:%#lX\n", (uint64_t)address);
