@@ -41,6 +41,8 @@ namespace DashTracer::Passes
             for (BasicBlock::iterator BI = BB->begin(), BE = BB->end(); BI != BE; ++BI)
             {
                 auto *CI = dyn_cast<Instruction>(BI);
+                vector<Value *> values;
+
                 // errs() << *CI << "\n";
                 if (DumpLoads)
                 {
@@ -50,7 +52,18 @@ namespace DashTracer::Passes
                         Value *addr = load->getPointerOperand();
                         auto castCode = CastInst::getCastOpcode(addr, true, PointerType::get(Type::getInt8PtrTy(BB->getContext()), 0), true);
                         Value *cast = builder.CreateCast(castCode, addr, Type::getInt8PtrTy(BB->getContext()));
-                        builder.CreateCall(LoadDump, cast);
+                        values.push_back(cast);
+
+                        // get the size of the load
+                        // errs()<<"load:"<<*load<<"\n";
+                        auto *tyaddr = load->getType();
+                        // Type *tyaddrContain = tyaddr->getContainedType(0);
+                        uint64_t sizeSig = BB->getModule()->getDataLayout().getTypeAllocSize(tyaddr);
+              
+                        ConstantInt *sizeSigVal = ConstantInt::get(llvm::Type::getInt8Ty(BB->getContext()), sizeSig);
+                        values.push_back(sizeSigVal);
+
+                        builder.CreateCall(LoadDump, values);
                     }
                 }
                 if (DumpStores)
@@ -61,7 +74,16 @@ namespace DashTracer::Passes
                         Value *addr = store->getPointerOperand();
                         auto castCode = CastInst::getCastOpcode(addr, true, PointerType::get(Type::getInt8PtrTy(BB->getContext()), 0), true);
                         Value *cast = builder.CreateCast(castCode, addr, Type::getInt8PtrTy(BB->getContext()));
-                        builder.CreateCall(StoreDump, cast);
+                        values.push_back(cast);
+
+                        // get the size of the load
+                        // errs()<<"load:"<<*store<<"\n";
+                        auto *tyaddr = store->getValueOperand()->getType();
+                        // Type *tyaddrContain = tyaddr->getContainedType(0);
+                        uint64_t sizeSig = BB->getModule()->getDataLayout().getTypeAllocSize(tyaddr);                        
+                        ConstantInt *sizeSigVal = ConstantInt::get(llvm::Type::getInt8Ty(BB->getContext()), sizeSig);
+                        values.push_back(sizeSigVal);
+                        builder.CreateCall(StoreDump, values);
                     }
                 }
 
@@ -123,8 +145,8 @@ namespace DashTracer::Passes
     bool EncodedTrace::doInitialization(Module &M)
     {
         BB_ID = cast<Function>(M.getOrInsertFunction("BB_ID_Dump", Type::getVoidTy(M.getContext()), Type::getInt64Ty(M.getContext()), Type::getInt1Ty(M.getContext())).getCallee());
-        LoadDump = cast<Function>(M.getOrInsertFunction("LoadDump", Type::getVoidTy(M.getContext()), Type::getIntNPtrTy(M.getContext(), 8)).getCallee());
-        StoreDump = cast<Function>(M.getOrInsertFunction("StoreDump", Type::getVoidTy(M.getContext()), Type::getIntNPtrTy(M.getContext(), 8)).getCallee());
+        LoadDump = cast<Function>(M.getOrInsertFunction("LoadDump", Type::getVoidTy(M.getContext()), Type::getIntNPtrTy(M.getContext(), 8), Type::getInt8Ty(M.getContext())).getCallee());
+        StoreDump = cast<Function>(M.getOrInsertFunction("StoreDump", Type::getVoidTy(M.getContext()), Type::getIntNPtrTy(M.getContext(), 8), Type::getInt8Ty(M.getContext())).getCallee());
         //input types?
         MemCpyDump = cast<Function>(M.getOrInsertFunction("MemCpyDump", Type::getVoidTy(M.getContext()), Type::getIntNPtrTy(M.getContext(), 8),Type::getIntNPtrTy(M.getContext(), 8),Type::getIntNPtrTy(M.getContext(), 8)).getCallee());
         // CondBranch = cast<Function>(M.getOrInsertFunction("CondBranch", Type::getVoidTy(M.getContext())).getCallee());

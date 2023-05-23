@@ -533,10 +533,10 @@ void ControlParse(int block)
 // this is for nested basic blocks
 stack<int> basicBlockBuff;
 stack<int> instCounterBuff;
+uint64_t address  = 0;
 void Process(string &key, string &value)
 {
-
-    // timing to calculate the reuse distance in one kernel instance
+    
 
     if (key == "BBEnter")
     {
@@ -575,61 +575,183 @@ void Process(string &key, string &value)
             instCounterBuff.pop();
         }
     }
+    else if (key == "LoadSize") {
+        uint64_t size = stoul(value, nullptr, 0);
+        if(size== 0 )
+        {
+            printf("LoadSize: %lu \n",size);
+            exit(0);
+        }
+
+        if (address == 0) {
+            printf("address: %lu \n",address);
+            exit(0);
+        }
+
+
+        // printf("trace LoadSize: %lu \n",size);
+        // printf("read LoadSize: %lu \n",BBMemInstSize[vBlock][instCounter]);
+
+        uint64_t dataSize = size;
+        wsTuple loadwksTuple;
+        loadwksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
+
+        // if the load address is from the kernel's store tuple, then not counting this load
+        // this currently only works for the case that the load address is completely covered by the store tuple, so the load tuple map will be larger than it should be, more dependencies will be counted
+        if (!CheckLoadAfterStore(storewsTupleMap[currentNodeID], loadwksTuple))
+        {
+            trivialMergeRefector(loadwsTupleMap[currentNodeID], loadwksTuple);
+        }
+
+        if (loadwsTupleMap[currentNodeID].size() > peakLoadTNum)
+        {
+            peakLoadTNum = loadwsTupleMap[currentNodeID].size();
+        }
+        address = 0;
+
+
+
+        //  if (noerrorInTrace)
+        // {
+
+        //     uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
+        //     if (BBMemInstSize[vBlock].size() <= instCounter)
+        //     {
+        //         return;
+        //     }
+
+        //     instCounter++;
+        //     wsTuple loadwksTuple;
+        //     loadwksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
+
+        //     // if the load address is from the kernel's store tuple, then not counting this load
+        //     // this currently only works for the case that the load address is completely covered by the store tuple, so the load tuple map will be larger than it should be, more dependencies will be counted
+        //     if (!CheckLoadAfterStore(storewsTupleMap[currentNodeID], loadwksTuple))
+        //     {
+        //         trivialMergeRefector(loadwsTupleMap[currentNodeID], loadwksTuple);
+        //     }
+
+        //     if (loadwsTupleMap[currentNodeID].size() > peakLoadTNum)
+        //     {
+        //         peakLoadTNum = loadwsTupleMap[currentNodeID].size();
+        //     }
+        // }
+       
+        
+    }
+    else if (key == "StoreSize") {
+        uint64_t size = stoul(value, nullptr, 0);
+
+        if(size== 0 )
+        {
+            printf("StoreSize: %lu \n",size);
+            exit(0);
+        }
+
+        if (address == 0) {
+            printf("address: %lu \n",address);
+            exit(0);
+        }
+
+
+        uint64_t dataSize = size;
+        wsTuple storewksTuple;
+        storewksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
+        trivialMergeRefector(storewsTupleMap[currentNodeID], storewksTuple);
+
+        if (storewsTupleMap[currentNodeID].size() > peakStoreTNum)
+        {
+            peakStoreTNum = storewsTupleMap[currentNodeID].size();
+        }
+        address = 0;
+
+
+
+        //  if (noerrorInTrace)
+        // {
+
+
+        //     printf("trace StoreSize: %lu \n",size);
+        //     printf("read StoreSize: %lu \n",BBMemInstSize[vBlock][instCounter]);
+
+
+        //     if (BBMemInstSize[vBlock].size() <= instCounter)
+        //     {
+        //         return;
+        //     }
+
+        //     uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
+        //     instCounter++;
+        //     wsTuple storewksTuple;
+        //     storewksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
+        //     trivialMergeRefector(storewsTupleMap[currentNodeID], storewksTuple);
+
+        //     if (storewsTupleMap[currentNodeID].size() > peakStoreTNum)
+        //     {
+        //         peakStoreTNum = storewsTupleMap[currentNodeID].size();
+        //     }
+        // }
+        
+    
+    
+    }
     else if (key == "StoreAddress")
     {
+        address = stoul(value, nullptr, 0);
 
-        uint64_t address = stoul(value, nullptr, 0);
+        // uint64_t address = stoul(value, nullptr, 0);
 
-        if (noerrorInTrace)
-        {
-            if (BBMemInstSize[vBlock].size() <= instCounter)
-            {
-                return;
-            }
+        // if (noerrorInTrace)
+        // {
+        //     if (BBMemInstSize[vBlock].size() <= instCounter)
+        //     {
+        //         return;
+        //     }
 
-            uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
-            instCounter++;
-            wsTuple storewksTuple;
-            storewksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
-            trivialMergeRefector(storewsTupleMap[currentNodeID], storewksTuple);
+        //     uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
+        //     instCounter++;
+        //     wsTuple storewksTuple;
+        //     storewksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
+        //     trivialMergeRefector(storewsTupleMap[currentNodeID], storewksTuple);
 
-            if (storewsTupleMap[currentNodeID].size() > peakStoreTNum)
-            {
-                peakStoreTNum = storewsTupleMap[currentNodeID].size();
-            }
-        }
+        //     if (storewsTupleMap[currentNodeID].size() > peakStoreTNum)
+        //     {
+        //         peakStoreTNum = storewsTupleMap[currentNodeID].size();
+        //     }
+        // }
     }
     else if (key == "LoadAddress")
     {
+        address = stoul(value, nullptr, 0);
 
-        uint64_t address = stoul(value, nullptr, 0);
-        // printf("address:%lu \n",address);
+        // uint64_t address = stoul(value, nullptr, 0);
+        // // printf("address:%lu \n",address);
 
-        if (noerrorInTrace)
-        {
+        // if (noerrorInTrace)
+        // {
 
-            uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
-            if (BBMemInstSize[vBlock].size() <= instCounter)
-            {
-                return;
-            }
+        //     uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
+        //     if (BBMemInstSize[vBlock].size() <= instCounter)
+        //     {
+        //         return;
+        //     }
 
-            instCounter++;
-            wsTuple loadwksTuple;
-            loadwksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
+        //     instCounter++;
+        //     wsTuple loadwksTuple;
+        //     loadwksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
 
-            // if the load address is from the kernel's store tuple, then not counting this load
-            // this currently only works for the case that the load address is completely covered by the store tuple, so the load tuple map will be larger than it should be, more dependencies will be counted
-            if (!CheckLoadAfterStore(storewsTupleMap[currentNodeID], loadwksTuple))
-            {
-                trivialMergeRefector(loadwsTupleMap[currentNodeID], loadwksTuple);
-            }
+        //     // if the load address is from the kernel's store tuple, then not counting this load
+        //     // this currently only works for the case that the load address is completely covered by the store tuple, so the load tuple map will be larger than it should be, more dependencies will be counted
+        //     if (!CheckLoadAfterStore(storewsTupleMap[currentNodeID], loadwksTuple))
+        //     {
+        //         trivialMergeRefector(loadwsTupleMap[currentNodeID], loadwksTuple);
+        //     }
 
-            if (loadwsTupleMap[currentNodeID].size() > peakLoadTNum)
-            {
-                peakLoadTNum = loadwsTupleMap[currentNodeID].size();
-            }
-        }
+        //     if (loadwsTupleMap[currentNodeID].size() > peakLoadTNum)
+        //     {
+        //         peakLoadTNum = loadwsTupleMap[currentNodeID].size();
+        //     }
+        // }
     }
     else if (key == "MemCpy")
     {

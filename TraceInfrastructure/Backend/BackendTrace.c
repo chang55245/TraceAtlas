@@ -23,24 +23,34 @@ unsigned int bufferIndex = 0;
 uint8_t temp_buffer[BUFSIZE];
 uint8_t storeBuffer[BUFSIZE];
 
+static struct Node* loadRoot= NULL;
+static struct Node* storeRoot= NULL;
+
+
 // Binary search tree node structure
-struct Node {
-    int64_t key;
+typedef struct Node {
+    uint64_t key;
     bool isRed;
+    uint64_t size;
     struct Node* left;
     struct Node* right;
-};
+}Node;
 
 // Function to create a new node
-struct Node* newNode(int64_t key) {
+static struct Node* newNode(uint64_t key,uint64_t size) {
     // Allocate memory for a new node
-    struct Node* node = (struct Node*)malloc(sizeof(struct Node));
+    Node* node = malloc(sizeof(struct Node));
     if (node == NULL) {
         printf("Error: Out of memory\n");
         exit(1);
     }
+
+    // if (key == 0) {
+    //     printf("Error new: Key is 0\n");
+    // }
     // Initialize node properties
     node->key = key;
+    node->size = size;
     node->isRed = true;
     node->left = NULL;
     node->right = NULL;
@@ -49,7 +59,7 @@ struct Node* newNode(int64_t key) {
 
 
 // Function to rotate a node to the left
-struct Node* rotateLeft(struct Node* node) {
+static struct Node* rotateLeft( Node* node) {
     // Perform a left rotation
     struct Node* newRoot = node->right;
     node->right = newRoot->left;
@@ -60,7 +70,7 @@ struct Node* rotateLeft(struct Node* node) {
 }
 
 // Function to rotate a node to the right
-struct Node* rotateRight(struct Node* node) {
+static struct Node* rotateRight( struct Node* node) {
     // Perform a right rotation
     struct Node* newRoot = node->left;
     node->left = newRoot->right;
@@ -71,7 +81,7 @@ struct Node* rotateRight(struct Node* node) {
 }
 
 // Function to flip the colors of a node and its children
-void flipColors(struct Node* node) {
+void flipColors( struct Node* node) {
     // Flip the colors of a node and its children
     node->isRed = !node->isRed;
     node->left->isRed = !node->left->isRed;
@@ -80,87 +90,164 @@ void flipColors(struct Node* node) {
 
 
 
-struct Node* insert(struct Node** root, int64_t key) {
-    if (*root == NULL) {
+static struct Node* insert( struct Node* root, uint64_t key,uint64_t size) {
+    if (root == NULL) {
         // If the root is NULL, create a new node and return it
         
-        return newNode(key);
+        return newNode(key,size);
+    }
+    
+    if (root->key==0) {
+        root->key= key;
+        root->size = size;
+        return root;
     }
 
-    if (key < (*root)->key) {
-        // If the key is smaller, insert it in the left subtree
-        insert(&(*root)->left, key);
-    } else if (key > (*root)->key) {
-        // If the key is larger, insert it in the right subtree
-        insert(&(*root)->right, key);
+
+    if (root->key==key) {
+        root->size = size;
+        return root;
     }
+    
+    if (key < root->key) {
+        // If the key is smaller, insert it in the left subtree
+        root->left = insert(root->left, key,size);
+    } else if (key > root->key) {
+        // If the key is larger, insert it in the right subtree
+        root->right = insert(root->right, key,size);
+    }
+
+    
 
     // Fix violations of the Red-Black tree properties
-    if ((*root)->right != NULL && (*root)->right->isRed && ((*root)->left == NULL || !(*root)->left->isRed)) {
-        (*root) = rotateLeft((*root));
+    if (root->right != NULL && root->right->isRed && (root->left == NULL || !root->left->isRed)) {
+        root = rotateLeft(root);
     }
-    if ((*root)->left != NULL && (*root)->left->isRed && (*root)->left->left != NULL && (*root)->left->left->isRed) {
-        (*root) = rotateRight((*root));
+    if (root->left != NULL && root->left->isRed && root->left->left != NULL && root->left->left->isRed) {
+        root = rotateRight(root);
     }
-    if ((*root)->left != NULL && (*root)->left->isRed && (*root)->right != NULL && (*root)->right->isRed) {
-        flipColors((*root));
+    if (root->left != NULL && root->left->isRed && root->right != NULL && root->right->isRed) {
+        flipColors(root);
     }
 
-    return (*root);
+    return root;
 }
 
 // Function to search for a key in the binary search tree
-bool search(struct Node* root, int64_t key) {
+bool search( struct Node* root, uint64_t key, uint64_t size) {
     if (root == NULL) {
         return false;
     }
+    // if (root->key == 0 ) 
+    // {
+    //     printf("Error search: Key is 0\n");
+    // }
+    //get the key of *root
+    
+
 
     if (key == root->key) {
+        if (size>root->size) {
+
+            return false;
+        }
         return true;
     } 
     
     if (key < root->key) {
-        return search(root->left, key);
+        return search(root->left, key,size);
     }          
     
-    return search(root->right, key);
+    return search(root->right, key,size);
    
 }
 
 
-void clear(struct Node* root) {
+// Function to clear the binary search tree but keep the root
+
+
+
+static struct Node* clear(  struct Node* root) {
+    if (root == NULL) {
+        return NULL;
+    }
+    root->left = clear(root->left);
+    root->right = clear(root->right);
+    if (root != loadRoot && root != storeRoot) {
+        // free(root);
+        root = NULL;
+    }
+    else {
+        root->key = 0;
+        root->size = 0;
+    }
+   
+    return root;
+}
+
+
+
+
+void WriteLoadNode( struct Node* root) {
     if (root == NULL) {
         return;
     }
+    WriteLoadNode(root->left);
+    
+    WriteLoadNode(root->right);
 
-    clear(root->left);
-    root->left = NULL;
-    clear(root->right);
-    root->right = NULL;
-    free(root);
-    root = NULL;
-}
-
-void clear_tree(struct Node** root) {
-    if (*root == NULL) {
-        return;
+    char fin[128];
+    sprintf(fin, "LoadAddress:%#lX\n", root->key);
+    WriteStream(fin);
+    memset(fin, 0, sizeof(fin));
+    if (root->size == 0) {
+        printf("Error: size is 0\n");
+        exit(4);
     }
 
-    clear(*root);
-    *root = NULL;
+    sprintf (fin, "LoadSize:%#lX\n", root->size);
+    WriteStream(fin);
 }
 
+void WriteStoreNode( struct Node* root) {
+    if (root == NULL) {
+        return;
+    }
+    WriteStoreNode(root->left);
+    
+    WriteStoreNode(root->right);
 
-struct Node* loadRoot= NULL;
-struct Node* storeRoot= NULL;
+    char fin[128];
+    sprintf(fin, "StoreAddress:%#lX\n", root->key);
+    WriteStream(fin);
+    memset(fin, 0, sizeof(fin));
+    if (root->size == 0) {
+        printf("Error: size is 0\n");
+        exit(4);
+    }
+    sprintf (fin, "StoreSize:%#lX\n", root->size);
+    WriteStream(fin);
+}
+
 
 void SwitchKernel()
 {
     // if see kernel enter or exit, call this to clear the tree for load and store
-    clear_tree(&loadRoot);
-    clear_tree(&storeRoot);
-    loadRoot= NULL;
-    storeRoot= NULL;
+
+    // if (loadRoot != NULL && loadRoot->key!=0) 
+    // {
+    //     WriteLoadNode(loadRoot);
+    
+    // }
+    // if (storeRoot!= NULL && storeRoot->key!=0) 
+    // {
+    //     WriteStoreNode(storeRoot);  
+    // }
+    
+    
+    loadRoot = clear(loadRoot);
+
+    storeRoot = clear(storeRoot);
 }
 
 void WriteStream(char *input)
@@ -296,16 +383,61 @@ void CloseFile()
     //fclose(myfile); //breaks occasionally for some reason. Likely a glibc error.
 }
 
-void LoadDump(void *address)
+
+
+
+
+void checkTree( struct Node* root)
 {
-    if (!search(loadRoot, (int64_t)address))
+    uint64_t temp = 0;
+    if (root == NULL) {
+        return;
+    }
+    checkTree(root->left);
+    checkTree(root->right);
+    if (root->key == 0 || root->size == 0) {
+        printf("Error check: Key or size is 0\n");
+    }
+    
+    
+    temp = root->key;
+
+}
+
+void LoadDump(void *address,int size)
+{
+    // printf("size:%d\n",size);
+    // checkTree(loadRoot);
+
+    if (size == 0) {
+        exit(4);
+    }
+
+    if (!search(loadRoot, (uint64_t)address,(uint64_t)size) )
     {
-        loadRoot = insert(&loadRoot, (int64_t)address);
+        loadRoot = insert(loadRoot, (uint64_t)address, (uint64_t)size);
+        // char fin[128];
+    
+        // sprintf(fin, "LoadAddress:%#lX\n", (uint64_t)address);
+        // WriteStream(fin);
+
+
+
         char fin[128];
-        // fprintf(stderr, "load \n");
         sprintf(fin, "LoadAddress:%#lX\n", (uint64_t)address);
         WriteStream(fin);
+        memset(fin, 0, sizeof(fin));
+        if (size == 0) {
+            printf("Error: size is 0\n");
+            exit(4);
+        }
+        sprintf (fin, "LoadSize:%#lX\n", (uint64_t)size);
+        WriteStream(fin);
     }
+    // else {
+    //     printf("skip load\n");
+    // }
+    // checkTree(loadRoot);
 }
 void DumpLoadValue(void *MemValue, int size)
 {
@@ -328,17 +460,46 @@ void DumpLoadValue(void *MemValue, int size)
     sprintf(fin, "\n");
     WriteStream(fin);
 }
-void StoreDump(void *address)
+void StoreDump(void *address,int size)
 {
 
-    if (!search(storeRoot, (int64_t)address))
+    // printf("size:%d\n",size);
+    // checkTree(storeRoot);
+
+     if (size == 0) {
+        exit(4);
+    }
+
+    if (!search(storeRoot, (uint64_t)address,(uint64_t)size))
     {
-        storeRoot = insert(&storeRoot, (int64_t)address);
+        storeRoot = insert(storeRoot, (uint64_t)address,(uint64_t)size);
+
+        // char fin[128];
+        
+        // sprintf(fin, "StoreAddress:%#lX\n", (uint64_t)address);
+        // WriteStream(fin);
+
+
+
+
         char fin[128];
-        // fprintf(stderr, "load \n");
         sprintf(fin, "StoreAddress:%#lX\n", (uint64_t)address);
         WriteStream(fin);
+        memset(fin, 0, sizeof(fin));
+        if (size == 0) {
+            printf("Error: size is 0\n");
+            exit(4);
+        }
+        sprintf (fin, "StoreSize:%#lX\n", (uint64_t)size);
+        WriteStream(fin);
     }
+    // else {
+    //     printf("skip store\n");
+    // }
+
+
+    // checkTree(storeRoot);
+    
 }
 
 void MemCpyDump(void *dest,void *src,void *len)
