@@ -24,6 +24,8 @@ set(CMAKE_RANLIB ${LLVM_INSTALL_PREFIX}/bin/llvm-ranlib)
 set(CMAKE_READELF ${LLVM_INSTALL_PREFIX}/bin/llvm-readelf)
 set(CMAKE_STRIP ${LLVM_INSTALL_PREFIX}/bin/llvm-strip)
 
+set(CMAKE_CXX_FLAGS "-std=c++17 -fno-rtti")
+
 #other dependencies, provided by vcpkg but you can get them elsewhere as long as you have a cmake file
 find_package(ZLIB REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED) #nlohmann_json
@@ -58,10 +60,10 @@ if(WIN32)
 endif()
 
 add_subdirectory("AtlasUtil")
-add_subdirectory("cartographer")
+# add_subdirectory("cartographer")
 add_subdirectory("TraceInfrastructure")
-add_subdirectory("tik")
-add_subdirectory("deat")
+# add_subdirectory("tik")
+# add_subdirectory("deat")
 add_subdirectory("Utilities")
 
 #repsonsible for injecting the tracer. Fairly fragile so be careful

@@ -1,6 +1,6 @@
 set(SOURCES BackendTrace.c LoopTrace.cpp BackendKernelLocation.cpp BackendMemProfile.cpp)
 if(NOT WIN32)
-    list(APPEND SOURCES BackendPapi.c)
+    # list(APPEND SOURCES BackendPapi.c)
 endif()
 add_library(AtlasBackend STATIC ${SOURCES})
 set_target_properties(
