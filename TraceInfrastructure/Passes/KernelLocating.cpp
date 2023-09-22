@@ -94,7 +94,7 @@ namespace DashTracer::Passes
                     {
                         continue;
                     }
-                    if (calledFunc->getName() == "DASH_FFT"||calledFunc->getName() == "DASH_GEMM")
+                    if (calledFunc->getName() == "DASH_FFT"||calledFunc->getName() == "DASH_GEMM"||calledFunc->getName() == "NonKernelSplit")
                     {
                         auto *outterLoop = LI.getLoopFor(dyn_cast<BasicBlock>(BB));
                         if (outterLoop != nullptr && seenLoops.find(outterLoop)==seenLoops.end())
