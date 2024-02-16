@@ -9,7 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
-#include <llvm-9/llvm/IR/BasicBlock.h>
+#include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instruction.h>

@@ -3,7 +3,7 @@
 #include "Passes/Annotate.h"
 #include "AtlasUtil/Annotate.h"
 #include <cstdint>
-#include <llvm-9/llvm/Support/raw_ostream.h>
+#include <llvm/Support/raw_ostream.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>

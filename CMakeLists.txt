@@ -58,10 +58,10 @@ if(WIN32)
 endif()
 
 add_subdirectory("AtlasUtil")
-add_subdirectory("cartographer")
+#add_subdirectory("cartographer")
 add_subdirectory("TraceInfrastructure")
-add_subdirectory("tik")
-add_subdirectory("deat")
+#add_subdirectory("tik")
+#add_subdirectory("deat")
 add_subdirectory("Utilities")
 
 #repsonsible for injecting the tracer. Fairly fragile so be careful

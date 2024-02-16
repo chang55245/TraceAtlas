@@ -6,7 +6,7 @@
 #include <fstream>
 #include <indicators/progress_bar.hpp>
 #include <iostream>
-#include <llvm-9/llvm/Support/raw_ostream.h>
+#include <llvm/Support/raw_ostream.h>
 #include <llvm/Analysis/DependenceAnalysis.h>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IRReader/IRReader.h>

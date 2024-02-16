@@ -6,7 +6,7 @@
 #include "Passes/TraceMemIO.h"
 #include "llvm/IR/DataLayout.h"
 #include <fstream>
-#include <llvm-9/llvm/IR/Dominators.h>
+#include <llvm/IR/Dominators.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instruction.h>
