@@ -42,13 +42,14 @@ namespace DashTracer::Passes
     bool DynmLoopUnroll::runOnFunction(Function &F)
     {
 
-        DominatorTree DT(F);
+        auto &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
         LoopInfo LI(DT);
-        AssumptionCache AC(F);
+        auto &AC = getAnalysis<AssumptionCacheTracker>().getAssumptionCache(F);
         TargetLibraryInfoImpl TLII;
         TargetLibraryInfo TLI(TLII);
         ScalarEvolution SE(F, TLI, AC, DT, LI);
-        OptimizationRemarkEmitter ORE(&F);
+        // auto &ORE = getAnalysis<OptimizationRemarkEmitterWrapperPass>().getORE();
+        // OptimizationRemarkEmitter ORE(&F);
         UnrollLoopOptions ULO;
 
         ULO.Count = 5;
@@ -58,8 +59,8 @@ namespace DashTracer::Passes
         ULO.AllowExpensiveTripCount = false;
         ULO.PreserveCondBr = false;
         ULO.PreserveOnlyFirst = false;
-        ULO.TripMultiple = 0;
-        ULO.PeelCount = ULO.Count;
+        ULO.TripMultiple = 1;
+        ULO.PeelCount = 0;
         ULO.UnrollRemainder = true;
         ULO.ForgetAllSCEV = true;
 
@@ -81,6 +82,10 @@ namespace DashTracer::Passes
                     if (auto *CI = dyn_cast<CallInst>(BI))
                     {
                         Function *calledFunc = CI->getCalledFunction();
+                        if (calledFunc == nullptr)
+                        {
+                            continue;
+                        }
                         if (calledFunc->getName() == "LoopTrace")
                         {
                             auto *loopTest = LI.getLoopFor(&bb);
@@ -145,8 +150,9 @@ namespace DashTracer::Passes
                                 }           
                                 
 
-                                LI.verify(DT);                                
-                                UnrollLoop(loopTest, ULO, &LI, &SE, &DT, &AC, &ORE, PreserveLCSSA, nullptr);
+                                LI.verify(DT);
+                               
+                                UnrollLoop(loopTest, ULO, &LI, &SE, &DT, &AC, nullptr, PreserveLCSSA, nullptr);
                                 simplifyLoopAfterUnroll(loopTest, true,&LI, &SE, &DT, &AC);
                                 unrolled = true;
                                 goto endloop;
@@ -195,6 +201,11 @@ namespace DashTracer::Passes
     void DynmLoopUnroll::getAnalysisUsage(AnalysisUsage &AU) const
     {
         AU.addRequired<DashTracer::Passes::EncodedAnnotate>();
+        AU.addRequired<DominatorTreeWrapperPass>();
+        AU.addRequired<AssumptionCacheTracker>();
+        // AU.addRequired<OptimizationRemarkEmitterWrapperPass>();
+        // AU.addRequired<LoopInfoWrapperPass>();
+        // AU.addRequired<ScalarEvolutionWrapperPass>();
         AU.setPreservesCFG();
     }
     char DynmLoopUnroll::ID = 1;

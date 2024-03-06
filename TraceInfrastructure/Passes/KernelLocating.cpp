@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <fstream>
 #include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Dominators.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instruction.h>
@@ -38,7 +39,8 @@ namespace DashTracer::Passes
     set<Loop*> seenLoops;
     bool KernelLocating::runOnFunction(Function &F)
     {
-        DominatorTree DT(F);
+
+        auto &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
         LoopInfo LI(DT);
 
         if (LI.empty())
@@ -127,6 +129,8 @@ namespace DashTracer::Passes
     void KernelLocating::getAnalysisUsage(AnalysisUsage &AU) const
     {
         AU.addRequired<DashTracer::Passes::EncodedAnnotate>();
+        AU.addRequired<DominatorTreeWrapperPass>();
+        
         AU.setPreservesCFG();
     }
     char KernelLocating::ID = 1;
