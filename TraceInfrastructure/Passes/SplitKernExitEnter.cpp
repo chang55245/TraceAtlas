@@ -11,13 +11,14 @@ using namespace llvm;
 namespace DashTracer::Passes {
 
     bool SplitKernExitEnter::runOnFunction(Function &F) {
-        Instruction *exitCall, *entranceCall;
+        Instruction *exitCall, *entranceCall,*splitcall;
         bool isModified = false;
 
         for (auto BB = F.begin(); BB != F.end();)
         {
             exitCall = nullptr;
             entranceCall = nullptr;
+            splitcall = nullptr;
 
             //outs() << "Processing a new basic block\n";
             if (BB->size() == 1 || BB->size() == 2) {
@@ -39,22 +40,26 @@ namespace DashTracer::Passes {
                             entranceCall = CI;
                         }
                         if (CI->getCalledFunction()->getName() == "NonKernelSplit") {
-                            //outs() << "Found a Kernel Entrance\n";
-                            entranceCall = CI;
+                            errs() << "Found a NonKernelSplit Entrance\n";
+                            splitcall = CI;
                         }
                     }
                 }
-                if (exitCall != nullptr || entranceCall != nullptr) {
+                if (exitCall != nullptr || entranceCall != nullptr || splitcall != nullptr) {
                     //outs() << "Splitting a basic block!\n";
                     BasicBlock* newBB = BB->splitBasicBlock(ii);
                     if (newBB->getInstList().size() > 1) {
                         newBB->splitBasicBlock(newBB->front().getNextNode());
                     }
                     isModified = true;
+
+                    if (splitcall != nullptr) {
+                        errs() << "splited NonKernelSplit Entrance\n";
+                    }
                     break;
                 }
             }
-            if (exitCall == nullptr && entranceCall == nullptr) {
+            if (exitCall == nullptr && entranceCall == nullptr&& splitcall == nullptr) {
                 BB++;
             }
         }

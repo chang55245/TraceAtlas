@@ -70,7 +70,7 @@ extern "C"
 #endif
     void KernelEnter(char *label);
     void KernelExit(char *label);
-    void NonKernelSplit();
+    void NonKernelSplit(char *label);
 #ifdef __cplusplus
 }
 #endif

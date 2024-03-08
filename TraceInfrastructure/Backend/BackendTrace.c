@@ -565,7 +565,7 @@ void KernelExit(char *label)
     WriteStream(fin);
 }
 
-void NonKernelSplit()
+void NonKernelSplit(char *label)
 {
     SwitchKernel();
     char fin[128];

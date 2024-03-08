@@ -13,6 +13,9 @@
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Analysis/DependenceAnalysis.h>
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/InitLLVM.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/LLVMContext.h"
 
 
 using namespace llvm;
@@ -221,6 +224,7 @@ void GetLegalBBs()
 }
 int main(int argc, char **argv)
 {
+    InitLLVM X(argc, argv);
     cl::ParseCommandLineOptions(argc, argv);
 
     GetLegalBBs();
