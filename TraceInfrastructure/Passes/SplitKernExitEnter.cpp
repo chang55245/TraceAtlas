@@ -11,13 +11,14 @@ using namespace llvm;
 namespace DashTracer::Passes {
 
     bool SplitKernExitEnter::runOnFunction(Function &F) {
-        Instruction *exitCall, *entranceCall;
+        Instruction *exitCall, *entranceCall,*splitcall;
         bool isModified = false;
 
         for (auto BB = F.begin(); BB != F.end();)
         {
             exitCall = nullptr;
             entranceCall = nullptr;
+            splitcall = nullptr;
 
             //outs() << "Processing a new basic block\n";
             if (BB->size() == 1 || BB->size() == 2) {
@@ -40,11 +41,11 @@ namespace DashTracer::Passes {
                         }
                         if (CI->getCalledFunction()->getName() == "NonKernelSplit") {
                             //outs() << "Found a Kernel Entrance\n";
-                            entranceCall = CI;
+                            splitcall = CI;
                         }
                     }
                 }
-                if (exitCall != nullptr || entranceCall != nullptr) {
+                if (exitCall != nullptr || entranceCall != nullptr || splitcall != nullptr) {
                     //outs() << "Splitting a basic block!\n";
                     BasicBlock* newBB = BB->splitBasicBlock(ii);
                     if (newBB->getInstList().size() > 1) {
@@ -54,7 +55,7 @@ namespace DashTracer::Passes {
                     break;
                 }
             }
-            if (exitCall == nullptr && entranceCall == nullptr) {
+            if (exitCall == nullptr && entranceCall == nullptr&& splitcall == nullptr) {
                 BB++;
             }
         }
