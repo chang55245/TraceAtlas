@@ -60,7 +60,7 @@ namespace DashTracer::Passes
         ULO.PreserveCondBr = false;
         ULO.PreserveOnlyFirst = false;
         ULO.TripMultiple = 1;
-        ULO.PeelCount = 0;
+        ULO.PeelCount = 5;
         ULO.UnrollRemainder = true;
         ULO.ForgetAllSCEV = true;
 
