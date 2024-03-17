@@ -1,3 +1,6 @@
+#ifdef __cplusplus
+    extern "C" {
+#endif
 #include "Backend/BackendTrace.h"
 #include <assert.h>
 #include <stdbool.h>
@@ -34,12 +37,15 @@ typedef struct Node {
     uint64_t size;
     struct Node* left;
     struct Node* right;
+
 }Node;
 
 // Function to create a new node
 static struct Node* newNode(uint64_t key,uint64_t size) {
     // Allocate memory for a new node
-    Node* node = malloc(sizeof(struct Node));
+    Node* node = (Node*) calloc(1, sizeof(struct Node));
+
+    
     if (node == NULL) {
         printf("Error: Out of memory\n");
         exit(1);
@@ -173,14 +179,8 @@ static struct Node* clear(  struct Node* root) {
     }
     root->left = clear(root->left);
     root->right = clear(root->right);
-    if (root != loadRoot && root != storeRoot) {
-        // free(root);
-        root = NULL;
-    }
-    else {
-        root->key = 0;
-        root->size = 0;
-    }
+    free(root);
+    root = NULL;
    
     return root;
 }
@@ -572,3 +572,7 @@ void NonKernelSplit()
     strcpy(fin, "NonKernelSplit:get\n");
     WriteStream(fin);
 }
+
+#ifdef __cplusplus
+    }
+#endif
