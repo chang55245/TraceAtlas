@@ -6,10 +6,10 @@
 #include "Passes/Functions.h"
 #include "Passes/TraceMemIO.h"
 #include <cstdint>
-#include <llvm-9/llvm/IR/Instruction.h>
-#include <llvm-9/llvm/IR/Value.h>
-#include <llvm-9/llvm/Support/Casting.h>
-#include <llvm-9/llvm/Support/raw_ostream.h>
+#include <llvm/IR/Instruction.h>
+#include <llvm/IR/Value.h>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/raw_ostream.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
