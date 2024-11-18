@@ -406,24 +406,18 @@ void checkTree( struct Node* root)
 
 void LoadDump(void *address,int size)
 {
-    // printf("size:%d\n",size);
-    // checkTree(loadRoot);
+    char fin[128];
 
     if (size == 0) {
         exit(4);
     }
+    
 
     if (!search(loadRoot, (uint64_t)address,(uint64_t)size) )
     {
         loadRoot = insert(loadRoot, (uint64_t)address, (uint64_t)size);
-        // char fin[128];
-    
-        // sprintf(fin, "LoadAddress:%#lX\n", (uint64_t)address);
-        // WriteStream(fin);
 
-
-
-        char fin[128];
+        
         sprintf(fin, "LoadAddress:%#lX\n", (uint64_t)address);
         WriteStream(fin);
         memset(fin, 0, sizeof(fin));
@@ -434,11 +428,13 @@ void LoadDump(void *address,int size)
         sprintf (fin, "LoadSize:%#lX\n", (uint64_t)size);
         WriteStream(fin);
     }
-    // else {
-    //     printf("skip load\n");
-    // }
-    // checkTree(loadRoot);
+    else {
+        strcpy(fin, "Memory:access\n");
+        WriteStream(fin);
+    }
+
 }
+
 void DumpLoadValue(void *MemValue, int size)
 {
     char fin[128];
@@ -462,27 +458,16 @@ void DumpLoadValue(void *MemValue, int size)
 }
 void StoreDump(void *address,int size)
 {
-
-    // printf("size:%d\n",size);
-    // checkTree(storeRoot);
-
+    char fin[128];
      if (size == 0) {
         exit(4);
     }
-
+    
     if (!search(storeRoot, (uint64_t)address,(uint64_t)size))
     {
         storeRoot = insert(storeRoot, (uint64_t)address,(uint64_t)size);
 
-        // char fin[128];
         
-        // sprintf(fin, "StoreAddress:%#lX\n", (uint64_t)address);
-        // WriteStream(fin);
-
-
-
-
-        char fin[128];
         sprintf(fin, "StoreAddress:%#lX\n", (uint64_t)address);
         WriteStream(fin);
         memset(fin, 0, sizeof(fin));
@@ -493,13 +478,11 @@ void StoreDump(void *address,int size)
         sprintf (fin, "StoreSize:%#lX\n", (uint64_t)size);
         WriteStream(fin);
     }
-    // else {
-    //     printf("skip store\n");
-    // }
+    else {
+        strcpy(fin, "Memory:access\n");
+        WriteStream(fin);
+    }
 
-
-    // checkTree(storeRoot);
-    
 }
 
 void MemCpyDump(void *dest,void *src,void *len)
@@ -570,5 +553,21 @@ void NonKernelSplit()
     SwitchKernel();
     char fin[128];
     strcpy(fin, "NonKernelSplit:get\n");
+    WriteStream(fin);
+}
+
+// dump the compute for intensity modeling
+void ComputeDump()
+{
+    char fin[128];
+    strcpy(fin, "Compute:get\n");
+    WriteStream(fin);
+}
+
+// dump the memory for intensity modeling
+void MemoryDump()
+{
+    char fin[128];
+    strcpy(fin, "Memory:access\n");
     WriteStream(fin);
 }

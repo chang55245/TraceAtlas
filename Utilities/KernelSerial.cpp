@@ -61,11 +61,11 @@ set<int> loadlastHitTimeSet;
 set<int> storelastHitTimeSet;
 set<int> loadAfterStorelastHitTimeSet;
 
-typedef struct livenessTuple
+using livenessTuple = struct livenessTuple
 {
     int64_t start;
     int64_t end;
-} livenessTuple;
+};
 
 // addr -> related time tuples
 vector<livenessTuple> livenessTupleVec;
@@ -111,8 +111,7 @@ public:
 };
 
 KernelSerial::KernelSerial(/* args */)
-{
-}
+= default;
 
 KernelSerial::~KernelSerial()
 {
@@ -138,15 +137,9 @@ set<int> barrierRemoval;
 // for data size
 
 map<int64_t, vector<uint64_t>> BBMemInstSize;
-// start end byte_count ref_count
 
-// uint64_t start;
-// uint64_t end;
-// uint64_t byte_count;
-// uint64_t ref_count;
-// uint64_t reuse_dist;
-typedef tuple<int64_t, int64_t, int64_t, vector<uint64_t>> AddrRange;
-typedef map<int64_t, AddrRange> AddrRangeMap;
+using AddrRange = tuple<int64_t, int64_t, int64_t, vector<uint64_t>>;
+using AddrRangeMap = map<int64_t, AddrRange>;
 map<int, AddrRangeMap> loadAddrRangeMapPerInstance;
 map<int, AddrRangeMap> storeAddrRangeMapPerInstance;
 
@@ -608,35 +601,7 @@ void Process(string &key, string &value)
             peakLoadTNum = loadwsTupleMap[currentNodeID].size();
         }
         address = 0;
-
-
-
-        //  if (noerrorInTrace)
-        // {
-
-        //     uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
-        //     if (BBMemInstSize[vBlock].size() <= instCounter)
-        //     {
-        //         return;
-        //     }
-
-        //     instCounter++;
-        //     wsTuple loadwksTuple;
-        //     loadwksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
-
-        //     // if the load address is from the kernel's store tuple, then not counting this load
-        //     // this currently only works for the case that the load address is completely covered by the store tuple, so the load tuple map will be larger than it should be, more dependencies will be counted
-        //     if (!CheckLoadAfterStore(storewsTupleMap[currentNodeID], loadwksTuple))
-        //     {
-        //         trivialMergeRefector(loadwsTupleMap[currentNodeID], loadwksTuple);
-        //     }
-
-        //     if (loadwsTupleMap[currentNodeID].size() > peakLoadTNum)
-        //     {
-        //         peakLoadTNum = loadwsTupleMap[currentNodeID].size();
-        //     }
-        // }
-       
+  
         
     }
     else if (key == "StoreSize") {
@@ -664,94 +629,18 @@ void Process(string &key, string &value)
             peakStoreTNum = storewsTupleMap[currentNodeID].size();
         }
         address = 0;
-
-
-
-        //  if (noerrorInTrace)
-        // {
-
-
-        //     printf("trace StoreSize: %lu \n",size);
-        //     printf("read StoreSize: %lu \n",BBMemInstSize[vBlock][instCounter]);
-
-
-        //     if (BBMemInstSize[vBlock].size() <= instCounter)
-        //     {
-        //         return;
-        //     }
-
-        //     uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
-        //     instCounter++;
-        //     wsTuple storewksTuple;
-        //     storewksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
-        //     trivialMergeRefector(storewsTupleMap[currentNodeID], storewksTuple);
-
-        //     if (storewsTupleMap[currentNodeID].size() > peakStoreTNum)
-        //     {
-        //         peakStoreTNum = storewsTupleMap[currentNodeID].size();
-        //     }
-        // }
-        
-    
+   
     
     }
     else if (key == "StoreAddress")
     {
         address = stoul(value, nullptr, 0);
 
-        // uint64_t address = stoul(value, nullptr, 0);
-
-        // if (noerrorInTrace)
-        // {
-        //     if (BBMemInstSize[vBlock].size() <= instCounter)
-        //     {
-        //         return;
-        //     }
-
-        //     uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
-        //     instCounter++;
-        //     wsTuple storewksTuple;
-        //     storewksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
-        //     trivialMergeRefector(storewsTupleMap[currentNodeID], storewksTuple);
-
-        //     if (storewsTupleMap[currentNodeID].size() > peakStoreTNum)
-        //     {
-        //         peakStoreTNum = storewsTupleMap[currentNodeID].size();
-        //     }
-        // }
     }
     else if (key == "LoadAddress")
     {
         address = stoul(value, nullptr, 0);
-
-        // uint64_t address = stoul(value, nullptr, 0);
-        // // printf("address:%lu \n",address);
-
-        // if (noerrorInTrace)
-        // {
-
-        //     uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
-        //     if (BBMemInstSize[vBlock].size() <= instCounter)
-        //     {
-        //         return;
-        //     }
-
-        //     instCounter++;
-        //     wsTuple loadwksTuple;
-        //     loadwksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
-
-        //     // if the load address is from the kernel's store tuple, then not counting this load
-        //     // this currently only works for the case that the load address is completely covered by the store tuple, so the load tuple map will be larger than it should be, more dependencies will be counted
-        //     if (!CheckLoadAfterStore(storewsTupleMap[currentNodeID], loadwksTuple))
-        //     {
-        //         trivialMergeRefector(loadwsTupleMap[currentNodeID], loadwksTuple);
-        //     }
-
-        //     if (loadwsTupleMap[currentNodeID].size() > peakLoadTNum)
-        //     {
-        //         peakLoadTNum = loadwsTupleMap[currentNodeID].size();
-        //     }
-        // }
+      
     }
     else if (key == "MemCpy")
     {
@@ -792,7 +681,7 @@ void print_user(Instruction *CI, map<Instruction *, tuple<int64_t, int64_t>> mem
 {
     for (User *U : CI->users())
     {
-        if (Instruction *Inst = dyn_cast<Instruction>(U))
+        if (auto *Inst = dyn_cast<Instruction>(U))
         {
             // errs() << "F is used in instruction:\n";
             errs() << *Inst << "\n";
@@ -1200,179 +1089,7 @@ wsTuple tp_and_tuple(wsTuple a, wsTuple b)
     return wksTuple;
 }
 
-// void SubstractResultTupleMap(wsTuple t_new, wsTupleMap &processMap)
-// {
-//     if (processMap.size() == 0)
-//     {
-//         return;
-//     }
-//     else if (processMap.size() == 1)
-//     {
-//         auto iter = processMap.begin();
-//         if (overlap(t_new, iter->second, 0))
-//         {
-//             wsTuple and_tuple = tp_and_tuple(t_new, iter->second);
-//             wsTuple res_tuple;
-//             //3 cases, number of result tuples: 0, 1, 2
-//             // case 0
-//             if(and_tuple.start==iter->second.start && and_tuple.end == iter->second.end)
-//             {
-//                 processMap.erase(iter);
-//             } //case 1 overlap at the beginning
-//             else if(and_tuple.start==iter->second.start && and_tuple.end < iter->second.end)
-//             {
-//                 res_tuple = (wsTuple){and_tuple.end, iter->second.end, 0, 0, 0, 0};
-//                 processMap[res_tuple.start] = res_tuple;
-//                 processMap.erase(iter);
-//             }//case 1 overlap at the end
-//             else if(and_tuple.start > iter->second.start && and_tuple.end == iter->second.end)
-//             {
-//                 res_tuple = (wsTuple){iter->second.start, and_tuple.start, 0, 0, 0, 0};
-//                 processMap[iter->second.start] = res_tuple;
-//             } // case 2
-//             else if (and_tuple.start > iter->second.start && and_tuple.end < iter->second.end)
-//             {
-//                 res_tuple = (wsTuple){iter->second.start, and_tuple.start, 0, 0, 0, 0};
-//                 processMap[iter->second.start] = res_tuple;
 
-//                 res_tuple = (wsTuple){and_tuple.end, iter->second.end, 0, 0, 0, 0};
-//                 processMap[res_tuple.start] = res_tuple;
-//             }
-//         }
-//     }
-//     else
-//     {
-
-//         if(processMap.find(t_new.start) != processMap.end()&& processMap.find(t_new.end) != processMap.end())
-//         {
-//             auto start = processMap.find(t_new.start);
-//             auto iter = processMap.find(t_new.end);
-//             iter = prev(iter);
-//             while (iter != start && processMap.find(iter->second.start)!=processMap.end())
-//             {
-//                 if(iter->second.start>t_new.start && iter->second.end < t_new.end)
-//                 {
-//                     processMap.erase(iter);
-//                 }
-//                 iter = prev(iter);
-//             }
-//             processMap.erase(start);
-//         }
-//         else if (processMap.find(t_new.start) == processMap.end()&& processMap.find(t_new.end) != processMap.end())
-//         {
-//             auto iter = processMap.find(t_new.end);
-//             processMap[t_new.start] = t_new;
-//             auto start = processMap.find(t_new.start);
-
-//             // delete the tuples between start and end of overlap
-//             iter = prev(iter);
-//             while (iter != start && processMap.find(iter->second.start)!=processMap.end())
-//             {
-//                 if(iter->second.start>t_new.start && iter->second.end < t_new.end)
-//                 {
-//                     processMap.erase(iter);
-//                 }
-//                 iter = prev(iter);
-//             }
-
-//             auto previous = prev(start);
-
-//             // overlap at the end
-
-//             if(overlap(previous->second,start->second,0))
-//             {
-//                 wsTuple and_tuple = tp_and_tuple(t_new, previous->second);
-//                 wsTuple res_tuple;
-//                 res_tuple = (wsTuple){previous->second.start, and_tuple.start, 0, 0, 0, 0};
-//                 processMap[previous->second.start] = res_tuple;
-//             }
-//             processMap.erase(start);
-//         }
-//         else if (processMap.find(t_new.start) != processMap.end()&& processMap.find(t_new.end) == processMap.end())
-//         {
-//             processMap[t_new.end] = t_new;
-//             auto end = processMap.find(t_new.end);
-//             auto start = processMap.find(t_new.start);
-
-//             auto iter = end;
-//             // delete the tuples between start and end of overlap
-//             iter = prev(iter);
-//             while (iter != start && processMap.find(iter->second.start)!=processMap.end())
-//             {
-//                 if(iter->second.start>t_new.start && iter->second.end < t_new.end)
-//                 {
-//                     processMap.erase(iter);
-//                 }
-//                 iter = prev(iter);
-//             }
-
-//             auto nextTuple = prev(end);
-
-//             // overlap at the beginning
-
-//             if(overlap(nextTuple->second,end->second,0)&& nextTuple->second.end > t_new.end)
-//             {
-//                 wsTuple and_tuple = tp_and_tuple(t_new, nextTuple->second);
-//                 wsTuple res_tuple;
-//                 res_tuple = (wsTuple){and_tuple.end, nextTuple->second.end, 0, 0, 0, 0};
-//                 processMap[res_tuple.start] = res_tuple;
-//             }
-//             processMap.erase(end);
-//             processMap.erase(start);
-//         }
-//         else if (processMap.find(t_new.start) == processMap.end()&& processMap.find(t_new.end) == processMap.end())
-//         {
-
-//             processMap[t_new.end] = t_new;
-//             auto end = processMap.find(t_new.end);
-//             processMap[t_new.start] = t_new;
-//             auto start = processMap.find(t_new.start);
-
-//             auto iter = end;
-//             // delete the tuples between start and end of overlap
-//             iter = prev(iter);
-//             while (iter != start && processMap.find(iter->second.start)!=processMap.end())
-//             {
-//                 if(iter->second.start>t_new.start && iter->second.end < t_new.end)
-//                 {
-//                     processMap.erase(iter);
-//                 }
-//                 iter = prev(iter);
-//             }
-
-//             auto previous = prev(start);
-
-//             // overlap at the end
-
-//             if(overlap(previous->second,start->second,0)&& processMap.find(previous->second.start)!=processMap.end())
-//             {
-//                 wsTuple and_tuple = tp_and_tuple(t_new, previous->second);
-//                 wsTuple res_tuple;
-//                 res_tuple = (wsTuple){previous->second.start, and_tuple.start, 0, 0, 0, 0};
-//                 processMap[previous->second.start] = res_tuple;
-//             }
-
-//             auto nextTuple = prev(end);
-
-//             // overlap at the beginning
-
-//             if(overlap(nextTuple->second,end->second,0)&& nextTuple->second.end > t_new.end)
-//             {
-//                 wsTuple and_tuple = tp_and_tuple(t_new, nextTuple->second);
-//                 wsTuple res_tuple;
-//                 res_tuple = (wsTuple){and_tuple.end, nextTuple->second.end, 0, 0, 0, 0};
-//                 processMap[res_tuple.start] = res_tuple;
-
-//             }
-//             else
-//             {
-//                 processMap.erase(end);
-//             }
-
-//             processMap.erase(start);
-//         }
-//     }
-// }
 
 void SubstractResultTupleMap(wsTuple t_new, wsTupleMap &processMap)
 {

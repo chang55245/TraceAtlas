@@ -86,6 +86,11 @@ namespace DashTracer::Passes
                         builder.CreateCall(StoreDump, values);
                     }
                 }
+                if (CI->isBinaryOp())
+                {
+                    IRBuilder<> builder(CI);
+                    builder.CreateCall(ComputeDump);
+                }
 
                 if (MemCpyInst *MCI = dyn_cast<MemCpyInst>(CI))
                 {
@@ -122,18 +127,6 @@ namespace DashTracer::Passes
                    
                 }
 
-                // if (BranchInst  *br = dyn_cast<BranchInst>(CI))
-                // {
-                    
-                //     if(br->isConditional())
-                //     {
-                //         errs()<<"branch:"<<*br<<"\n";
-                //         IRBuilder<> builder(br);
-                //         errs()<<"conditional\n";
-                //         builder.CreateCall(CondBranch);
-                //     }
-            
-                // }
             }
             Instruction *preTerm = BB->getTerminator();
             IRBuilder endBuilder(preTerm);
@@ -150,6 +143,8 @@ namespace DashTracer::Passes
         //input types?
         MemCpyDump = cast<Function>(M.getOrInsertFunction("MemCpyDump", Type::getVoidTy(M.getContext()), Type::getIntNPtrTy(M.getContext(), 8),Type::getIntNPtrTy(M.getContext(), 8),Type::getIntNPtrTy(M.getContext(), 8)).getCallee());
         // CondBranch = cast<Function>(M.getOrInsertFunction("CondBranch", Type::getVoidTy(M.getContext())).getCallee());
+        ComputeDump = cast<Function>(M.getOrInsertFunction("ComputeDump", Type::getVoidTy(M.getContext())).getCallee());
+        MemoryDump = cast<Function>(M.getOrInsertFunction("MemoryDump", Type::getVoidTy(M.getContext())).getCallee());
         return false;
     }
 

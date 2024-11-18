@@ -55,7 +55,7 @@ bool DashTracer::Passes::SwapNonkernel::runOnFunction(Function &F) {
       if (calledFunc) {
         auto funcName = calledFunc->getName();
         // name start mid
-        if (funcName == "LoadDump"|| funcName == "StoreDump"|| funcName == "MemCpyDump"|| funcName == "BB_ID_Dump") {
+        if (funcName == "LoadDump"|| funcName == "StoreDump"|| funcName == "MemCpyDump"|| funcName == "BB_ID_Dump"||funcName == "ComputeDump"|| funcName =="MemoryDump") {
           inst->eraseFromParent();
         }
       }
