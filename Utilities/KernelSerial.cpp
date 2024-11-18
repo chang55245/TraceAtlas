@@ -117,6 +117,7 @@ KernelSerial::~KernelSerial()
 {
 }
 
+
 // kernel instance id
 static int NodeID = 0;
 // kernel id
