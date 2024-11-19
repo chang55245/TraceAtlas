@@ -2,6 +2,7 @@
 #include "AtlasUtil/Traces.h"
 #include "llvm/ADT/SmallVector.h"
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <indicators/progress_bar.hpp>
@@ -234,6 +235,7 @@ void trivialMergeRefector(wsTupleMap &processMap, wsTuple t_new)
                 processMap.find(next(iter)->first) != processMap.end() && overlap(processMap[t_new.start], next(iter)->second, 0))
             {
                 processMap[prev(iter)->first] = tp_or_refactor(prev(iter)->second, processMap[t_new.start]);
+                prev(iter)->second.memory_num = 0;
                 processMap[prev(iter)->first] = tp_or_refactor(prev(iter)->second, next(iter)->second);
                 processMap.erase(next(iter));
                 processMap.erase(iter);
@@ -253,6 +255,7 @@ void trivialMergeRefector(wsTupleMap &processMap, wsTuple t_new)
         {
             auto iter = processMap.find(t_new.start);
             processMap[t_new.start] = tp_or_refactor(t_new, processMap[t_new.start]);
+            prev(iter)->second.memory_num = 0;
             if (processMap.find(next(iter)->first) != processMap.end() && overlap(processMap[t_new.start], next(iter)->second, 0))
             {
                 processMap[t_new.start] = tp_or_refactor(next(iter)->second, processMap[t_new.start]);
@@ -2157,6 +2160,31 @@ int parsingKernelInfo(string KernelFilename)
     return 0;
 }
 
+using task_feature = struct task_feature
+{
+    uint64_t compute;
+    uint64_t memory;
+};
+
+void get_task_feature_map(map<int, task_feature> &task_feature_map)
+{
+
+    for (auto i : kernelIdMap)
+    {
+        task_feature_map[i.first] = {0, 0};
+        for (auto j : loadwsTupleMap[i.first])
+        {
+            task_feature_map[i.first].memory += j.second.memory_num;
+            task_feature_map[i.first].compute += j.second.compute_num;
+        }
+        for (auto j : storewsTupleMap[i.first])
+        {
+            task_feature_map[i.first].memory += j.second.memory_num;
+            task_feature_map[i.first].compute += j.second.compute_num;
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
 
@@ -2196,7 +2224,10 @@ int main(int argc, char **argv)
     // 1. generate the taskid and compute/memory map, here tuple doesn't matter anymore
     // 2. merge the DAG and generate a new DAG, in new DAGEdge
     // 3. how to enbale code generation with the DAG? 
-
+    // map [taskid] = {compute, memory}
+    
+    map<int, task_feature> task_feature_map;
+    get_task_feature_map(task_feature_map);
 
     //for transformed schedule generation
     DAGScheduleSingleThread();
