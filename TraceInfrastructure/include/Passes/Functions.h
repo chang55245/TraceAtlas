@@ -19,6 +19,8 @@ namespace DashTracer
         extern Function *fullFunc;
         extern Function *fullAddrFunc;
         extern Function *MemCpyDump;
+        extern Function *ComputeDump;
+        extern Function *MemoryDump;
 
         extern Function *MainStart;
         extern Function *StartNonKernelStage;

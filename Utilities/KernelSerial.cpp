@@ -2,6 +2,7 @@
 #include "AtlasUtil/Traces.h"
 #include "llvm/ADT/SmallVector.h"
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <indicators/progress_bar.hpp>
@@ -44,8 +45,8 @@ using wsTuple = struct wsTuple
     uint64_t end;
     uint64_t byte_count;
     uint64_t ref_count;
-    float reuse_distance;
-    uint64_t timing;
+    uint64_t compute_num;
+    uint64_t memory_num;
 };
 using wsTupleMap = map<int64_t, wsTuple>;
 
@@ -61,11 +62,11 @@ set<int> loadlastHitTimeSet;
 set<int> storelastHitTimeSet;
 set<int> loadAfterStorelastHitTimeSet;
 
-typedef struct livenessTuple
+using livenessTuple = struct livenessTuple
 {
     int64_t start;
     int64_t end;
-} livenessTuple;
+};
 
 // addr -> related time tuples
 vector<livenessTuple> livenessTupleVec;
@@ -111,12 +112,12 @@ public:
 };
 
 KernelSerial::KernelSerial(/* args */)
-{
-}
+= default;
 
 KernelSerial::~KernelSerial()
 {
 }
+
 
 // kernel instance id
 static int NodeID = 0;
@@ -138,22 +139,13 @@ set<int> barrierRemoval;
 // for data size
 
 map<int64_t, vector<uint64_t>> BBMemInstSize;
-// start end byte_count ref_count
 
-// uint64_t start;
-// uint64_t end;
-// uint64_t byte_count;
-// uint64_t ref_count;
-// uint64_t reuse_dist;
-typedef tuple<int64_t, int64_t, int64_t, vector<uint64_t>> AddrRange;
-typedef map<int64_t, AddrRange> AddrRangeMap;
+using AddrRange = tuple<int64_t, int64_t, int64_t, vector<uint64_t>>;
+using AddrRangeMap = map<int64_t, AddrRange>;
 map<int, AddrRangeMap> loadAddrRangeMapPerInstance;
 map<int, AddrRangeMap> storeAddrRangeMapPerInstance;
 
-uint64_t timing = 0;
-uint64_t timingIn = 0;
 
-uint64_t livenessTiming = 0;
 set<int64_t> ValidBlock;
 int vBlock;
 int64_t instCounter = 0;
@@ -188,79 +180,17 @@ bool overlapDependenceChecking(wsTuple a, wsTuple b, int64_t error)
     return max(a.start, b.start) < (min(a.end, b.end)) + error;
 }
 
-bool included(wsTuple newer, wsTuple existed)
-{
-    return (newer.start >= existed.start && newer.end <= existed.end && (newer.start + newer.end - existed.end - existed.start != 0));
-}
-
 
 wsTuple tp_or_refactor(wsTuple a, wsTuple b)
 {
     wsTuple wksTuple;
+    // std::cerr << "Warning: Execution stopped due to a critical condition!" << std::endl;
+    // std::exit(EXIT_FAILURE);
 
-    wksTuple = (wsTuple){min(a.start, b.start), max(a.end, b.end), 0, 0, 0, 0};
-    return wksTuple;
-}
-wsTuple tp_or(wsTuple a, wsTuple b, bool dynamic, set<int> &lastHitTimeSet)
-{
-
-    wsTuple wksTuple;
-    float reuse_distance = 0;
-    if (dynamic)
-    {
-
-        // last time hit tuple is not the same with current tuple
-        if (a.start != timingIn && b.start != timingIn)
-        {
-            timing++;
-            int timingRemove;
-            if (a.timing == 0)
-            {
-                a.timing = timing;
-                lastHitTimeSet.insert(timing);
-                timingRemove = b.timing;
-            }
-            else if (b.timing == 0)
-            {
-                b.timing = timing;
-                lastHitTimeSet.insert(timing);
-                timingRemove = a.timing;
-            }
-
-            auto timingLarge = lastHitTimeSet.find(timing);
-            auto timingSmall = lastHitTimeSet.find(timingRemove);
-
-            reuse_distance = distance(timingSmall, timingLarge);
-
-            reuse_distance = (reuse_distance + a.reuse_distance * a.ref_count + b.reuse_distance * b.ref_count) / (a.ref_count + b.ref_count);
-
-            lastHitTimeSet.erase(timingRemove);
-
-        } // last time hit tuple is the same with current tuple
-        else
-        {
-            reuse_distance = (reuse_distance + a.reuse_distance * a.ref_count + b.reuse_distance * b.ref_count) / (a.ref_count + b.ref_count);
-        }
-        timingIn = min(a.start, b.start);
-    }
-    else
-    {
-        //Todo: this should be memory weighted
-        reuse_distance = (a.reuse_distance * a.ref_count + b.reuse_distance * b.ref_count);
-        reuse_distance = reuse_distance / (a.ref_count + b.ref_count);
-    }
-    // todo might need to be changed
-    memfootPrintInKI += 8;
-    wksTuple = (wsTuple){min(a.start, b.start), max(a.end, b.end), a.byte_count + b.byte_count, a.ref_count + b.ref_count, reuse_distance, timing};
+    wksTuple = (wsTuple){min(a.start, b.start), max(a.end, b.end), 0, 0, a.compute_num + b.compute_num, a.memory_num + b.memory_num};
     return wksTuple;
 }
 
-wsTuple tp_or_tuple(wsTuple a, wsTuple b)
-{
-    wsTuple wksTuple;
-    wksTuple = (wsTuple){min(a.start, b.start), max(a.end, b.end), a.byte_count + b.byte_count, a.ref_count + b.ref_count, 0, 0};
-    return wksTuple;
-}
 
 // online changing the map to speed up the processing
 int updateRegister = 0;
@@ -305,6 +235,7 @@ void trivialMergeRefector(wsTupleMap &processMap, wsTuple t_new)
                 processMap.find(next(iter)->first) != processMap.end() && overlap(processMap[t_new.start], next(iter)->second, 0))
             {
                 processMap[prev(iter)->first] = tp_or_refactor(prev(iter)->second, processMap[t_new.start]);
+                prev(iter)->second.memory_num = 0;
                 processMap[prev(iter)->first] = tp_or_refactor(prev(iter)->second, next(iter)->second);
                 processMap.erase(next(iter));
                 processMap.erase(iter);
@@ -319,15 +250,12 @@ void trivialMergeRefector(wsTupleMap &processMap, wsTuple t_new)
                 processMap[iter->first] = tp_or_refactor(iter->second, next(iter)->second);
                 processMap.erase(next(iter));
             }
-            else
-            {
-                processMap[t_new.start].timing = timing;
-            }
         }
         else
         {
             auto iter = processMap.find(t_new.start);
             processMap[t_new.start] = tp_or_refactor(t_new, processMap[t_new.start]);
+            prev(iter)->second.memory_num = 0;
             if (processMap.find(next(iter)->first) != processMap.end() && overlap(processMap[t_new.start], next(iter)->second, 0))
             {
                 processMap[t_new.start] = tp_or_refactor(next(iter)->second, processMap[t_new.start]);
@@ -336,102 +264,6 @@ void trivialMergeRefector(wsTupleMap &processMap, wsTuple t_new)
         }
     }
 
-}
-void trivialMergeOptRegister(wsTupleMap &processMap, wsTuple t_new, set<int> &lastHitTimeSet)
-{
-
-    // locating
-    if (processMap.empty())
-    {
-        timingIn = t_new.start;
-        timing++;
-        t_new.timing = timing;
-        lastHitTimeSet.insert(timing);
-        processMap[t_new.start] = t_new;
-        memfootPrintInKI += t_new.ref_count;
-    }
-    else if (processMap.size() == 1)
-    {
-        auto iter = processMap.begin();
-        if (overlap(t_new, iter->second, 0))
-        {
-            {
-                t_new = tp_or(t_new, iter->second, true, lastHitTimeSet);
-                processMap[t_new.start] = t_new;
-                if (t_new.start != iter->first)
-                {
-                    processMap.erase(iter);
-                }
-            }
-        }
-        else
-        {
-
-            timingIn = t_new.start;
-            timing++;
-            t_new.timing = timing;
-            lastHitTimeSet.insert(timing);
-            processMap[t_new.start] = t_new;
-            memfootPrintInKI += t_new.ref_count;
-        }
-    }
-    else
-    {
-        if (processMap.find(t_new.start) == processMap.end())
-        {
-            processMap[t_new.start] = t_new;
-            auto iter = processMap.find(t_new.start);
-            // need to delete someone
-
-            if (processMap.find(prev(iter)->first) != processMap.end() && included(t_new, prev(iter)->second))
-            {
-                //registerUpdate(t_new);
-                // processMap.erase(t_new.start);
-                // return;
-            }
-            if (processMap.find(prev(iter)->first) != processMap.end() && overlap(processMap[t_new.start], prev(iter)->second, 0) &&
-                processMap.find(next(iter)->first) != processMap.end() && overlap(processMap[t_new.start], next(iter)->second, 0))
-            {
-                processMap[prev(iter)->first] = tp_or(prev(iter)->second, processMap[t_new.start], true, lastHitTimeSet);
-                processMap[prev(iter)->first] = tp_or(prev(iter)->second, next(iter)->second, false, lastHitTimeSet);
-                processMap.erase(next(iter));
-                processMap.erase(iter);
-            }
-            else if (processMap.find(prev(iter)->first) != processMap.end() && overlap(processMap[t_new.start], prev(iter)->second, 0))
-            {
-                processMap[prev(iter)->first] = tp_or(prev(iter)->second, processMap[t_new.start], true, lastHitTimeSet);
-                processMap.erase(iter);
-            }
-            else if (processMap.find(next(iter)->first) != processMap.end() && overlap(processMap[t_new.start], next(iter)->second, 0))
-            {
-                processMap[iter->first] = tp_or(iter->second, next(iter)->second, true, lastHitTimeSet);
-                processMap.erase(next(iter));
-            }
-            else
-            {
-                timingIn = t_new.start;
-                timing++;
-                lastHitTimeSet.insert(timing);
-                processMap[t_new.start].timing = timing;
-                memfootPrintInKI += t_new.ref_count;
-            }
-        }
-        else
-        {
-            auto iter = processMap.find(t_new.start);
-            if (included(t_new, processMap[t_new.start]))
-            {
-                //registerUpdate(t_new);
-                // return;
-            }
-            processMap[t_new.start] = tp_or(t_new, processMap[t_new.start], true, lastHitTimeSet);
-            if (processMap.find(next(iter)->first) != processMap.end() && overlap(processMap[t_new.start], next(iter)->second, 0))
-            {
-                processMap[t_new.start] = tp_or(next(iter)->second, processMap[t_new.start], false, lastHitTimeSet);
-                processMap.erase(next(iter));
-            }
-        }
-    }
 }
 
 bool CheckLoadAfterStoreref(wsTupleMap storeMap, wsTuple t_new)
@@ -511,19 +343,6 @@ void ControlParse(int block)
         }
         StartBBinNode[NodeID] = block; // NodeID is the next node 
         
-
-
-
-        
-
-
-        // legacy variables for reuse distance
-        timing = 0;
-        timingIn = 0;
-        loadlastHitTimeSet.clear();
-        storelastHitTimeSet.clear();
-
-
         // for working set info
         currentNodeID = NodeID;
         NodeID++;
@@ -536,6 +355,8 @@ stack<int> instCounterBuff;
 uint64_t address  = 0;
 void Process(string &key, string &value)
 {
+    // debug trace
+    // printf("key: %s, value: %s \n",key.c_str(),value.c_str());
     
 
     if (key == "BBEnter")
@@ -594,7 +415,7 @@ void Process(string &key, string &value)
 
         uint64_t dataSize = size;
         wsTuple loadwksTuple;
-        loadwksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
+        loadwksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 1};
 
         // if the load address is from the kernel's store tuple, then not counting this load
         // this currently only works for the case that the load address is completely covered by the store tuple, so the load tuple map will be larger than it should be, more dependencies will be counted
@@ -608,35 +429,7 @@ void Process(string &key, string &value)
             peakLoadTNum = loadwsTupleMap[currentNodeID].size();
         }
         address = 0;
-
-
-
-        //  if (noerrorInTrace)
-        // {
-
-        //     uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
-        //     if (BBMemInstSize[vBlock].size() <= instCounter)
-        //     {
-        //         return;
-        //     }
-
-        //     instCounter++;
-        //     wsTuple loadwksTuple;
-        //     loadwksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
-
-        //     // if the load address is from the kernel's store tuple, then not counting this load
-        //     // this currently only works for the case that the load address is completely covered by the store tuple, so the load tuple map will be larger than it should be, more dependencies will be counted
-        //     if (!CheckLoadAfterStore(storewsTupleMap[currentNodeID], loadwksTuple))
-        //     {
-        //         trivialMergeRefector(loadwsTupleMap[currentNodeID], loadwksTuple);
-        //     }
-
-        //     if (loadwsTupleMap[currentNodeID].size() > peakLoadTNum)
-        //     {
-        //         peakLoadTNum = loadwsTupleMap[currentNodeID].size();
-        //     }
-        // }
-       
+  
         
     }
     else if (key == "StoreSize") {
@@ -656,7 +449,7 @@ void Process(string &key, string &value)
 
         uint64_t dataSize = size;
         wsTuple storewksTuple;
-        storewksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
+        storewksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 1};
         trivialMergeRefector(storewsTupleMap[currentNodeID], storewksTuple);
 
         if (storewsTupleMap[currentNodeID].size() > peakStoreTNum)
@@ -664,94 +457,18 @@ void Process(string &key, string &value)
             peakStoreTNum = storewsTupleMap[currentNodeID].size();
         }
         address = 0;
-
-
-
-        //  if (noerrorInTrace)
-        // {
-
-
-        //     printf("trace StoreSize: %lu \n",size);
-        //     printf("read StoreSize: %lu \n",BBMemInstSize[vBlock][instCounter]);
-
-
-        //     if (BBMemInstSize[vBlock].size() <= instCounter)
-        //     {
-        //         return;
-        //     }
-
-        //     uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
-        //     instCounter++;
-        //     wsTuple storewksTuple;
-        //     storewksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
-        //     trivialMergeRefector(storewsTupleMap[currentNodeID], storewksTuple);
-
-        //     if (storewsTupleMap[currentNodeID].size() > peakStoreTNum)
-        //     {
-        //         peakStoreTNum = storewsTupleMap[currentNodeID].size();
-        //     }
-        // }
-        
-    
+   
     
     }
     else if (key == "StoreAddress")
     {
         address = stoul(value, nullptr, 0);
 
-        // uint64_t address = stoul(value, nullptr, 0);
-
-        // if (noerrorInTrace)
-        // {
-        //     if (BBMemInstSize[vBlock].size() <= instCounter)
-        //     {
-        //         return;
-        //     }
-
-        //     uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
-        //     instCounter++;
-        //     wsTuple storewksTuple;
-        //     storewksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
-        //     trivialMergeRefector(storewsTupleMap[currentNodeID], storewksTuple);
-
-        //     if (storewsTupleMap[currentNodeID].size() > peakStoreTNum)
-        //     {
-        //         peakStoreTNum = storewsTupleMap[currentNodeID].size();
-        //     }
-        // }
     }
     else if (key == "LoadAddress")
     {
         address = stoul(value, nullptr, 0);
-
-        // uint64_t address = stoul(value, nullptr, 0);
-        // // printf("address:%lu \n",address);
-
-        // if (noerrorInTrace)
-        // {
-
-        //     uint64_t dataSize = BBMemInstSize[vBlock][instCounter];
-        //     if (BBMemInstSize[vBlock].size() <= instCounter)
-        //     {
-        //         return;
-        //     }
-
-        //     instCounter++;
-        //     wsTuple loadwksTuple;
-        //     loadwksTuple = (wsTuple){address, address + dataSize, 0, 0, 0, 0};
-
-        //     // if the load address is from the kernel's store tuple, then not counting this load
-        //     // this currently only works for the case that the load address is completely covered by the store tuple, so the load tuple map will be larger than it should be, more dependencies will be counted
-        //     if (!CheckLoadAfterStore(storewsTupleMap[currentNodeID], loadwksTuple))
-        //     {
-        //         trivialMergeRefector(loadwsTupleMap[currentNodeID], loadwksTuple);
-        //     }
-
-        //     if (loadwsTupleMap[currentNodeID].size() > peakLoadTNum)
-        //     {
-        //         peakLoadTNum = loadwsTupleMap[currentNodeID].size();
-        //     }
-        // }
+      
     }
     else if (key == "MemCpy")
     {
@@ -773,7 +490,7 @@ void Process(string &key, string &value)
 
             // load tuples
             wsTuple loadwksTuple;
-            loadwksTuple = (wsTuple){src, src + len, len, 1, 0, 0};
+            loadwksTuple = (wsTuple){src, src + len, len, 1, 0, 1};
 
             // // if the load address is from the kernel's store tuple, then not counting this load
             if (!CheckLoadAfterStore(storewsTupleMap[currentNodeID], loadwksTuple))
@@ -782,9 +499,34 @@ void Process(string &key, string &value)
             }
 
             wsTuple storewksTuple;
-            storewksTuple = (wsTuple){dest, dest + len, len, 1, 0, 0};
+            storewksTuple = (wsTuple){dest, dest + len, len, 1, 0, 1};
             trivialMergeRefector(storewsTupleMap[currentNodeID], storewksTuple);
         }
+    }
+    else if (key == "Compute") {
+        // because the compute and memory will be accumulated in the whole task, so just accumulate them in the first tuple
+        // no need to distinguish the compute and memory number in the tuple granularity, at task granularity should be enough
+        // also accumulate the compute and memory number in the load or store tuple map also doesn't matter, pick one not empty here
+        if (storewsTupleMap[currentNodeID].empty())
+        {
+            loadwsTupleMap[currentNodeID].begin()->second.compute_num += 1;
+        }
+        else {
+            storewsTupleMap[currentNodeID].begin()->second.compute_num += 1;
+        }
+        
+    }
+    else if (key == "Memory") {
+
+        // merging should use another abstraction of memory and compute in tasks instead of tuples, add another abstraction of map[taskid] = {compute, memory}
+        if(!storewsTupleMap[currentNodeID].empty())
+        {
+            storewsTupleMap[currentNodeID].begin()->second.memory_num += 1;
+        }
+        else {
+            loadwsTupleMap[currentNodeID].begin()->second.memory_num += 1;
+        }
+    
     }
 }
 
@@ -792,7 +534,7 @@ void print_user(Instruction *CI, map<Instruction *, tuple<int64_t, int64_t>> mem
 {
     for (User *U : CI->users())
     {
-        if (Instruction *Inst = dyn_cast<Instruction>(U))
+        if (auto *Inst = dyn_cast<Instruction>(U))
         {
             // errs() << "F is used in instruction:\n";
             errs() << *Inst << "\n";
@@ -805,223 +547,6 @@ void print_user(Instruction *CI, map<Instruction *, tuple<int64_t, int64_t>> mem
     }
 }
 
-
-
-void unionVector(AddrRange a, AddrRange b, vector<pair<int64_t, int64_t>> &result)
-{
-    if (result.size() > 0)
-    {
-        result.pop_back();
-    }
-    if (
-        (get<0>(a) <= get<0>(b)) && (get<1>(a) <= get<0>(b)))
-    {
-        pair<int64_t, int64_t> r1(get<0>(a), get<1>(a));
-        result.push_back(r1);
-        pair<int64_t, int64_t> r2(get<0>(b), get<1>(b));
-        result.push_back(r2);
-    }
-    else if ((get<0>(a) <= get<0>(b)) && (get<1>(a) >= get<0>(b)) && (get<1>(a) <= get<1>(b)))
-    {
-        pair<int64_t, int64_t> r1(get<0>(a), get<1>(b));
-        result.push_back(r1);
-    }
-    else if ((get<0>(b) <= get<0>(a)) && (get<1>(b) >= get<0>(a)) && (get<1>(b) <= get<1>(a)))
-    {
-        pair<int64_t, int64_t> r1(get<0>(b), get<1>(a));
-        result.push_back(r1);
-    }
-    else if ((get<0>(b) <= get<0>(a)) && (get<1>(b) <= get<0>(a)))
-    {
-        pair<int64_t, int64_t> r1(get<0>(b), get<1>(b));
-        result.push_back(r1);
-        pair<int64_t, int64_t> r2(get<0>(a), get<1>(a));
-        result.push_back(r2);
-    }
-}
-
-// calculate the intersection of load and store in one instance
-void calMemUsePerIns(map<int, int64_t> &totalMemUsage, map<int, vector<pair<int64_t, int64_t>>> &addrTouchedPerInst)
-{
-    int64_t memU;
-    // kernel instance
-    map<int, AddrRangeMap> iterstore = storeAddrRangeMapPerInstance;
-
-    // iteration in instances
-    for (auto il : loadAddrRangeMapPerInstance)
-    {
-        // restult vector: addr range
-        vector<pair<int64_t, int64_t>> resultVec;
-        // load tuples in ki
-        for (auto ill : il.second)
-        {
-            // store tuples in ki
-            vector<int64_t> tobeErase;
-            for (auto ils : iterstore[il.first])
-            {
-                if (resultVec.size() == 0)
-                {
-                    unionVector(ils.second, ill.second, resultVec);
-                    for (auto ite : tobeErase)
-                    {
-                        iterstore[il.first].erase(ite);
-                    }
-
-                    break;
-                }
-                else if (get<0>(ils.second) <= get<0>(ill.second))
-                {
-                    tobeErase.push_back(ils.first);
-                    unionVector(ils.second, AddrRange(resultVec.back().first, resultVec.back().second, 0, 0), resultVec);
-                }
-                else if (get<0>(ils.second) >= get<0>(ill.second))
-                {
-                    unionVector(ill.second, AddrRange(resultVec.back().first, resultVec.back().second, 0, 0), resultVec);
-                    for (auto ite : tobeErase)
-                    {
-                        iterstore[il.first].erase(ite);
-                    }
-                    break;
-                }
-                else if (get<0>(ils.second) == get<0>(ill.second))
-                {
-                    if (get<1>(ils.second) >= get<1>(ill.second))
-                    {
-                        tobeErase.push_back(ils.first);
-                        unionVector(ils.second, AddrRange(resultVec.back().first, resultVec.back().second, 0, 0), resultVec);
-                    }
-                    else
-                    {
-                        unionVector(ill.second, AddrRange(resultVec.back().first, resultVec.back().second, 0, 0), resultVec);
-                        for (auto ite : tobeErase)
-                        {
-                            iterstore[il.first].erase(ite);
-                        }
-                        break;
-                    }
-                }
-            }
-            for (auto ite : tobeErase)
-            {
-                iterstore[il.first].erase(ite);
-            }
-        }
-        addrTouchedPerInst[il.first] = resultVec;
-        resultVec.clear();
-    }
-
-    for (auto il : addrTouchedPerInst)
-    {
-        memU = 0;
-        for (auto ill : il.second)
-        {
-            memU += (ill.second - ill.first);
-        }
-        totalMemUsage[il.first] = memU;
-    }
-}
-
-wsTuple intersectionTuple(wsTuple load, wsTuple store)
-{
-    wsTuple result;
-    result.start = max(load.start, store.start);
-    result.end = min(load.end, store.end);
-    // todo updates these
-    float ldr = float(result.end - result.start) / float(load.end - load.start);
-    float str = float(result.end - result.start) / float(store.end - store.start);
-    result.byte_count = load.byte_count * ldr + store.byte_count * str;
-    result.ref_count = load.ref_count * ldr + store.ref_count * str;
-    result.reuse_distance = load.reuse_distance * ldr + store.reuse_distance * str;
-    result.timing = 0;
-    return result;
-}
-
-wsTupleMap intersectionTupleMap(wsTupleMap load, wsTupleMap store)
-{
-
-    wsTupleMap intersecMap;
-    for (auto l : load)
-    {
-        for (auto s : store)
-        {
-            if (overlap(l.second, s.second, 0))
-            {
-                wsTuple intersecTuple = intersectionTuple(l.second, s.second);
-                intersecMap[intersecTuple.start] = intersecTuple;
-            }
-        }
-    }
-    return intersecMap;
-}
-
-void calDependency(map<int, map<int, wsTupleMap>> &dependency)
-{
-    for (auto il : loadwsTupleMap)
-    {
-        if (il.first <= 0)
-        {
-            continue;
-        }
-        else
-        {
-            //TODO: should be a kernel
-            for (auto is : storewsTupleMap)
-            {
-                if (is.first <= 0)
-                {
-                    continue;
-                }
-                wsTupleMap intersecMap;
-                if (is.first >= il.first)
-                {
-                    break;
-                }
-                else
-                {
-                    intersecMap = intersectionTupleMap(il.second, is.second);
-                }
-                dependency[il.first][is.first] = intersecMap;
-            }
-        }
-    }
-}
-
-wsTupleMap Aggregate(wsTupleMap a, wsTupleMap b)
-{
-    wsTupleMap res;
-    for (auto i : a)
-    {
-        res[i.first] = i.second;
-    }
-    for (auto i : b)
-    {
-        if (res.find(i.first) == res.end())
-        {
-            res[i.first] = i.second;
-        }
-        else
-        {
-            set<int> numbSet;
-            res[i.first] = tp_or(i.second, a[i.first], false, numbSet);
-        }
-    }
-    return res;
-}
-tuple<int, int, float, int> calTotalSize(wsTupleMap a, int liveness)
-{
-    int size = 0;
-    int access = 1;
-    float locality = 0;
-    for (auto i : a)
-    {
-        size += i.second.end - i.second.start;
-        locality = (locality * access + i.second.reuse_distance * i.second.ref_count);
-        locality = locality / (access + i.second.ref_count);
-        access += i.second.ref_count;
-    }
-    tuple<int, int, float, int> res(size, access, locality, liveness);
-    return res;
-}
 
 map<int64_t, int> lastWriterNodeIDMap;
 wsTupleMap lastWriterTupleMap;
@@ -1114,84 +639,6 @@ bool DepCheck(wsTuple t_new, wsTupleMap &processMap)
     return false;
 }
 
-void UpdateResultTupleMap(wsTuple t_new, wsTupleMap &processMap)
-{
-    if (processMap.size() == 0)
-    {
-        processMap[t_new.start] = t_new;
-        return;
-    }
-    else if (processMap.size() == 1)
-    {
-        auto iter = processMap.begin();
-        // the condition to decide (add and delete) or update
-        if (overlap(t_new, iter->second, 0))
-        {
-            wsTuple res_tuple = tp_or_tuple(t_new, iter->second);
-            processMap[res_tuple.start] = res_tuple;
-            if (t_new.start != iter->first)
-            {
-                processMap.erase(iter);
-            }
-        }
-        else
-        {
-            processMap[t_new.start] = t_new;
-        }
-    }
-    else
-    {
-        if (processMap.find(t_new.start) == processMap.end())
-        {
-            processMap[t_new.start] = t_new;
-            auto iter = processMap.find(t_new.start);
-            // need to delete someone
-
-            if (processMap.find(prev(iter)->first) != processMap.end() && overlapDependenceChecking(processMap[t_new.start], prev(iter)->second, 0) &&
-                processMap.find(next(iter)->first) != processMap.end() && overlapDependenceChecking(processMap[t_new.start], next(iter)->second, 0))
-            {
-                processMap[prev(iter)->first] = tp_or_tuple(prev(iter)->second, processMap[t_new.start]);
-                processMap[prev(iter)->first] = tp_or_tuple(prev(iter)->second, next(iter)->second);
-                processMap.erase(next(iter));
-                processMap.erase(iter);
-            }
-            else if (processMap.find(prev(iter)->first) != processMap.end() && overlapDependenceChecking(processMap[t_new.start], prev(iter)->second, 0))
-            {
-                processMap[prev(iter)->first] = tp_or_tuple(prev(iter)->second, processMap[t_new.start]);
-                processMap.erase(iter);
-            }
-            else if (processMap.find(next(iter)->first) != processMap.end() && overlapDependenceChecking(processMap[t_new.start], next(iter)->second, 0))
-            {
-                processMap[iter->first] = tp_or_tuple(iter->second, next(iter)->second);
-                processMap.erase(next(iter));
-            }
-        }
-        else
-        {
-            auto iter = processMap.find(t_new.start);
-            processMap[t_new.start] = tp_or_tuple(t_new, processMap[t_new.start]);
-            if (processMap.find(next(iter)->first) != processMap.end() && overlap(processMap[t_new.start], next(iter)->second, 0))
-            {
-                processMap[t_new.start] = tp_or_tuple(next(iter)->second, processMap[t_new.start]);
-                processMap.erase(next(iter));
-            }
-        }
-    }
-    return;
-}
-
-void DepCheckResTuple(wsTuple t_new, wsTupleMap processMap, wsTupleMap &resultMap)
-{
-    for (auto tp : processMap)
-    {
-        if (overlap(t_new, tp.second, 0))
-        {
-            wsTuple res_tuple = tp_or_tuple(t_new, tp.second);
-            UpdateResultTupleMap(t_new, resultMap);
-        }
-    }
-}
-
 wsTuple tp_and_tuple(wsTuple a, wsTuple b)
 {
     wsTuple wksTuple;
@@ -1200,182 +647,9 @@ wsTuple tp_and_tuple(wsTuple a, wsTuple b)
     return wksTuple;
 }
 
-// void SubstractResultTupleMap(wsTuple t_new, wsTupleMap &processMap)
-// {
-//     if (processMap.size() == 0)
-//     {
-//         return;
-//     }
-//     else if (processMap.size() == 1)
-//     {
-//         auto iter = processMap.begin();
-//         if (overlap(t_new, iter->second, 0))
-//         {
-//             wsTuple and_tuple = tp_and_tuple(t_new, iter->second);
-//             wsTuple res_tuple;
-//             //3 cases, number of result tuples: 0, 1, 2
-//             // case 0
-//             if(and_tuple.start==iter->second.start && and_tuple.end == iter->second.end)
-//             {
-//                 processMap.erase(iter);
-//             } //case 1 overlap at the beginning
-//             else if(and_tuple.start==iter->second.start && and_tuple.end < iter->second.end)
-//             {
-//                 res_tuple = (wsTuple){and_tuple.end, iter->second.end, 0, 0, 0, 0};
-//                 processMap[res_tuple.start] = res_tuple;
-//                 processMap.erase(iter);
-//             }//case 1 overlap at the end
-//             else if(and_tuple.start > iter->second.start && and_tuple.end == iter->second.end)
-//             {
-//                 res_tuple = (wsTuple){iter->second.start, and_tuple.start, 0, 0, 0, 0};
-//                 processMap[iter->second.start] = res_tuple;
-//             } // case 2
-//             else if (and_tuple.start > iter->second.start && and_tuple.end < iter->second.end)
-//             {
-//                 res_tuple = (wsTuple){iter->second.start, and_tuple.start, 0, 0, 0, 0};
-//                 processMap[iter->second.start] = res_tuple;
 
-//                 res_tuple = (wsTuple){and_tuple.end, iter->second.end, 0, 0, 0, 0};
-//                 processMap[res_tuple.start] = res_tuple;
-//             }
-//         }
-//     }
-//     else
-//     {
 
-//         if(processMap.find(t_new.start) != processMap.end()&& processMap.find(t_new.end) != processMap.end())
-//         {
-//             auto start = processMap.find(t_new.start);
-//             auto iter = processMap.find(t_new.end);
-//             iter = prev(iter);
-//             while (iter != start && processMap.find(iter->second.start)!=processMap.end())
-//             {
-//                 if(iter->second.start>t_new.start && iter->second.end < t_new.end)
-//                 {
-//                     processMap.erase(iter);
-//                 }
-//                 iter = prev(iter);
-//             }
-//             processMap.erase(start);
-//         }
-//         else if (processMap.find(t_new.start) == processMap.end()&& processMap.find(t_new.end) != processMap.end())
-//         {
-//             auto iter = processMap.find(t_new.end);
-//             processMap[t_new.start] = t_new;
-//             auto start = processMap.find(t_new.start);
-
-//             // delete the tuples between start and end of overlap
-//             iter = prev(iter);
-//             while (iter != start && processMap.find(iter->second.start)!=processMap.end())
-//             {
-//                 if(iter->second.start>t_new.start && iter->second.end < t_new.end)
-//                 {
-//                     processMap.erase(iter);
-//                 }
-//                 iter = prev(iter);
-//             }
-
-//             auto previous = prev(start);
-
-//             // overlap at the end
-
-//             if(overlap(previous->second,start->second,0))
-//             {
-//                 wsTuple and_tuple = tp_and_tuple(t_new, previous->second);
-//                 wsTuple res_tuple;
-//                 res_tuple = (wsTuple){previous->second.start, and_tuple.start, 0, 0, 0, 0};
-//                 processMap[previous->second.start] = res_tuple;
-//             }
-//             processMap.erase(start);
-//         }
-//         else if (processMap.find(t_new.start) != processMap.end()&& processMap.find(t_new.end) == processMap.end())
-//         {
-//             processMap[t_new.end] = t_new;
-//             auto end = processMap.find(t_new.end);
-//             auto start = processMap.find(t_new.start);
-
-//             auto iter = end;
-//             // delete the tuples between start and end of overlap
-//             iter = prev(iter);
-//             while (iter != start && processMap.find(iter->second.start)!=processMap.end())
-//             {
-//                 if(iter->second.start>t_new.start && iter->second.end < t_new.end)
-//                 {
-//                     processMap.erase(iter);
-//                 }
-//                 iter = prev(iter);
-//             }
-
-//             auto nextTuple = prev(end);
-
-//             // overlap at the beginning
-
-//             if(overlap(nextTuple->second,end->second,0)&& nextTuple->second.end > t_new.end)
-//             {
-//                 wsTuple and_tuple = tp_and_tuple(t_new, nextTuple->second);
-//                 wsTuple res_tuple;
-//                 res_tuple = (wsTuple){and_tuple.end, nextTuple->second.end, 0, 0, 0, 0};
-//                 processMap[res_tuple.start] = res_tuple;
-//             }
-//             processMap.erase(end);
-//             processMap.erase(start);
-//         }
-//         else if (processMap.find(t_new.start) == processMap.end()&& processMap.find(t_new.end) == processMap.end())
-//         {
-
-//             processMap[t_new.end] = t_new;
-//             auto end = processMap.find(t_new.end);
-//             processMap[t_new.start] = t_new;
-//             auto start = processMap.find(t_new.start);
-
-//             auto iter = end;
-//             // delete the tuples between start and end of overlap
-//             iter = prev(iter);
-//             while (iter != start && processMap.find(iter->second.start)!=processMap.end())
-//             {
-//                 if(iter->second.start>t_new.start && iter->second.end < t_new.end)
-//                 {
-//                     processMap.erase(iter);
-//                 }
-//                 iter = prev(iter);
-//             }
-
-//             auto previous = prev(start);
-
-//             // overlap at the end
-
-//             if(overlap(previous->second,start->second,0)&& processMap.find(previous->second.start)!=processMap.end())
-//             {
-//                 wsTuple and_tuple = tp_and_tuple(t_new, previous->second);
-//                 wsTuple res_tuple;
-//                 res_tuple = (wsTuple){previous->second.start, and_tuple.start, 0, 0, 0, 0};
-//                 processMap[previous->second.start] = res_tuple;
-//             }
-
-//             auto nextTuple = prev(end);
-
-//             // overlap at the beginning
-
-//             if(overlap(nextTuple->second,end->second,0)&& nextTuple->second.end > t_new.end)
-//             {
-//                 wsTuple and_tuple = tp_and_tuple(t_new, nextTuple->second);
-//                 wsTuple res_tuple;
-//                 res_tuple = (wsTuple){and_tuple.end, nextTuple->second.end, 0, 0, 0, 0};
-//                 processMap[res_tuple.start] = res_tuple;
-
-//             }
-//             else
-//             {
-//                 processMap.erase(end);
-//             }
-
-//             processMap.erase(start);
-//         }
-//     }
-// }
-
-void SubstractResultTupleMap(wsTuple t_new, wsTupleMap &processMap)
-{
+void SubstractResultTupleMap(wsTuple t_new, wsTupleMap &processMap){
     if (processMap.size() == 0)
     {
         return;
@@ -1613,26 +887,6 @@ bool CheckNodeDep(int source, int target)
     return dep;
 }
 
-// check if the store overlap of 1 and 2, overlaps with the load of node3
-bool StoreSetOverlaping(int node1, int node2, int node3)
-{
-    bool dep = false;
-    wsTupleMap Overlaps;
-    for (auto i : storewsTupleMap[node1])
-    {
-        DepCheckResTuple(i.second, storewsTupleMap[node2], Overlaps);
-    }
-
-    for (auto i : Overlaps)
-    {
-        dep = DepCheck(i.second, loadwsTupleMap[node3]);
-        if (dep == true)
-        {
-            return true;
-        }
-    }
-    return dep;
-}
 
 set<pair<int, int>> DAGEdge;
 
@@ -1750,8 +1004,7 @@ void CheckLiveNodePrevNode(int liveNode, set<int, greater<int>> &LiveNodeCheckin
 }
 
 // tuple overwrite
-void ConstructColoringStructure(wsTuple t_new, int id, wsTupleMap &processMap, map<int64_t, int> &nodeIDMap)
-{
+void ConstructColoringStructure(wsTuple t_new, int id, wsTupleMap &processMap, map<int64_t, int> &nodeIDMap){
     
     if (processMap.size() == 0)
     {
@@ -2283,16 +1536,7 @@ void DAGGenColoringRefector()
             LastwriterMapUpdate(st.second,i);
 
         }
-
-
-        
-
-
-        
-
-        
-
-                   
+              
     }
 }
 
@@ -2440,65 +1684,6 @@ void GenTestSchedule()
     GenSchedule(schedulableNodes,NextNodeMap,PrevNodeMap);
 
 }
-
-void CheckWAW()
-{
-    lastWriterTupleMap.clear();
-
-    map<int,set<int>> NextNodeMap;
-
-
-    for (auto i : DAGEdge)
-    {
-        NextNodeMap[i.first].insert(i.second);
-    }
-
-    // all the node in time order
-    for (auto i : kernelIdMap)
-    {
-        // node-> memory tuple that they wrote to
-        for (auto tp : lastWriterTupleMap)
-        {
-            if(DepCheck(tp.second, storewsTupleMap[i.first]))
-            {
-                int node = lastWriterNodeIDMap[tp.first];
-
-
-                // if(node != i.first)
-                // {      
-                //     pair<int, int> edge = {node, i.first};
-                //     DAGEdge.insert(edge);                  
-                // }
-
-
-                // calculate the overlaps
-                wsTupleMap Overlaps;                
-                DepCheckResTuple(tp.second,storewsTupleMap[i.first], Overlaps);
-                
-               
-                for(auto child: NextNodeMap[i.first])
-                {
-                    // check dependence load the overlaps
-                    if(CheckTupleMapDep(Overlaps, loadwsTupleMap[i.first]))
-                    {
-                        if(node != i.first)
-                        {      
-                            pair<int, int> edge = {node, i.first};
-                            DAGEdge.insert(edge);                  
-                        }
-                    }
-                }
-                
-            }
-        }
-
-        for (auto st : storewsTupleMap[i.first])
-        {
-            ConstructColoringStructure(st.second, i.first, lastWriterTupleMap,lastWriterNodeIDMap);
-        }  
-    }
-}
-
 
 
 set<pair<int, int>> SingleThreadDAGEdge;
@@ -2975,6 +2160,31 @@ int parsingKernelInfo(string KernelFilename)
     return 0;
 }
 
+using task_feature = struct task_feature
+{
+    uint64_t compute;
+    uint64_t memory;
+};
+
+void get_task_feature_map(map<int, task_feature> &task_feature_map)
+{
+
+    for (auto i : kernelIdMap)
+    {
+        task_feature_map[i.first] = {0, 0};
+        for (auto j : loadwsTupleMap[i.first])
+        {
+            task_feature_map[i.first].memory += j.second.memory_num;
+            task_feature_map[i.first].compute += j.second.compute_num;
+        }
+        for (auto j : storewsTupleMap[i.first])
+        {
+            task_feature_map[i.first].memory += j.second.memory_num;
+            task_feature_map[i.first].compute += j.second.compute_num;
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
 
@@ -3009,10 +2219,16 @@ int main(int argc, char **argv)
     printf("\n time %ld \n", (end_time - start_time));
 
     spdlog::info("DAGGenColoring end");
-    // CheckWAW();
+    
+    // add task merging here
+    // 1. generate the taskid and compute/memory map, here tuple doesn't matter anymore
+    // 2. merge the DAG and generate a new DAG, in new DAGEdge
+    // 3. how to enbale code generation with the DAG? 
+    // map [taskid] = {compute, memory}
+    
+    map<int, task_feature> task_feature_map;
+    get_task_feature_map(task_feature_map);
 
-    // GenTestSchedule();
-    // GenBBMapping();
     //for transformed schedule generation
     DAGScheduleSingleThread();
     spdlog::info("DAGScheduleSingleThread end");
@@ -3036,7 +2252,8 @@ int main(int argc, char **argv)
                     jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["2"] = stii.second.end;
                     jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["3"] = stii.second.byte_count;
                     jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["4"] = stii.second.ref_count;
-                    jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["5"] = stii.second.reuse_distance;
+                    jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["5"] = stii.second.compute_num;
+                    jOut["tuplePerInstance"]["store"][to_string(sti.first)][to_string(stii.first)]["6"] = stii.second.memory_num;
                 }
             }
         }
@@ -3050,7 +2267,8 @@ int main(int argc, char **argv)
                     jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["2"] = stii.second.end;
                     jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["3"] = stii.second.byte_count;
                     jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["4"] = stii.second.ref_count;
-                    jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["5"] = stii.second.reuse_distance;
+                    jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["5"] = stii.second.compute_num;
+                    jOut["tuplePerInstance"]["load"][to_string(sti.first)][to_string(stii.first)]["6"] = stii.second.memory_num;
                 }
             }
         }
