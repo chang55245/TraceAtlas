@@ -2,6 +2,7 @@
 #include "AtlasUtil/Traces.h"
 #include "llvm/ADT/SmallVector.h"
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -2234,6 +2235,9 @@ public:
                 // Check if next node has single incoming edge
                 if (node_map[next].prev_nodes.size() == 1) {
                     // Merge nodes
+                    if (node_map[next].is_kernel!=merged_map[i].is_kernel) {
+                        continue;
+                    }
                     merged_map[i].next_nodes = node_map[next].next_nodes;
                     merged_map[i].merged_from_nodes.insert(next);
                     merged_map[i].compute_num += node_map[next].compute_num;
@@ -2247,6 +2251,48 @@ public:
 
                     // Remove merged node
                     merged_map.erase(next);
+                }
+            }
+        }
+
+        node_map = merged_map;
+    }
+    // merge depth wise nodes according to the memory and compute
+    void merge_depth_wise()
+    {
+        map<int, graph_node> merged_map = node_map;
+
+        for (int i = 0; i < graph_size; i++) {
+            if (node_map.find(i) == node_map.end()) {
+                continue;
+            }
+            // Check if node has single outgoing edge
+
+            if (node_map[i].next_nodes.size() == 1) {
+                int next = *node_map[i].next_nodes.begin();
+                
+                // Check if next node has single incoming edge
+                if (node_map[next].prev_nodes.size() == 1) {
+                    // Merge nodes
+                    if (node_map[next].is_kernel!=merged_map[i].is_kernel) {
+                        continue;
+                    }
+                    if (node_map[next].compute_num + node_map[next].memory_num <= 
+                    merged_map[i].compute_num + merged_map[i].memory_num) {
+                        merged_map[i].next_nodes = node_map[next].next_nodes;
+                        merged_map[i].merged_from_nodes.insert(next);
+                        merged_map[i].compute_num += node_map[next].compute_num;
+                        merged_map[i].memory_num += node_map[next].memory_num;
+
+                        // Update edges
+                        for (auto next_next : node_map[next].next_nodes) {
+                            merged_map[next_next].prev_nodes.erase(next);
+                            merged_map[next_next].prev_nodes.insert(i);
+                        }
+
+                        // Remove merged node
+                        merged_map.erase(next);
+                    }
                 }
             }
         }
