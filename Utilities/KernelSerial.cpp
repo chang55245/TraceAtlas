@@ -2185,6 +2185,56 @@ void get_task_feature_map(map<int, task_feature> &task_feature_map)
     }
 }
 
+void task_merging(map<int, task_feature> &task_feature_map)
+{
+    struct old_node
+    {
+        set<int> prev_nodes;
+        set<int> next_nodes;
+        uint64_t compute_num;
+        uint64_t memory_num;
+    };
+    map<int, old_node> old_node_map;
+
+    struct merged_node
+    {
+        set<int> prev_nodes;
+        set<int> next_nodes;
+        set<int> merged_from_nodes;
+        // maybe merged basic blocks
+    };
+    map<int, merged_node> merged_node_map;
+
+    // construct the old node map
+    for (auto i : kernelIdMap)
+    {
+        old_node_map[i.first] = {set<int>(), set<int>(), task_feature_map[i.first].compute, task_feature_map[i.first].memory};
+    }
+
+    for (auto i : DAGEdge)
+    {
+        old_node_map[i.second].prev_nodes.insert(i.first);
+        old_node_map[i.first].next_nodes.insert(i.second);
+    }
+
+    // merge the nodes
+
+
+    
+
+    // kernel feature map, the computation and memory of each kernel
+
+    // DAGEdge: the dag
+
+    //kernelIdMap: check if a node is kernel or non-kernel
+
+    // input the dag and the feature map
+    // output the merged dag, merged node map
+
+    // do i want to use a class to do this? 
+
+}
+
 int main(int argc, char **argv)
 {
 
@@ -2228,6 +2278,8 @@ int main(int argc, char **argv)
     
     map<int, task_feature> task_feature_map;
     get_task_feature_map(task_feature_map);
+    task_merging(task_feature_map);
+
 
     //for transformed schedule generation
     DAGScheduleSingleThread();
