@@ -2195,6 +2195,7 @@ private:
         set<int> merged_from_nodes;
         uint64_t compute_num;
         uint64_t memory_num;
+        int stage;
     };
 
     map<int, graph_node> node_map;
@@ -2214,13 +2215,65 @@ public:
                           set<int>(), 
                           set<int>(), 
                           task_feature_map[i].compute, 
-                          task_feature_map[i].memory};
+                          task_feature_map[i].memory,
+                          -1
+                          };
         }
 
         // Build edges
         for (auto edge : edges) {
             node_map[edge.second].prev_nodes.insert(edge.first);
             node_map[edge.first].next_nodes.insert(edge.second);
+        }
+    }
+
+    static void initialize_schedulable_nodes(map<int, graph_node>& schedule_map, set<int>& kernel_nodes, set<int>& non_kernel_nodes) {
+        for (const auto& [id, node] : schedule_map) {
+            if (node.prev_nodes.empty()) {
+                (node.is_kernel ? kernel_nodes : non_kernel_nodes).insert(id);
+            }
+        }
+    }
+
+    static void process_nodes(map<int, graph_node>& schedule_map, set<int>& nodes, int& stage, 
+                      set<int>& kernel_nodes, set<int>& non_kernel_nodes) {
+        set<int> checked_nodes;
+        for (int node_id : nodes) {
+            schedule_map[node_id].stage = stage;
+            for (int next : schedule_map[node_id].next_nodes) {
+                checked_nodes.insert(next);
+                schedule_map[next].prev_nodes.erase(node_id);
+            }
+        }
+        nodes.clear();
+        stage++;
+
+        for (int checked_id : checked_nodes) {
+            if (schedule_map[checked_id].prev_nodes.empty()) {
+                (schedule_map[checked_id].is_kernel ? kernel_nodes : non_kernel_nodes).insert(checked_id);
+            }
+        }
+    }
+
+    void update_stages() {
+        map<int, graph_node> schedule_map = node_map;
+        int current_stage = 0;
+        set<int> kernel_nodes;
+        set<int> non_kernel_nodes;
+
+        initialize_schedulable_nodes(schedule_map, kernel_nodes, non_kernel_nodes);
+
+        while (!kernel_nodes.empty() || !non_kernel_nodes.empty()) {
+            if (!non_kernel_nodes.empty()) {
+                process_nodes(schedule_map, non_kernel_nodes, current_stage, kernel_nodes, non_kernel_nodes);
+            }
+            if (!kernel_nodes.empty()) {
+                process_nodes(schedule_map, kernel_nodes, current_stage, kernel_nodes, non_kernel_nodes);
+            }
+        }
+
+        for (auto &[id, node] : node_map) {
+            node.stage = schedule_map[id].stage;
         }
     }
 
@@ -2318,6 +2371,10 @@ public:
 void task_merging(map<int, task_feature> &task_feature_map) {
     TaskMerging merger(task_feature_map, DAGEdge, kernelIdMap);
     merger.merge_single_edge();
+    merger.update_stages();
+    // iterative merging
+    //merger.merge_depth_wise();
+    //merger.update_stages();
     DAGEdge = merger.get_merged_edges();
 }
 
