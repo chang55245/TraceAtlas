@@ -2279,8 +2279,13 @@ public:
 
     void merge_single_edge() {
         map<int, graph_node> merged_map = node_map;
-
-        for (int i = 0; i < graph_size; i++) {
+        set <int> merged_nodes;
+   
+        for (auto &[i, node] : node_map) {
+            if(merged_nodes.find(i) != merged_nodes.end())
+            {
+                continue;
+            }
             // Check if node has single outgoing edge
             if (node_map[i].next_nodes.size() == 1) {
                 int next = *node_map[i].next_nodes.begin();
@@ -2288,9 +2293,10 @@ public:
                 // Check if next node has single incoming edge
                 if (node_map[next].prev_nodes.size() == 1) {
                     // Merge nodes
-                    if (node_map[next].is_kernel!=merged_map[i].is_kernel) {
+                    if (node_map[next].is_kernel!=node_map[i].is_kernel) {
                         continue;
                     }
+                    
                     merged_map[i].next_nodes = node_map[next].next_nodes;
                     merged_map[i].merged_from_nodes.insert(next);
                     merged_map[i].compute_num += node_map[next].compute_num;
@@ -2302,6 +2308,7 @@ public:
                         merged_map[next_next].prev_nodes.insert(i);
                     }
 
+                    merged_nodes.insert(next);
                     // Remove merged node
                     merged_map.erase(next);
                 }
