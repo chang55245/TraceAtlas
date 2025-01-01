@@ -2185,54 +2185,94 @@ void get_task_feature_map(map<int, task_feature> &task_feature_map)
     }
 }
 
-void task_merging(map<int, task_feature> &task_feature_map)
-{
-    struct old_node
-    {
-        set<int> prev_nodes;
-        set<int> next_nodes;
-        uint64_t compute_num;
-        uint64_t memory_num;
-    };
-    map<int, old_node> old_node_map;
-
-    struct merged_node
-    {
+class TaskMerging {
+private:
+    struct graph_node {
+        bool is_kernel;
         set<int> prev_nodes;
         set<int> next_nodes;
         set<int> merged_from_nodes;
-        // maybe merged basic blocks
+        uint64_t compute_num;
+        uint64_t memory_num;
     };
-    map<int, merged_node> merged_node_map;
 
-    // construct the old node map
-    for (auto i : kernelIdMap)
-    {
-        old_node_map[i.first] = {set<int>(), set<int>(), task_feature_map[i.first].compute, task_feature_map[i.first].memory};
+    map<int, graph_node> node_map;
+    int graph_size;
+    set<pair<int,int>> dag_edges;
+
+public:
+    TaskMerging(map<int, task_feature> &task_feature_map, set<pair<int,int>> &edges, map<int,string> &kernel_map) {
+        graph_size = kernel_map.size();
+        dag_edges = edges;
+
+        // Initialize node map
+        for (int i = 0; i < graph_size; i++) {
+            bool is_kernel = kernel_map[i] != "-1";
+            node_map[i] = {is_kernel, 
+                          set<int>(), 
+                          set<int>(), 
+                          set<int>(), 
+                          task_feature_map[i].compute, 
+                          task_feature_map[i].memory};
+        }
+
+        // Build edges
+        for (auto edge : edges) {
+            node_map[edge.second].prev_nodes.insert(edge.first);
+            node_map[edge.first].next_nodes.insert(edge.second);
+        }
     }
 
-    for (auto i : DAGEdge)
-    {
-        old_node_map[i.second].prev_nodes.insert(i.first);
-        old_node_map[i.first].next_nodes.insert(i.second);
+    void merge_single_edge() {
+        map<int, graph_node> merged_map = node_map;
+
+        for (int i = 0; i < graph_size; i++) {
+            // Check if node has single outgoing edge
+            if (node_map[i].next_nodes.size() == 1) {
+                int next = *node_map[i].next_nodes.begin();
+                
+                // Check if next node has single incoming edge
+                if (node_map[next].prev_nodes.size() == 1) {
+                    // Merge nodes
+                    merged_map[i].next_nodes = node_map[next].next_nodes;
+                    merged_map[i].merged_from_nodes.insert(next);
+                    merged_map[i].compute_num += node_map[next].compute_num;
+                    merged_map[i].memory_num += node_map[next].memory_num;
+
+                    // Update edges
+                    for (auto next_next : node_map[next].next_nodes) {
+                        merged_map[next_next].prev_nodes.erase(next);
+                        merged_map[next_next].prev_nodes.insert(i);
+                    }
+
+                    // Remove merged node
+                    merged_map.erase(next);
+                }
+            }
+        }
+
+        node_map = merged_map;
     }
 
-    // merge the nodes
+    map<int, graph_node> get_merged_graph() {
+        return node_map;
+    }
 
+    set<pair<int,int>> get_merged_edges() {
+        set<pair<int,int>> new_edges;
+        for (auto &[id, node] : node_map) {
+            for (auto next : node.next_nodes) {
+                new_edges.insert({id, next});
+            }
+        }
+        return new_edges;
+    }
+};
 
-    
-
-    // kernel feature map, the computation and memory of each kernel
-
-    // DAGEdge: the dag
-
-    //kernelIdMap: check if a node is kernel or non-kernel
-
-    // input the dag and the feature map
-    // output the merged dag, merged node map
-
-    // do i want to use a class to do this? 
-
+void task_merging(map<int, task_feature> &task_feature_map) {
+    TaskMerging merger(task_feature_map, DAGEdge, kernelIdMap);
+    merger.merge_single_edge();
+    DAGEdge = merger.get_merged_edges();
 }
 
 int main(int argc, char **argv)
