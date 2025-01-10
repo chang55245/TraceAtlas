@@ -2243,7 +2243,8 @@ public:
         return new_edges;
     }
 
-    void depth_wise_merge() {
+    bool depth_wise_merge() {
+        bool result = false;
         map<int, graph_node> merged_map = node_map;
         bool found_merge = false;
 
@@ -2275,6 +2276,7 @@ public:
                         // Remove merged node
                         merged_map.erase(next);
                         found_merge = true;
+                        result = true;
                         break;
                     }
                 }
@@ -2283,8 +2285,10 @@ public:
 
         node_map = merged_map;
         update_stages();
+        return result;
     }
-    void breadth_wise_merge() {
+    bool breadth_wise_merge() {
+        bool result = false;
         map<int, graph_node> merged_map = node_map;
         bool found_merge = true;
         const int64_t SMALL_COMPLEXITY_THRESHOLD = 1000; // Threshold for small complexity nodes
@@ -2294,7 +2298,7 @@ public:
             
             // Group nodes by stage
             map<int, vector<pair<int, int64_t>>> stage_nodes; // stage -> [(node_id, complexity)]
-            for (auto &[id, node] : node_map) {
+            for (auto &[id, node] : merged_map) {
                 int64_t total_complexity = node.compute_num + node.memory_num;
                 stage_nodes[node.stage].push_back({id, total_complexity});
             }
@@ -2331,6 +2335,7 @@ public:
                             merge_nodes(small_node, candidate, merged_map);
                             merged = true;
                             found_merge = true;
+                            result = true;
                             break;
                         }
                     }
@@ -2344,6 +2349,7 @@ public:
                             merge_nodes(small_node, candidate, merged_map);
                             merged = true;
                             found_merge = true;
+                            result = true;
                             break;
                         }
                     }
@@ -2354,6 +2360,7 @@ public:
         }
 
         node_map = merged_map;
+        return result;
     }
 
     private:

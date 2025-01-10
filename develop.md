@@ -1,4 +1,4 @@
-# introduction 
+# develop notes
 
 KernelSerial.cpp is a tool to merge node in a graph according to the memory and compute complexity. 
 
@@ -23,3 +23,4 @@ merge node in the same stage and consider the following conditions
 1. fix the complexity threshold and complexity computation
 2. add the iterative merging
 3. visualize the results, before and after merging
+4. will iterating in the original node graph cause problem during merging while removing the merged nodes?
