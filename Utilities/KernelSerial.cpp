@@ -2224,6 +2224,7 @@ public:
             node_map[edge.second].prev_nodes.insert(edge.first);
             node_map[edge.first].next_nodes.insert(edge.second);
         }
+        update_stages();
     }
 
     

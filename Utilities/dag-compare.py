@@ -6,7 +6,7 @@ def read_dag_from_json(filepath):
     with open(filepath, 'r') as f:
         return json.load(f)
 
-def visualize_dag(nodes):
+def visualize_dag(nodes, ax):
     G = nx.DiGraph()
 
     # Add nodes and edges to the graph
@@ -31,55 +31,62 @@ def visualize_dag(nodes):
             pos[node] = (x_offset, -i + y_offset)
         x_offset += 2
 
-    # Draw the graph
-    plt.figure(figsize=(14, 10))
-
-    # Shade stages with kernel=1
-    for stage, nodes_in_stage in stage_nodes.items():
-        if any(G.nodes[node]['kernel'] == 1 for node in nodes_in_stage):
-            x_values = [pos[node][0] for node in nodes_in_stage]
-            y_min = min([pos[node][1] for node in nodes_in_stage]) - 0.5
-            y_max = max([pos[node][1] for node in nodes_in_stage]) + 0.5
-            plt.fill_betweenx([y_min, y_max], min(x_values) - 0.75, max(x_values) + 0.75, color='#d1e7ff', alpha=0.5)
-
-    # Draw nodes and edges
-    nx.draw(G, pos, with_labels=True, node_color="skyblue", node_size=2000, font_size=14, font_weight="bold")
+    # Draw the graph on the specified axes
+    ax.fill_betweenx([0, 0], 0, 0, color='white')  # Clear the axes
+    nx.draw(G, pos, ax=ax, with_labels=True, node_color="skyblue", node_size=2000, font_size=14, font_weight="bold")
     nx.draw_networkx_edges(
         G,
         pos,
-        arrows=True,  # Ensure arrows are shown
-        arrowstyle='-|>',  # Defines the arrow style (optional)
-        arrowsize=30,  # Controls the size of the arrow head
+        ax=ax,
+        arrows=True,
+        arrowstyle='-|>',
+        arrowsize=30,
         edge_color='gray',
         min_target_margin=20,
         width=3
     )
-
-    # Save and show the graph
-    plt.title("DAG Visualization with Kernel Stages Highlighted")
-    plt.savefig("dag_visualization.svg")
-    plt.show()
-
+    
+    # Make sure spines are visible
+    ax.spines['top'].set_visible(True)
+    ax.spines['right'].set_visible(True)
+    ax.spines['bottom'].set_visible(True)
+    ax.spines['left'].set_visible(True)
 
 def compare_dags(dag1_path, dag2_path):
     # Read both DAGs
     dag1 = read_dag_from_json(dag1_path)
     dag2 = read_dag_from_json(dag2_path)
     
-    # Create visualizations for both
-    plt.figure(1)
-    visualize_dag(dag1)
-    plt.title(f"DAG 1: {dag1_path}")
-    
-    plt.figure(2)
-    visualize_dag(dag2)
-    plt.title(f"DAG 2: {dag2_path}")
-    
+    # Create a single figure with subplots
+    fig, axs = plt.subplots(1, 2, figsize=(14, 10))
+
+    # Visualize DAG 1
+    visualize_dag(dag1, axs[0])
+    axs[0].set_title(f"DAG 1: {dag1_path}")
+
+    # Visualize DAG 2
+    visualize_dag(dag2, axs[1])
+    axs[1].set_title(f"DAG 2: {dag2_path}")
+
+    # Add rectangular frames around each subplot
+    for ax in axs:
+        # Make sure spines are visible and styled
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_edgecolor('black')
+            spine.set_linewidth(2)
+        
+        # Set axis on
+        ax.set_axis_on()
+
+    # Adjust layout to add space between subplots
+    plt.subplots_adjust(wspace=0.4)  # Adjust the width space between subplots
+
+    # Use tight_layout to improve spacing
+    plt.tight_layout()
+
     # Save the visualizations
-    plt.figure(1)
-    plt.savefig("dag1_visualization.svg")
-    plt.figure(2)
-    plt.savefig("dag2_visualization.svg")
+    plt.savefig("dags_comparison.png")
     plt.show()
 
 if __name__ == "__main__":
@@ -97,22 +104,4 @@ if __name__ == "__main__":
 #     'C': {'stage': 1, 'next': ['F', 'G']},
 #     'D': {'stage': 2, 'next': ['H']},
 #     'E': {'stage': 2, 'next': ['I', 'J']},
-#     'F': {'stage': 2, 'next': ['K']},
-#     'G': {'stage': 2, 'next': ['L', 'M']},
-#     'H': {'stage': 3, 'next': ['N'], 'kernel': 1},
-#     'I': {'stage': 3, 'next': []},
-#     'J': {'stage': 3, 'next': ['O', 'P']},
-#     'K': {'stage': 3, 'next': []},
-#     'L': {'stage': 3, 'next': ['Q']},
-#     'M': {'stage': 3, 'next': []},
-#     'N': {'stage': 4, 'next': ['R']},
-#     'O': {'stage': 4, 'next': []},
-#     'P': {'stage': 4, 'next': ['S']},
-#     'Q': {'stage': 4, 'next': ['T']},
-#     'R': {'stage': 5, 'next': []},
-#     'S': {'stage': 5, 'next': []},
-#     'T': {'stage': 5, 'next': []}
 # }
-
-# # Visualize the DAG
-# visualize_dag(nodes)
