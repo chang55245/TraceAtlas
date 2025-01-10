@@ -1,6 +1,10 @@
 import networkx as nx
 import matplotlib.pyplot as plt
-import matplotlib
+import json
+
+def read_dag_from_json(filepath):
+    with open(filepath, 'r') as f:
+        return json.load(f)
 
 def visualize_dag(nodes):
     G = nx.DiGraph()
@@ -55,29 +59,59 @@ def visualize_dag(nodes):
     plt.savefig("dag_visualization.svg")
     plt.show()
 
-# Example DAG input
-nodes = {
-    'A': {'stage': 0, 'next': ['B', 'C']},
-    'B': {'stage': 1, 'next': ['D', 'E'], 'kernel': 1},
-    'C': {'stage': 1, 'next': ['F', 'G']},
-    'D': {'stage': 2, 'next': ['H']},
-    'E': {'stage': 2, 'next': ['I', 'J']},
-    'F': {'stage': 2, 'next': ['K']},
-    'G': {'stage': 2, 'next': ['L', 'M']},
-    'H': {'stage': 3, 'next': ['N'], 'kernel': 1},
-    'I': {'stage': 3, 'next': []},
-    'J': {'stage': 3, 'next': ['O', 'P']},
-    'K': {'stage': 3, 'next': []},
-    'L': {'stage': 3, 'next': ['Q']},
-    'M': {'stage': 3, 'next': []},
-    'N': {'stage': 4, 'next': ['R']},
-    'O': {'stage': 4, 'next': []},
-    'P': {'stage': 4, 'next': ['S']},
-    'Q': {'stage': 4, 'next': ['T']},
-    'R': {'stage': 5, 'next': []},
-    'S': {'stage': 5, 'next': []},
-    'T': {'stage': 5, 'next': []}
-}
 
-# Visualize the DAG
-visualize_dag(nodes)
+def compare_dags(dag1_path, dag2_path):
+    # Read both DAGs
+    dag1 = read_dag_from_json(dag1_path)
+    dag2 = read_dag_from_json(dag2_path)
+    
+    # Create visualizations for both
+    plt.figure(1)
+    visualize_dag(dag1)
+    plt.title(f"DAG 1: {dag1_path}")
+    
+    plt.figure(2)
+    visualize_dag(dag2)
+    plt.title(f"DAG 2: {dag2_path}")
+    
+    # Save the visualizations
+    plt.figure(1)
+    plt.savefig("dag1_visualization.svg")
+    plt.figure(2)
+    plt.savefig("dag2_visualization.svg")
+    plt.show()
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) != 3:
+        print("Usage: python dag-compare.py <dag1.json> <dag2.json>")
+        sys.exit(1)
+    
+    compare_dags(sys.argv[1], sys.argv[2])
+
+# # Example DAG input
+# nodes = {
+#     'A': {'stage': 0, 'next': ['B', 'C']},
+#     'B': {'stage': 1, 'next': ['D', 'E'], 'kernel': 1},
+#     'C': {'stage': 1, 'next': ['F', 'G']},
+#     'D': {'stage': 2, 'next': ['H']},
+#     'E': {'stage': 2, 'next': ['I', 'J']},
+#     'F': {'stage': 2, 'next': ['K']},
+#     'G': {'stage': 2, 'next': ['L', 'M']},
+#     'H': {'stage': 3, 'next': ['N'], 'kernel': 1},
+#     'I': {'stage': 3, 'next': []},
+#     'J': {'stage': 3, 'next': ['O', 'P']},
+#     'K': {'stage': 3, 'next': []},
+#     'L': {'stage': 3, 'next': ['Q']},
+#     'M': {'stage': 3, 'next': []},
+#     'N': {'stage': 4, 'next': ['R']},
+#     'O': {'stage': 4, 'next': []},
+#     'P': {'stage': 4, 'next': ['S']},
+#     'Q': {'stage': 4, 'next': ['T']},
+#     'R': {'stage': 5, 'next': []},
+#     'S': {'stage': 5, 'next': []},
+#     'T': {'stage': 5, 'next': []}
+# }
+
+# # Visualize the DAG
+# visualize_dag(nodes)
