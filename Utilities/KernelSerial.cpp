@@ -2227,6 +2227,174 @@ public:
         }
     }
 
+    
+
+    map<int, graph_node> get_merged_graph() {
+        return node_map;
+    }
+
+    set<pair<int,int>> get_merged_edges() {
+        set<pair<int,int>> new_edges;
+        for (auto &[id, node] : node_map) {
+            for (auto next : node.next_nodes) {
+                new_edges.insert({id, next});
+            }
+        }
+        return new_edges;
+    }
+
+    void depth_wise_merge() {
+        map<int, graph_node> merged_map = node_map;
+        bool found_merge = false;
+
+        while (found_merge) {
+            found_merge = false;
+            for (auto &[i, node] : node_map) {
+                // Check if node has single outgoing edge
+                if (node_map[i].next_nodes.size() == 1) {
+                    int next = *node_map[i].next_nodes.begin();
+                    
+                    // Check if next node has single incoming edge
+                    if (node_map[next].prev_nodes.size() == 1) {
+                        // Merge nodes
+                        if (node_map[next].is_kernel != node_map[i].is_kernel) {
+                            merged_map[i].is_kernel = node_map[next].is_kernel;
+                        }
+                        
+                        merged_map[i].next_nodes = node_map[next].next_nodes;
+                        merged_map[i].merged_from_nodes.insert(next);
+                        merged_map[i].compute_num += node_map[next].compute_num;
+                        merged_map[i].memory_num += node_map[next].memory_num;
+
+                        // Update edges
+                        for (auto next_next : node_map[next].next_nodes) {
+                            merged_map[next_next].prev_nodes.erase(next);
+                            merged_map[next_next].prev_nodes.insert(i);
+                        }
+
+                        // Remove merged node
+                        merged_map.erase(next);
+                        found_merge = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        node_map = merged_map;
+        update_stages();
+    }
+    void breadth_wise_merge() {
+        map<int, graph_node> merged_map = node_map;
+        bool found_merge = true;
+        const int64_t SMALL_COMPLEXITY_THRESHOLD = 1000; // Threshold for small complexity nodes
+
+        while (found_merge) {
+            found_merge = false;
+            
+            // Group nodes by stage
+            map<int, vector<pair<int, int64_t>>> stage_nodes; // stage -> [(node_id, complexity)]
+            for (auto &[id, node] : node_map) {
+                int64_t total_complexity = node.compute_num + node.memory_num;
+                stage_nodes[node.stage].push_back({id, total_complexity});
+            }
+
+            // Process each stage
+            for (auto &[stage, nodes] : stage_nodes) {
+                // Sort nodes by complexity
+                std::sort(nodes.begin(), nodes.end(), 
+                    [](const pair<int, int64_t> &a, const pair<int, int64_t> &b) {
+                        return a.second < b.second;
+                    });
+
+                // Process small complexity nodes first
+                for (size_t i = 0; i < nodes.size(); i++) {
+                    int small_node = nodes[i].first;
+                    int64_t complexity = nodes[i].second;
+                    
+                    if (complexity > SMALL_COMPLEXITY_THRESHOLD) continue;
+                    if (merged_map.find(small_node) == merged_map.end()) continue;
+
+                    bool merged = false;
+                    
+                    // First priority: find merge that enables depth-wise merge
+                    for (size_t j = nodes.size() - 1; j > i; j--) {
+                        int candidate = nodes[j].first;
+                        if (merged_map.find(candidate) == merged_map.end()) continue;
+
+                        // Check if merging would create single out edges                        
+                        set<int> combined_next = merged_map[small_node].next_nodes;
+                        combined_next.insert(merged_map[candidate].next_nodes.begin(), 
+                                          merged_map[candidate].next_nodes.end());
+
+                        if (combined_next.size() == 1) {
+                            merge_nodes(small_node, candidate, merged_map);
+                            merged = true;
+                            found_merge = true;
+                            break;
+                        }
+                    }
+
+                    // Second priority: merge with largest complexity node
+                    if (!merged) {
+                        for (size_t j = nodes.size() - 1; j > i; j--) {
+                            int candidate = nodes[j].first;
+                            if (merged_map.find(candidate) == merged_map.end()) continue;
+
+                            merge_nodes(small_node, candidate, merged_map);
+                            merged = true;
+                            found_merge = true;
+                            break;
+                        }
+                    }
+
+                    if (merged) break;
+                }
+            }
+        }
+
+        node_map = merged_map;
+    }
+
+    private:
+    void merge_nodes(int target_node, int source_node, map<int, graph_node> &merged_map) {
+        // Merge source into target
+        merged_map[target_node].compute_num += node_map[source_node].compute_num;
+        merged_map[target_node].memory_num += node_map[source_node].memory_num;
+        merged_map[target_node].merged_from_nodes.insert(source_node);
+        merged_map[target_node].merged_from_nodes.insert(
+            node_map[source_node].merged_from_nodes.begin(),
+            node_map[source_node].merged_from_nodes.end()
+        );
+
+        // Merge edges
+        merged_map[target_node].next_nodes.insert(
+            node_map[source_node].next_nodes.begin(),
+            node_map[source_node].next_nodes.end()
+        );
+        merged_map[target_node].prev_nodes.insert(
+            node_map[source_node].prev_nodes.begin(),
+            node_map[source_node].prev_nodes.end()
+        );
+
+        // Update edges of connected nodes
+        for (auto prev : node_map[source_node].prev_nodes) {
+            if (merged_map.find(prev) != merged_map.end()) {
+                merged_map[prev].next_nodes.erase(source_node);
+                merged_map[prev].next_nodes.insert(target_node);
+            }
+        }
+        for (auto next : node_map[source_node].next_nodes) {
+            if (merged_map.find(next) != merged_map.end()) {
+                merged_map[next].prev_nodes.erase(source_node);
+                merged_map[next].prev_nodes.insert(target_node);
+            }
+        }
+
+        // Remove merged node
+        merged_map.erase(source_node);
+    }
+
     static void initialize_schedulable_nodes(map<int, graph_node>& schedule_map, set<int>& kernel_nodes, set<int>& non_kernel_nodes) {
         for (const auto& [id, node] : schedule_map) {
             if (node.prev_nodes.empty()) {
@@ -2276,109 +2444,14 @@ public:
             node.stage = schedule_map[id].stage;
         }
     }
-
-    void merge_single_edge() {
-        map<int, graph_node> merged_map = node_map;
-        set <int> merged_nodes;
-   
-        for (auto &[i, node] : node_map) {
-            if(merged_nodes.find(i) != merged_nodes.end())
-            {
-                continue;
-            }
-            // Check if node has single outgoing edge
-            if (node_map[i].next_nodes.size() == 1) {
-                int next = *node_map[i].next_nodes.begin();
-                
-                // Check if next node has single incoming edge
-                if (node_map[next].prev_nodes.size() == 1) {
-                    // Merge nodes
-                    if (node_map[next].is_kernel!=node_map[i].is_kernel) {
-                        continue;
-                    }
-                    
-                    merged_map[i].next_nodes = node_map[next].next_nodes;
-                    merged_map[i].merged_from_nodes.insert(next);
-                    merged_map[i].compute_num += node_map[next].compute_num;
-                    merged_map[i].memory_num += node_map[next].memory_num;
-
-                    // Update edges
-                    for (auto next_next : node_map[next].next_nodes) {
-                        merged_map[next_next].prev_nodes.erase(next);
-                        merged_map[next_next].prev_nodes.insert(i);
-                    }
-
-                    merged_nodes.insert(next);
-                    // Remove merged node
-                    merged_map.erase(next);
-                }
-            }
-        }
-
-        node_map = merged_map;
-    }
-    // merge depth wise nodes according to the memory and compute
-    void merge_depth_wise()
-    {
-        map<int, graph_node> merged_map = node_map;
-
-        for (int i = 0; i < graph_size; i++) {
-            if (node_map.find(i) == node_map.end()) {
-                continue;
-            }
-            // Check if node has single outgoing edge
-
-            if (node_map[i].next_nodes.size() == 1) {
-                int next = *node_map[i].next_nodes.begin();
-                
-                // Check if next node has single incoming edge
-                if (node_map[next].prev_nodes.size() == 1) {
-                    // Merge nodes
-                    if (node_map[next].is_kernel!=merged_map[i].is_kernel) {
-                        continue;
-                    }
-                    if (node_map[next].compute_num + node_map[next].memory_num <= 
-                    merged_map[i].compute_num + merged_map[i].memory_num) {
-                        merged_map[i].next_nodes = node_map[next].next_nodes;
-                        merged_map[i].merged_from_nodes.insert(next);
-                        merged_map[i].compute_num += node_map[next].compute_num;
-                        merged_map[i].memory_num += node_map[next].memory_num;
-
-                        // Update edges
-                        for (auto next_next : node_map[next].next_nodes) {
-                            merged_map[next_next].prev_nodes.erase(next);
-                            merged_map[next_next].prev_nodes.insert(i);
-                        }
-
-                        // Remove merged node
-                        merged_map.erase(next);
-                    }
-                }
-            }
-        }
-
-        node_map = merged_map;
-    }
-
-    map<int, graph_node> get_merged_graph() {
-        return node_map;
-    }
-
-    set<pair<int,int>> get_merged_edges() {
-        set<pair<int,int>> new_edges;
-        for (auto &[id, node] : node_map) {
-            for (auto next : node.next_nodes) {
-                new_edges.insert({id, next});
-            }
-        }
-        return new_edges;
-    }
+    
 };
 
 void task_merging(map<int, task_feature> &task_feature_map) {
     TaskMerging merger(task_feature_map, DAGEdge, kernelIdMap);
-    merger.merge_single_edge();
-    merger.update_stages();
+    merger.depth_wise_merge();
+    merger.breadth_wise_merge();
+    // merger.update_stages();
     // iterative merging
     //merger.merge_depth_wise();
     //merger.update_stages();
