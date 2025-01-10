@@ -7,5 +7,7 @@ testing/
 CMakeSettings.json
 out/
 .cache/
-dag_visualization.svg
-dag_visualization.png
+*.svg
+*.png
+dag_before_merge.json
+dag_after_merge.json

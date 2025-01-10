@@ -12,8 +12,9 @@ def visualize_dag(nodes):
     # Add nodes and edges to the graph
     for node, info in nodes.items():
         G.add_node(node, stage=info['stage'], kernel=info.get('kernel', 0))
-        for next_node in info['next']:
-            G.add_edge(node, next_node)
+        if info['next'] is not None:
+            for next_node in info['next']:
+                G.add_edge(node, next_node)
 
     # Get positions for horizontal layout
     pos = {}
@@ -84,7 +85,7 @@ def compare_dags(dag1_path, dag2_path):
 if __name__ == "__main__":
     import sys
     if len(sys.argv) != 3:
-        print("Usage: python dag-compare.py <dag1.json> <dag2.json>")
+        print("Usage: python3 dag-compare.py <dag1.json> <dag2.json>")
         sys.exit(1)
     
     compare_dags(sys.argv[1], sys.argv[2])

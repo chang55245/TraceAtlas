@@ -2186,9 +2186,7 @@ void get_task_feature_map(map<int, task_feature> &task_feature_map)
     }
 }
 
-class TaskMerging {
-private:
-    struct graph_node {
+struct graph_node {
         bool is_kernel;
         set<int> prev_nodes;
         set<int> next_nodes;
@@ -2197,7 +2195,8 @@ private:
         uint64_t memory_num;
         int stage;
     };
-
+class TaskMerging {
+private:
     map<int, graph_node> node_map;
     int graph_size;
     set<pair<int,int>> dag_edges;
@@ -2454,8 +2453,37 @@ public:
     
 };
 
+
+// Function to generate JSON for the DAG
+void generateDAGJson(const map<int, graph_node> &node_map, const string &filename) {
+    nlohmann::json dagJson;
+    for (const auto& [id, node] : node_map) {
+        // Create the JSON entry for each node in the specified format
+        dagJson[to_string(id)] = {
+            {"stage", node.stage},
+            {"next", {}},
+            {"kernel", int(node.is_kernel)}
+        };
+        for (const auto& next : node.next_nodes) {
+            dagJson[to_string(id)]["next"].push_back(to_string(next));
+        }
+    }
+    std::ofstream file(filename);
+    file << std::setw(4) << dagJson << std::endl;
+    file.close();
+}
+
 void task_merging(map<int, task_feature> &task_feature_map) {
+    //  nodes = {
+    //     'A': {'stage': 0, 'next': ['B', 'C']},
+    //     'B': {'stage': 1, 'next': ['D', 'E'], 'kernel': 1}}
+    // generate json files for dag before and after merging in this format
     TaskMerging merger(task_feature_map, DAGEdge, kernelIdMap);
+    
+    // Generate JSON for DAG before merging
+    generateDAGJson(merger.get_merged_graph(), "dag_before_merge.json");
+
+    // Perform merging
     bool merged = false;
     merger.depth_wise_merge();
     while (true) {    
@@ -2465,6 +2493,9 @@ void task_merging(map<int, task_feature> &task_feature_map) {
         if (!merged) break;
     }
     DAGEdge = merger.get_merged_edges();
+
+    // Generate JSON for DAG after merging
+    generateDAGJson(merger.get_merged_graph(), "dag_after_merge.json");
 }
 
 int main(int argc, char **argv)
