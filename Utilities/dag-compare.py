@@ -31,6 +31,13 @@ def visualize_dag(nodes, ax):
             pos[node] = (x_offset, -i + y_offset)
         x_offset += 2
 
+    for stage, nodes_in_stage in stage_nodes.items():
+        if any(G.nodes[node]['kernel'] == 1 for node in nodes_in_stage):
+            x_values = [pos[node][0] for node in nodes_in_stage]
+            y_min = min([pos[node][1] for node in nodes_in_stage]) - 0.5
+            y_max = max([pos[node][1] for node in nodes_in_stage]) + 0.5
+            ax.fill_betweenx([y_min, y_max], min(x_values) - 0.75, max(x_values) + 0.75, color='#d1e7ff', alpha=0.5)
+
     # Draw the graph on the specified axes
     ax.fill_betweenx([0, 0], 0, 0, color='white')  # Clear the axes
     nx.draw(G, pos, ax=ax, with_labels=True, node_color="skyblue", node_size=2000, font_size=14, font_weight="bold")
