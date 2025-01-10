@@ -2456,19 +2456,18 @@ public:
 
 void task_merging(map<int, task_feature> &task_feature_map) {
     TaskMerging merger(task_feature_map, DAGEdge, kernelIdMap);
-    merger.depth_wise_merge();
-    merger.breadth_wise_merge();
-    // merger.update_stages();
-    // iterative merging
-    //merger.merge_depth_wise();
-    //merger.update_stages();
+    bool merged = false;
+    merged = merger.depth_wise_merge();
+    while (true) {    
+        merged = merger.breadth_wise_merge();
+        merged = merger.depth_wise_merge();
+        if (!merged) break;
+    }
     DAGEdge = merger.get_merged_edges();
 }
 
 int main(int argc, char **argv)
 {
-
-    
 
     cl::ParseCommandLineOptions(argc, argv);
 
