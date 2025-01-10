@@ -2457,9 +2457,10 @@ public:
 void task_merging(map<int, task_feature> &task_feature_map) {
     TaskMerging merger(task_feature_map, DAGEdge, kernelIdMap);
     bool merged = false;
-    merged = merger.depth_wise_merge();
+    merger.depth_wise_merge();
     while (true) {    
         merged = merger.breadth_wise_merge();
+        if (!merged) break;
         merged = merger.depth_wise_merge();
         if (!merged) break;
     }
