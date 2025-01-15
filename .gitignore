@@ -6,3 +6,8 @@ testing/
 .vs/
 CMakeSettings.json
 out/
+.cache/
+*.svg
+*.png
+dag_before_merge.json
+dag_after_merge.json

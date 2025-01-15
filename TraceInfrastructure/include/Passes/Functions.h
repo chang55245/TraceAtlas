@@ -18,6 +18,37 @@ namespace DashTracer
         extern Function *DumpLoadValue;
         extern Function *fullFunc;
         extern Function *fullAddrFunc;
+        extern Function *MemCpyDump;
+        extern Function *ComputeDump;
+        extern Function *MemoryDump;
+
+        extern Function *MainStart;
+        extern Function *StartNonKernelStage;
+        extern Function *EndNonKernelStage;
+
+        extern Function *StartKernelStage;
+        extern Function *EndKernelStage;
+        extern Function *MiddleKernelStage;
+        
+        
+        
+        extern Function *SingleKernelStage;
+        extern Function *LoopTrace;
+        extern Function *LoopTraceInitialization;
+        extern Function *LoopTraceDestroy;
+
+        extern Function *CallStartTrace;
+        extern Function *CallEndTrace;
+        extern Function *CallTraceInitialization;
+        extern Function *CallTraceDestroy;
+        extern Function *KernelNameTrace;
+
+
+        extern Function *LoadInstructionDump;
+        extern Function *StoreInstructionDump;
+        extern Function *MemProfInitialization;
+        extern Function *MemProfDestroy;
+     
     } // namespace Passes
 } // namespace DashTracer
 

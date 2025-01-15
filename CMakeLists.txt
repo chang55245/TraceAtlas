@@ -12,8 +12,8 @@ llvm_map_components_to_libnames(llvm_libs support core irreader bitreader bitwri
 #use the llvm toolchain
 #we fix these ourselves since we don't support gcc anyway
 #I want windows support, but passes on windows are tricky anyway so that is a secondary goal
-set(CMAKE_C_COMPILER ${LLVM_INSTALL_PREFIX}/bin/clang)
-set(CMAKE_CXX_COMPILER ${LLVM_INSTALL_PREFIX}/bin/clang++)
+# set(CMAKE_C_COMPILER ${LLVM_INSTALL_PREFIX}/bin/clang)
+# set(CMAKE_CXX_COMPILER ${LLVM_INSTALL_PREFIX}/bin/clang++)
 set(CMAKE_LINKER ${LLVM_INSTALL_PREFIX}/bin/ld.lld)
 set(CMAKE_AR ${LLVM_INSTALL_PREFIX}/bin/llvm-ar)
 set(CMAKE_ADDR2LINE ${LLVM_INSTALL_PREFIX}/bin/llvm-addr2line)
@@ -58,10 +58,10 @@ if(WIN32)
 endif()
 
 add_subdirectory("AtlasUtil")
-add_subdirectory("cartographer")
+# add_subdirectory("cartographer")
 add_subdirectory("TraceInfrastructure")
-add_subdirectory("tik")
-add_subdirectory("deat")
+# add_subdirectory("tik")
+# add_subdirectory("deat")
 add_subdirectory("Utilities")
 
 #repsonsible for injecting the tracer. Fairly fragile so be careful

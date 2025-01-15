@@ -44,12 +44,25 @@ void OpenFile();
 /// </summary>
 void CloseFile();
 
-void LoadDump(void *address);
+void LoadDump(void *address,int size);
 void DumpLoadValue(void *MemValue, int size);
-void StoreDump(void *address);
+void StoreDump(void *address,int size);
+
+void MemCpyDump(void *src,void *dest,void *len);
 void DumpStoreValue(void *MemValue, int size);
 
 void BB_ID_Dump(uint64_t block, bool enter);
+
+void StartKernelStage(uint64_t stage){ };
+void EndKernelStage(uint64_t stage,uint64_t number){ };
+
+void SingleKernelStage(uint64_t stage,uint64_t number){ };
+void MiddleKernelStage(uint64_t stage){};
+
+
+void MainStart(uint64_t stage){ };
+void StartNonKernelStage(uint64_t stage){ };
+void EndNonKernelStage(uint64_t stage){ };
 
 #ifdef __cplusplus
 extern "C"
@@ -57,6 +70,7 @@ extern "C"
 #endif
     void KernelEnter(char *label);
     void KernelExit(char *label);
+    void NonKernelSplit();
 #ifdef __cplusplus
 }
 #endif

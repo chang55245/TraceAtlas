@@ -38,6 +38,10 @@ namespace DashTracer::Passes {
                             //outs() << "Found a Kernel Entrance\n";
                             entranceCall = CI;
                         }
+                        if (CI->getCalledFunction()->getName() == "NonKernelSplit") {
+                            //outs() << "Found a Kernel Entrance\n";
+                            entranceCall = CI;
+                        }
                     }
                 }
                 if (exitCall != nullptr || entranceCall != nullptr) {

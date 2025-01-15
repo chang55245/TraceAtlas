@@ -1,7 +1,5 @@
-set(SOURCES BackendTrace.c)
-if(NOT WIN32)
-    list(APPEND SOURCES BackendPapi.c)
-endif()
+set(SOURCES BackendTrace.c LoopTrace.cpp BackendKernelLocation.cpp BackendMemProfile.cpp)
+
 add_library(AtlasBackend STATIC ${SOURCES})
 set_target_properties(
     AtlasBackend PROPERTIES
@@ -9,12 +7,12 @@ set_target_properties(
     OUTPUT_NAME AtlasBackend
 )
 
-target_link_libraries(AtlasBackend ${llvm_libs} ZLIB::ZLIB)
+target_link_libraries(AtlasBackend ${llvm_libs} AtlasUtil ZLIB::ZLIB nlohmann_json nlohmann_json::nlohmann_json)
 target_include_directories(AtlasBackend PUBLIC ${TRACE_INC})
 if(WIN32)
-    target_compile_options(AtlasBackend PRIVATE -W3 -Wextra -Wconversion)
+    target_compile_options(AtlasBackend PRIVATE -W3 -Wextra -Wconversion -fPIC)
 else()
-    target_compile_options(AtlasBackend PRIVATE -Wall -Wextra -Wconversion)
+    target_compile_options(AtlasBackend PRIVATE -Wall -Wextra -Wconversion -fPIC)
 endif()
 
 install(TARGETS AtlasBackend

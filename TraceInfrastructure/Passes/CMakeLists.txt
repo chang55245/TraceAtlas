@@ -1,10 +1,10 @@
-add_library(AtlasPasses MODULE Trace.cpp TraceMem.cpp TraceMemIO.cpp Annotate.cpp TraceIO.cpp CommandArgs.cpp PapiExport.cpp PapiIO.cpp Functions.cpp AddLibrary.cpp SplitAllocas.cpp SplitKernExitEnter.cpp)
+add_library(AtlasPasses MODULE Trace.cpp TraceMem.cpp TraceMemIO.cpp Annotate.cpp TraceIO.cpp CommandArgs.cpp PapiExport.cpp PapiIO.cpp Functions.cpp AddLibrary.cpp TestTransformation.cpp FunctionInliner.cpp SplitKernExitEnter.cpp SwapAPIs.cpp KernelStage.cpp KernelLocating.cpp DynmLoopUnroll.cpp DynmKernelLocating.cpp DynmFunctionInlining.cpp OmpNonkernelParallel.cpp NonKernelOutliner.cpp SwapNonkernel.cpp MemProfile.cpp)
 target_link_libraries(AtlasPasses PRIVATE nlohmann_json nlohmann_json::nlohmann_json AtlasUtil)
 target_compile_definitions(AtlasPasses PRIVATE ${LLVM_DEFINITIONS})
 if(WIN32)
     target_compile_options(AtlasPasses PRIVATE -W4  -Wextra  -Wconversion)
 else()
-    target_compile_options(AtlasPasses PRIVATE -Wall  -Wextra  -Wconversion)
+    target_compile_options(AtlasPasses PRIVATE -fno-rtti -Wall  -Wextra  -Wconversion)
 endif()
 set_target_properties(AtlasPasses
     PROPERTIES
