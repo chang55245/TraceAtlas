@@ -94,7 +94,6 @@ def compare_dags(dag1_path, dag2_path):
 
     # Save the visualizations
     plt.savefig("dags_comparison.png")
-    plt.show()
 
 if __name__ == "__main__":
     import sys

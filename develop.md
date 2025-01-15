@@ -18,12 +18,3 @@ merge node in the same stage and consider the following conditions
 3. repeat the above steps until no more node can be merged. 
 
 
-# TODO
-
-1. fix the complexity threshold and complexity computation
-2. add the iterative merging
-3. visualize the results, before and after merging
-4. will iterating in the original node graph cause problem during merging while removing the merged nodes?
-5. add global breadth wise merge
----------------------
-6. code generation
