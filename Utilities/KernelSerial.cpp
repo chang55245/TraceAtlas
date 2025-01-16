@@ -2487,6 +2487,7 @@ void task_merging(map<int, task_feature> &task_feature_map) {
     // Perform merging
     bool merged = false;
     merger.depth_wise_merge();
+    generateDAGJson(merger.get_merged_graph(), "dag_after_depth_merge.json");
     while (true) {    
         merged = merger.breadth_wise_merge();
         if (!merged) break;
@@ -2496,7 +2497,7 @@ void task_merging(map<int, task_feature> &task_feature_map) {
     DAGEdge = merger.get_merged_edges();
 
     // Generate JSON for DAG after merging
-    generateDAGJson(merger.get_merged_graph(), "dag_after_merge.json");
+    // generateDAGJson(merger.get_merged_graph(), "dag_after_merge.json");
 }
 
 int main(int argc, char **argv)

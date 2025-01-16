@@ -11,3 +11,4 @@ out/
 *.png
 dag_before_merge.json
 dag_after_merge.json
+dag_after_depth_merge.json
