@@ -8,9 +8,9 @@ def read_dag_from_json(filepath):
 
 def visualize_dag(nodes, ax):
     G = nx.DiGraph()
-
+    sorted_nodes = sorted(nodes.items(), key=lambda x: int(''.join(filter(str.isdigit, x[0]))))
     # Add nodes and edges to the graph
-    for node, info in nodes.items():
+    for node, info in sorted_nodes:
         G.add_node(node, stage=info['stage'], kernel=info.get('kernel', 0))
         if info['next'] is not None:
             for next_node in info['next']:

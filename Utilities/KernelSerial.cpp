@@ -2199,7 +2199,6 @@ class TaskMerging {
 private:
     map<int, graph_node> node_map;
     int graph_size;
-    set<pair<int,int>> dag_edges;
 
     void merge_nodes(int target_node, int source_node, map<int, graph_node> &merged_map) {
         // Merge source into target
@@ -2267,6 +2266,23 @@ private:
         }
     }
 
+    // prune edges that are unnecessary because of connecting nodes in more than one stage
+    void prune_edges() {
+        // check the next nodes of each node, prune the edge if the next nodes are in more than one stage
+        for (auto &[id, node] : node_map) {
+            for (auto it = node.next_nodes.begin(); it != node.next_nodes.end(); ) {
+                int next = *it;
+                if (node_map[next].stage - node.stage > 1) {
+                    // erase the edge
+                    it = node.next_nodes.erase(it);
+                    node_map[next].prev_nodes.erase(id);
+                } else {
+                    it++;
+                }
+            }
+        }
+    }
+
     void update_stages() {
         map<int, graph_node> schedule_map = node_map;
         int current_stage = 0;
@@ -2287,12 +2303,12 @@ private:
         for (auto &[id, node] : node_map) {
             node.stage = schedule_map[id].stage;
         }
+        prune_edges();
     }
 
 public:
     TaskMerging(map<int, task_feature> &task_feature_map, set<pair<int,int>> &edges, map<int,string> &kernel_map) {
         graph_size = kernel_map.size();
-        dag_edges = edges;
 
         // Initialize node map
         for (int i = 0; i < graph_size; i++) {
