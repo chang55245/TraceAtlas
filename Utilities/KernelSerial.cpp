@@ -2187,6 +2187,7 @@ void get_task_feature_map(map<int, task_feature> &task_feature_map)
 }
 
 struct graph_node {
+        int id;
         bool is_kernel;
         set<int> prev_nodes;
         set<int> next_nodes;
@@ -2210,7 +2211,7 @@ private:
             node_map[source_node].merged_from_nodes.end()
         );
 
-        // Merge edges
+        // deal with the two merged nodes
         merged_map[target_node].next_nodes.insert(
             node_map[source_node].next_nodes.begin(),
             node_map[source_node].next_nodes.end()
@@ -2220,17 +2221,23 @@ private:
             node_map[source_node].prev_nodes.end()
         );
 
-        // Update edges of connected nodes
+        // deal with the nodes that are connected to the source node from the previous nodes
         for (auto prev : node_map[source_node].prev_nodes) {
             if (merged_map.find(prev) != merged_map.end()) {
                 merged_map[prev].next_nodes.erase(source_node);
-                merged_map[prev].next_nodes.insert(target_node);
+                if (prev != target_node) {
+                    merged_map[prev].next_nodes.insert(target_node);
+                }
             }
         }
+
+        // deal with the nodes that are connected to the source node from the next nodes
         for (auto next : node_map[source_node].next_nodes) {
             if (merged_map.find(next) != merged_map.end()) {
                 merged_map[next].prev_nodes.erase(source_node);
-                merged_map[next].prev_nodes.insert(target_node);
+                if (next != target_node) {
+                    merged_map[next].prev_nodes.insert(target_node);
+                }
             }
         }
 
@@ -2266,19 +2273,49 @@ private:
         }
     }
 
+
+    // recursively find the children of each node and update the node_children_map map
+    set<int> get_node_children_map(map<int, set<int>> &node_children_map, graph_node current_node) {
+        set<int> children;
+        // get own children
+        if (current_node.next_nodes.empty()) {
+            return children;
+        }
+        for (auto next : current_node.next_nodes) {
+            children.insert(next);
+            // get children's children
+            set<int> next_children = get_node_children_map(node_children_map, node_map[next]);
+            children.insert(next_children.begin(), next_children.end());
+        }
+        node_children_map[current_node.id] = children;
+        return children;
+    }
+
     // prune edges that are unnecessary because of connecting nodes in more than one stage
     void prune_edges() {
-        // check the next nodes of each node, prune the edge if the next nodes are in more than one stage
+        // check the next nodes of each node, prune the edge if 
+        // 1. the next nodes are in more than one stage
+        // and 2. the next nodes's prev nodes are the current node's children
+
+        map<int, set<int>> node_children_map;
+        for (auto &[id, node] : node_map) {
+            if (node.stage != 0) continue;
+            get_node_children_map(node_children_map, node);
+        }
+
         for (auto &[id, node] : node_map) {
             for (auto it = node.next_nodes.begin(); it != node.next_nodes.end(); ) {
                 int next = *it;
                 if (node_map[next].stage - node.stage > 1) {
-                    // erase the edge
-                    it = node.next_nodes.erase(it);
-                    node_map[next].prev_nodes.erase(id);
-                } else {
-                    it++;
-                }
+                    for (auto prev : node_map[next].prev_nodes) {   
+                        if (node_children_map[id].find(prev) != node_children_map[id].end()) {
+                            it = node.next_nodes.erase(it);
+                            node_map[next].prev_nodes.erase(id);
+                            break;
+                        }
+                    }
+                } 
+                it++;
             }
         }
     }
@@ -2313,13 +2350,15 @@ public:
         // Initialize node map
         for (int i = 0; i < graph_size; i++) {
             bool is_kernel = kernel_map[i] != "-1";
-            node_map[i] = {is_kernel, 
-                          set<int>(), 
-                          set<int>(), 
-                          set<int>(), 
-                          task_feature_map[i].compute, 
-                          task_feature_map[i].memory,
-                          -1
+            node_map[i] = {
+                i,
+                is_kernel, 
+                set<int>(), 
+                set<int>(), 
+                set<int>(), 
+                task_feature_map[i].compute, 
+                task_feature_map[i].memory,
+                -1
                           };
         }
 
@@ -2349,45 +2388,23 @@ public:
 
     bool depth_wise_merge() {
         bool result = false;
-        map<int, graph_node> merged_map = node_map;
-        bool found_merge = false;
-
+        auto it = node_map.begin();
+        bool found_merge = true;
         while (found_merge) {
             found_merge = false;
-            for (auto &[i, node] : node_map) {
-                // Check if node has single outgoing edge
-                if (node_map[i].next_nodes.size() == 1) {
-                    int next = *node_map[i].next_nodes.begin();
-                    
-                    // Check if next node has single incoming edge
+            it = node_map.begin();
+            while (it != node_map.end()) {
+                if (it->second.next_nodes.size() == 1) {
+                    int next = *it->second.next_nodes.begin();
                     if (node_map[next].prev_nodes.size() == 1) {
-                        // Merge nodes
-                        if (node_map[next].is_kernel != node_map[i].is_kernel) {
-                            merged_map[i].is_kernel = node_map[next].is_kernel;
-                        }
-                        
-                        merged_map[i].next_nodes = node_map[next].next_nodes;
-                        merged_map[i].merged_from_nodes.insert(next);
-                        merged_map[i].compute_num += node_map[next].compute_num;
-                        merged_map[i].memory_num += node_map[next].memory_num;
-
-                        // Update edges
-                        for (auto next_next : node_map[next].next_nodes) {
-                            merged_map[next_next].prev_nodes.erase(next);
-                            merged_map[next_next].prev_nodes.insert(i);
-                        }
-
-                        // Remove merged node
-                        merged_map.erase(next);
-                        found_merge = true;
+                        merge_nodes(it->first, next, node_map);
                         result = true;
-                        break;
+                        found_merge = true;
                     }
                 }
+                it++;
             }
         }
-
-        node_map = merged_map;
         update_stages();
         return result;
     }
@@ -2479,10 +2496,14 @@ void generateDAGJson(const map<int, graph_node> &node_map, const string &filenam
         dagJson[to_string(id)] = {
             {"stage", node.stage},
             {"next", {}},
-            {"kernel", int(node.is_kernel)}
+            {"kernel", int(node.is_kernel)},
+            {"merged_from", {}}
         };
         for (const auto& next : node.next_nodes) {
             dagJson[to_string(id)]["next"].push_back(to_string(next));
+        }
+        for (const auto& merged_from : node.merged_from_nodes) {
+            dagJson[to_string(id)]["merged_from"].push_back(to_string(merged_from));
         }
     }
     std::ofstream file(filename);

@@ -1,3 +1,4 @@
+from queue import Full
 import networkx as nx
 import matplotlib.pyplot as plt
 import json
@@ -37,6 +38,11 @@ def visualize_dag(nodes, ax):
             y_min = min([pos[node][1] for node in nodes_in_stage]) - 0.5
             y_max = max([pos[node][1] for node in nodes_in_stage]) + 0.5
             ax.fill_betweenx([y_min, y_max], min(x_values) - 0.75, max(x_values) + 0.75, color='#d1e7ff', alpha=0.5)
+    
+    # draw text of merged_from for each node and info['merged_from'] != []
+    for node, info in sorted_nodes:
+        if 'merged_from' in info  > 0:
+            ax.text(pos[node][0], pos[node][1], f"merged_from: {info['merged_from']}", fontsize=12, ha='center', va='center')
 
     # Draw the graph on the specified axes
     ax.fill_betweenx([0, 0], 0, 0, color='white')  # Clear the axes
