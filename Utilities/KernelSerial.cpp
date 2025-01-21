@@ -2200,29 +2200,31 @@ class TaskMerging {
 private:
     map<int, graph_node> node_map;
     int graph_size;
-
+    set<pair<int,int>> dag_edges;
     void merge_nodes(int target_node, int source_node, map<int, graph_node> &merged_map) {
+
+        merged_map[target_node].is_kernel = merged_map[target_node].is_kernel || merged_map[source_node].is_kernel;
         // Merge source into target
         merged_map[target_node].compute_num += node_map[source_node].compute_num;
         merged_map[target_node].memory_num += node_map[source_node].memory_num;
         merged_map[target_node].merged_from_nodes.insert(source_node);
         merged_map[target_node].merged_from_nodes.insert(
-            node_map[source_node].merged_from_nodes.begin(),
-            node_map[source_node].merged_from_nodes.end()
+            merged_map[source_node].merged_from_nodes.begin(),
+            merged_map[source_node].merged_from_nodes.end()
         );
 
-        // deal with the two merged nodes
+
         merged_map[target_node].next_nodes.insert(
-            node_map[source_node].next_nodes.begin(),
-            node_map[source_node].next_nodes.end()
+            merged_map[source_node].next_nodes.begin(),
+            merged_map[source_node].next_nodes.end()
         );
         merged_map[target_node].prev_nodes.insert(
-            node_map[source_node].prev_nodes.begin(),
-            node_map[source_node].prev_nodes.end()
+            merged_map[source_node].prev_nodes.begin(),
+            merged_map[source_node].prev_nodes.end()
         );
 
         // deal with the nodes that are connected to the source node from the previous nodes
-        for (auto prev : node_map[source_node].prev_nodes) {
+        for (auto prev : merged_map[source_node].prev_nodes) {
             if (merged_map.find(prev) != merged_map.end()) {
                 merged_map[prev].next_nodes.erase(source_node);
                 if (prev != target_node) {
@@ -2232,7 +2234,7 @@ private:
         }
 
         // deal with the nodes that are connected to the source node from the next nodes
-        for (auto next : node_map[source_node].next_nodes) {
+        for (auto next : merged_map[source_node].next_nodes) {
             if (merged_map.find(next) != merged_map.end()) {
                 merged_map[next].prev_nodes.erase(source_node);
                 if (next != target_node) {
@@ -2240,7 +2242,6 @@ private:
                 }
             }
         }
-
         // Remove merged node
         merged_map.erase(source_node);
     }
@@ -2319,6 +2320,15 @@ private:
             }
         }
     }
+    // very unoptimized, but it's ok for now
+    void update_edge_according_to_nodes() {
+        dag_edges.clear();
+        for (auto &[id, node] : node_map) {
+            for (auto next : node.next_nodes) {
+                dag_edges.insert({id, next});
+            }
+        }
+    }
 
     void update_stages() {
         map<int, graph_node> schedule_map = node_map;
@@ -2346,6 +2356,7 @@ private:
 public:
     TaskMerging(map<int, task_feature> &task_feature_map, set<pair<int,int>> &edges, map<int,string> &kernel_map) {
         graph_size = kernel_map.size();
+        dag_edges = edges;
 
         // Initialize node map
         for (int i = 0; i < graph_size; i++) {
@@ -2390,6 +2401,7 @@ public:
         bool result = false;
         auto it = node_map.begin();
         bool found_merge = true;
+
         while (found_merge) {
             found_merge = false;
             it = node_map.begin();
@@ -2412,7 +2424,7 @@ public:
         bool result = false;
         map<int, graph_node> merged_map = node_map;
         bool found_merge = true;
-        const int64_t SMALL_COMPLEXITY_THRESHOLD = 1000; // Threshold for small complexity nodes
+        const int64_t SMALL_COMPLEXITY_THRESHOLD = 100000; // Threshold for small complexity nodes
 
         while (found_merge) {
             found_merge = false;
@@ -2437,22 +2449,26 @@ public:
                     int small_node = nodes[i].first;
                     int64_t complexity = nodes[i].second;
                     
-                    if (complexity > SMALL_COMPLEXITY_THRESHOLD) continue;
+                    if (complexity > SMALL_COMPLEXITY_THRESHOLD) break;
                     if (merged_map.find(small_node) == merged_map.end()) continue;
 
                     bool merged = false;
                     
-                    // First priority: find merge that enables depth-wise merge
+                    // First priority: find merge that have common next node
                     for (size_t j = nodes.size() - 1; j > i; j--) {
                         int candidate = nodes[j].first;
                         if (merged_map.find(candidate) == merged_map.end()) continue;
 
-                        // Check if merging would create single out edges                        
-                        set<int> combined_next = merged_map[small_node].next_nodes;
-                        combined_next.insert(merged_map[candidate].next_nodes.begin(), 
-                                          merged_map[candidate].next_nodes.end());
+                        // Check if merging would create single out edges
+                        bool overlap = false;
+                        for (auto next : merged_map[small_node].next_nodes) {
+                            if (merged_map[candidate].next_nodes.find(next) != merged_map[candidate].next_nodes.end()) {
+                                overlap = true;
+                                break;
+                            }
+                        }
 
-                        if (combined_next.size() == 1) {
+                        if (overlap) {
                             merge_nodes(small_node, candidate, merged_map);
                             merged = true;
                             found_merge = true;
@@ -2475,7 +2491,7 @@ public:
                         }
                     }
 
-                    if (merged) break;
+                    if (!merged) break;
                 }
             }
         }
@@ -2534,7 +2550,7 @@ void task_merging(map<int, task_feature> &task_feature_map) {
     DAGEdge = merger.get_merged_edges();
 
     // Generate JSON for DAG after merging
-    // generateDAGJson(merger.get_merged_graph(), "dag_after_merge.json");
+    generateDAGJson(merger.get_merged_graph(), "dag_after_merge.json");
 }
 
 int main(int argc, char **argv)

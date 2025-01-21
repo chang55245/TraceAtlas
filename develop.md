@@ -9,10 +9,12 @@ merg two nodes in consecutive stages when the previous node has single outgoing 
 
 2. breadth wise merge
 merge node in the same stage and consider the following conditions
-    2.1 node with small memory-plus-compute complexity must be merged to some nodes.
-    2.2 the first priority to pick the other node to merge is that merging node will generate a new node that enable depth wise merge, which meeans the new node has single outgoing edge.
-    2.3 Sort the nodes in the stage by memory-plus-compute complexity, the second priority to pick the other node to merge is that the node has the largest memory-plus-compute complexity. 
+    2.1 node with small memory-plus-compute complexity must be merged to some nodes to make the complexity of the node larger than the threshold.
+    2.2 the first priority to merge the current node with a node is that the node has a common next node with the current node.
+    2.3 Sort the nodes in the stage by memory-plus-compute complexity, the second priority to merge is that the node has the largest memory-plus-compute complexity if the node has no common next node with the current node. 
     2.4 repeat the above steps until no more node can be merged. 
+    2.5 handle corner cases
+        2.5.1 what if after all possible merging the node still has small memory-plus-compute complexity?, just stop the merge.
  
 
 3. repeat the above steps until no more node can be merged. 
