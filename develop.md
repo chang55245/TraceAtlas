@@ -1,6 +1,9 @@
 # develop notes
 
-KernelSerial.cpp is a tool to merge node in a graph according to the memory and compute complexity. 
+
+## the merge algorithm
+KernelSerial.cpp contains a merge algorithm to merge node in a graph according to the memory and compute complexity. 
+
 
 the merge is done by the following steps:
 
@@ -20,3 +23,13 @@ merge node in the same stage and consider the following conditions
 3. repeat the above steps until no more node can be merged. 
 
 
+## schedule algorithm
+
+KernelSerial.cpp contains a schedule algorithm to schedule the merged nodes. 
+
+1. use a map of vectors [merged_node_id, vector<schedule of nodes the merged node is composed of>] to store the schedule of each merged node. use the original dag to get the schedule of child nodes.
+2. schedule the merged node use the merged dag
+3. generate the overall schedule of the merged dag in terms of the original node id. 
+
+## generate the branch map for code generation
+1. generate the branch map for the merged dag according to the schedule of each child node. 

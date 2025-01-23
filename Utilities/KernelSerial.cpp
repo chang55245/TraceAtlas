@@ -2198,6 +2198,9 @@ struct graph_node {
     };
 class TaskMerging {
 private:
+    // the original dag
+    
+    map<int,graph_node> original_map;
     map<int, graph_node> node_map;
     int graph_size;
     set<pair<int,int>> dag_edges;
@@ -2214,14 +2217,19 @@ private:
         );
 
 
-        merged_map[target_node].next_nodes.insert(
-            merged_map[source_node].next_nodes.begin(),
-            merged_map[source_node].next_nodes.end()
-        );
-        merged_map[target_node].prev_nodes.insert(
-            merged_map[source_node].prev_nodes.begin(),
-            merged_map[source_node].prev_nodes.end()
-        );
+        for (const auto& next : merged_map[source_node].next_nodes) {
+            if (next != target_node) {
+                merged_map[target_node].next_nodes.insert(next);
+            }
+        }
+
+        for (const auto& prev : merged_map[source_node].prev_nodes) {
+            if (prev != target_node) {
+                merged_map[target_node].prev_nodes.insert(prev);
+            }
+        }
+
+        
 
         // deal with the nodes that are connected to the source node from the previous nodes
         for (auto prev : merged_map[source_node].prev_nodes) {
@@ -2354,6 +2362,11 @@ private:
     }
 
 public:
+    // the schedule of all original nodes
+    vector<int> schedule;
+    // the pair of start and end node in order
+    vector<pair<int,int>> pair_of_start_end_node_in_order;
+        
     TaskMerging(map<int, task_feature> &task_feature_map, set<pair<int,int>> &edges, map<int,string> &kernel_map) {
         graph_size = kernel_map.size();
         dag_edges = edges;
@@ -2379,6 +2392,7 @@ public:
             node_map[edge.first].next_nodes.insert(edge.second);
         }
         update_stages();
+        original_map = node_map;
     }
 
     
@@ -2501,6 +2515,56 @@ public:
     }
 
 
+    void analyze_schedule() {
+        // the schedule of all merged nodes
+        vector<int> merged_schedule;
+
+        
+        map<int,vector<int>> stage_to_nodes;
+
+        // sort according to the stage
+        for (auto &[id, node] : node_map) {
+            stage_to_nodes[node.stage].push_back(id);
+        }
+
+        // get the schedule of all original nodes
+        for (auto &[stage, nodes] : stage_to_nodes) {
+            for (auto node : nodes) {
+                merged_schedule.push_back(node);
+            }
+        } 
+        // get the schedule of all original nodes
+        for (auto node : merged_schedule) {
+            // get the schedule of the merged node
+            vector<int> merged_from_nodes_vector;
+            for (auto merged_node : node_map[node].merged_from_nodes) {
+                merged_from_nodes_vector.push_back(merged_node);
+                
+            }
+            std::sort(merged_from_nodes_vector.begin(), merged_from_nodes_vector.end(), 
+                [this](int a, int b) {
+                    return original_map[a].stage < original_map[b].stage;
+                });
+                schedule.push_back(node);
+                schedule.insert(schedule.end(), merged_from_nodes_vector.begin(), merged_from_nodes_vector.end());
+                pair_of_start_end_node_in_order.push_back({node, merged_from_nodes_vector.back()});
+        }
+        // print the schedule
+        printf("schedule: ");
+        for (auto node : schedule) {
+            printf("%d ", node);
+        }
+        printf("\n");
+        printf("pair_of_start_end_node_in_order: ");
+        for (auto node : pair_of_start_end_node_in_order) {
+            printf("%d ", node.first);
+            printf("%d ", node.second);
+        }
+        printf("\n");
+
+    }
+
+
 };
 
 
@@ -2527,6 +2591,15 @@ void generateDAGJson(const map<int, graph_node> &node_map, const string &filenam
     file.close();
 }
 
+void generateScheduleJson(const vector<int> &schedule, const vector<pair<int,int>> &pair_of_start_end_node_in_order, const string &filename) {
+    nlohmann::json scheduleJson;
+    scheduleJson["schedule"] = schedule;
+    scheduleJson["pair_of_start_end_node_in_order"] = pair_of_start_end_node_in_order;
+    std::ofstream file(filename);
+    file << std::setw(4) << scheduleJson << std::endl;
+    file.close();
+}
+
 void task_merging(map<int, task_feature> &task_feature_map) {
     //  nodes = {
     //     'A': {'stage': 0, 'next': ['B', 'C']},
@@ -2548,9 +2621,11 @@ void task_merging(map<int, task_feature> &task_feature_map) {
         if (!merged) break;
     }
     DAGEdge = merger.get_merged_edges();
-
+    merger.analyze_schedule();
     // Generate JSON for DAG after merging
     generateDAGJson(merger.get_merged_graph(), "dag_after_merge.json");
+    // generate the schedule json file
+    generateScheduleJson(merger.schedule, merger.pair_of_start_end_node_in_order, "task_merging_schedule.json");
 }
 
 int main(int argc, char **argv)
@@ -2586,15 +2661,7 @@ int main(int argc, char **argv)
 
     spdlog::info("DAGGenColoring end");
     
-    // add task merging here
-    // 1. generate the taskid and compute/memory map, here tuple doesn't matter anymore
-    // 2. merge the DAG and generate a new DAG, in new DAGEdge
-    // 3. how to enbale code generation with the DAG? 
-    // map [taskid] = {compute, memory}
     
-    map<int, task_feature> task_feature_map;
-    get_task_feature_map(task_feature_map);
-    task_merging(task_feature_map);
 
 
     //for transformed schedule generation
@@ -2605,7 +2672,15 @@ int main(int argc, char **argv)
 
     GenBBMapping();
     spdlog::info("GenBBMapping end");
+    // add task merging here
+    // 1. generate the taskid and compute/memory map, here tuple doesn't matter anymore
+    // 2. merge the DAG and generate a new DAG, in new DAGEdge
+    // 3. how to enbale code generation with the DAG? 
+    // map [taskid] = {compute, memory}
     
+    map<int, task_feature> task_feature_map;
+    get_task_feature_map(task_feature_map);
+    task_merging(task_feature_map);
 
     bool storeTupleInJson =true;
     if (storeTupleInJson)
