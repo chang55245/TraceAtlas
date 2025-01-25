@@ -2438,7 +2438,7 @@ public:
         bool result = false;
         map<int, graph_node> merged_map = node_map;
         bool found_merge = true;
-        const int64_t SMALL_COMPLEXITY_THRESHOLD = 100000; // Threshold for small complexity nodes
+        const int64_t SMALL_COMPLEXITY_THRESHOLD = 1000000; // Threshold for small complexity nodes
 
         while (found_merge) {
             found_merge = false;
@@ -2555,10 +2555,10 @@ public:
             printf("%d ", node);
         }
         printf("\n");
-        printf("pair_of_start_end_node_in_order: ");
+        printf("pair_of_start_end_node of task in_order: ");
         for (auto node : pair_of_start_end_node_in_order) {
-            printf("%d ", node.first);
-            printf("%d ", node.second);
+            printf("{%d ", node.first);
+            printf("%d} ", node.second);
         }
         printf("\n");
 
