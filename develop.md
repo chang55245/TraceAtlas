@@ -31,5 +31,6 @@ KernelSerial.cpp contains a schedule algorithm to schedule the merged nodes.
 2. schedule the merged node use the merged dag
 3. generate the overall schedule of the merged dag in terms of the original node id. 
 
-## generate the branch map for code generation
+## Task Merging Reorder
+The TaskMergingReorder pass is used to reorder the merged nodes according to the schedule of each child node. 
 1. generate the branch map for the merged dag according to the schedule of each child node. 

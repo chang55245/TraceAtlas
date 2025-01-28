@@ -22,5 +22,6 @@ extern cl::opt<bool> DumpLoads;
 extern cl::opt<bool> DumpStores;
 
 extern cl::opt<std::string> LibraryName;
+extern cl::opt<std::string> TaskMergingSchedule;
 
 #endif

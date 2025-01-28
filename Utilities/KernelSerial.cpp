@@ -2438,7 +2438,7 @@ public:
         bool result = false;
         map<int, graph_node> merged_map = node_map;
         bool found_merge = true;
-        const int64_t SMALL_COMPLEXITY_THRESHOLD = 1000000; // Threshold for small complexity nodes
+        const int64_t SMALL_COMPLEXITY_THRESHOLD = 100000; // Threshold for small complexity nodes
 
         while (found_merge) {
             found_merge = false;
@@ -2595,6 +2595,38 @@ void generateScheduleJson(const vector<int> &schedule, const vector<pair<int,int
     nlohmann::json scheduleJson;
     scheduleJson["schedule"] = schedule;
     scheduleJson["pair_of_start_end_node_in_order"] = pair_of_start_end_node_in_order;
+
+    map<int, pair<int,int>> NodeIO;
+
+    for (auto sti : StartBBinNode)
+    {
+        if (endBBinNode.find(sti.first) != endBBinNode.end())    
+        {
+            NodeIO[sti.first] = {sti.second,endBBinNode[sti.first]};     
+        }
+        else
+        {
+            NodeIO[sti.first] = {sti.second,-1};     
+        }
+    }
+    scheduleJson["NodeIO"] = NodeIO;
+
+
+    map<int, pair<int,int>> MergingBBMapingTransform;
+    int lastNode= -1;
+    for(auto i: schedule)
+    {
+        if(lastNode != -1 && NodeIO[lastNode].second != -1)
+        {
+            // update the node mapping
+            MergingBBMapingTransform[endBBinNode[lastNode]] = pair<int,int>{StartBBinNode[lastNode+1],StartBBinNode[i]};
+        }
+        lastNode = i;
+    }
+
+
+    scheduleJson["MergingBBMapingTransform"] = MergingBBMapingTransform;
+
     std::ofstream file(filename);
     file << std::setw(4) << scheduleJson << std::endl;
     file.close();
@@ -2726,12 +2758,6 @@ int main(int argc, char **argv)
     // jOut["SingleThreadDAGEdge"] = SingleThreadDAGEdge;
     // jOut["SingleThreadNodePosition"] = SingleThreadNodePosition;
 
-
-
-    for (auto sti : StartBBinNode)
-    { 
-        jOut["NodeIO"][to_string(sti.first)] = {sti.second,endBBinNode[sti.first]};     
-    }
 
     // jOut["testSchedule"] = testSchedule;
 

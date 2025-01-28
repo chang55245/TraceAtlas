@@ -14,3 +14,5 @@ cl::opt<bool> DumpLoads("DL", cl::desc("Dump load instruction information"), cl:
 cl::opt<bool> DumpStores("DS", cl::desc("Dump store instruction information"), cl::desc("Dump store instruction information"), cl::init(true));
 
 cl::opt<std::string> LibraryName("ln", cl::desc("Library Name"), cl::value_desc("Library name"));
+
+cl::opt<std::string> TaskMergingSchedule("tm", cl::desc("Specify filename for task merging schedule"), cl::value_desc("task merging schedule filename"));
