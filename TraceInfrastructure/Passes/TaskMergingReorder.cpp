@@ -66,10 +66,6 @@ namespace DashTracer::Passes
                     }
                 }
             }
-            else
-            {
-                errs()<<"no node io found for block:"<<blockId<<"\n";
-            }
         }
         return true;
     }
@@ -88,12 +84,11 @@ namespace DashTracer::Passes
         
 
         for (auto& [key, value] : j["MergingBBMapingTransform"].items()) {
-            int64_t sourceNode = std::stoll(key);  // Convert string key to int64_t
             if (value.is_array() && value.size() == 2) {
                 int64_t firstValue = value[1][0].get<int64_t>();
                 int64_t secondValue = value[1][1].get<int64_t>();
                 
-                MergingBBMapingTransform[sourceNode] = std::make_pair(firstValue, secondValue);
+                MergingBBMapingTransform[value[0].get<int64_t>()] = std::make_pair(firstValue, secondValue);
             } else {
                 errs() << "Invalid format for MergingBBMapingTransform entry: " << key << "\n";
                 return false;
