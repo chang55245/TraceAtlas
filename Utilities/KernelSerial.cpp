@@ -2338,8 +2338,8 @@ private:
         }
     }
 
-    void update_stages(map<int, graph_node>& process_map) {
-        map<int, graph_node> schedule_map = process_map;
+    void update_stages() {
+        map<int, graph_node> schedule_map = node_map;
         int current_stage = 0;
         set<int> kernel_nodes;
         set<int> non_kernel_nodes;
@@ -2355,7 +2355,7 @@ private:
             }
         }
 
-        for (auto &[id, node] : process_map) {
+        for (auto &[id, node] : node_map) {
             node.stage = schedule_map[id].stage;
         }
         prune_edges();
@@ -2374,7 +2374,7 @@ public:
         // Initialize node map
         for (int i = 0; i < graph_size; i++) {
             bool is_kernel = kernel_map[i] != "-1";
-            original_map[i] = {
+            node_map[i] = {
                 i,
                 is_kernel, 
                 set<int>(), 
@@ -2388,33 +2388,11 @@ public:
         
         // Build edges
         for (auto edge : edges) {
-            original_map[edge.second].prev_nodes.insert(edge.first);
-            original_map[edge.first].next_nodes.insert(edge.second);
-        }
-        update_stages(original_map);
-
-        for (int i = 1; i < graph_size-1; i++) {
-            bool is_kernel = kernel_map[i] != "-1";
-            node_map[i] = {
-                i,
-                is_kernel, 
-                set<int>(), 
-                set<int>(), 
-                set<int>(), 
-                task_feature_map[i].compute, 
-                task_feature_map[i].memory,
-                -1
-                          };
-        }
-        for (auto edge : edges) {
-
-            if(edge.first == 0 || edge.second == graph_size - 1) {
-                continue;
-            }
             node_map[edge.second].prev_nodes.insert(edge.first);
             node_map[edge.first].next_nodes.insert(edge.second);
         }
-        update_stages(node_map);
+        update_stages();
+        original_map = node_map;
     }
 
     
@@ -2437,13 +2415,23 @@ public:
         bool result = false;
         auto it = node_map.begin();
         bool found_merge = true;
+        int start_node = 0;
+        int end_node = graph_size - 1;
 
         while (found_merge) {
             found_merge = false;
             it = node_map.begin();
             while (it != node_map.end()) {
+                if (it->first == start_node) {
+                    it++;
+                    continue;
+                }
                 if (it->second.next_nodes.size() == 1) {
                     int next = *it->second.next_nodes.begin();
+                    if (next == end_node) {
+                        it++;
+                        continue;
+                    }
                     if (node_map[next].prev_nodes.size() == 1) {
                         merge_nodes(it->first, next, node_map);
                         result = true;
@@ -2453,7 +2441,7 @@ public:
                 it++;
             }
         }
-        update_stages(node_map);
+        update_stages();
         return result;
     }
     bool breadth_wise_merge() {
@@ -2461,6 +2449,8 @@ public:
         map<int, graph_node> merged_map = node_map;
         bool found_merge = true;
         const int64_t SMALL_COMPLEXITY_THRESHOLD = 100000; // Threshold for small complexity nodes
+        int start_node = 0;
+        int end_node = graph_size - 1;
 
         while (found_merge) {
             found_merge = false;
@@ -2468,6 +2458,9 @@ public:
             // Group nodes by stage
             map<int, vector<pair<int, int64_t>>> stage_nodes; // stage -> [(node_id, complexity)]
             for (auto &[id, node] : merged_map) {
+                if (id == start_node || id == end_node) {
+                    continue;
+                }
                 int64_t total_complexity = node.compute_num + node.memory_num;
                 stage_nodes[node.stage].push_back({id, total_complexity});
             }
@@ -2557,6 +2550,9 @@ public:
         } 
         // get the schedule of all original nodes
         for (auto node : merged_schedule) {
+            if (node == 0 || node == graph_size - 1) {
+                continue;
+            }
             // get the schedule of the merged node
             vector<int> merged_from_nodes_vector;
             for (auto merged_node : node_map[node].merged_from_nodes) {
@@ -2564,12 +2560,12 @@ public:
                 
             }
             std::sort(merged_from_nodes_vector.begin(), merged_from_nodes_vector.end(), 
-                [this](int a, int b) {
-                    return original_map[a].stage < original_map[b].stage;
-                });
-                schedule.push_back(node);
-                schedule.insert(schedule.end(), merged_from_nodes_vector.begin(), merged_from_nodes_vector.end());
-                pair_of_start_end_node_in_order.push_back({node, merged_from_nodes_vector.back()});
+            [this](int a, int b) {
+                return original_map[a].stage < original_map[b].stage;
+            });
+            schedule.push_back(node);
+            schedule.insert(schedule.end(), merged_from_nodes_vector.begin(), merged_from_nodes_vector.end());
+            pair_of_start_end_node_in_order.push_back({node, merged_from_nodes_vector.back()});
         }
         schedule.push_back(graph_size - 1);
         schedule.insert(schedule.begin(), 0);
