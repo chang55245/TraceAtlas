@@ -2338,8 +2338,8 @@ private:
         }
     }
 
-    void update_stages() {
-        map<int, graph_node> schedule_map = node_map;
+    void update_stages(map<int, graph_node>& process_map) {
+        map<int, graph_node> schedule_map = process_map;
         int current_stage = 0;
         set<int> kernel_nodes;
         set<int> non_kernel_nodes;
@@ -2355,7 +2355,7 @@ private:
             }
         }
 
-        for (auto &[id, node] : node_map) {
+        for (auto &[id, node] : process_map) {
             node.stage = schedule_map[id].stage;
         }
         prune_edges();
@@ -2374,6 +2374,27 @@ public:
         // Initialize node map
         for (int i = 0; i < graph_size; i++) {
             bool is_kernel = kernel_map[i] != "-1";
+            original_map[i] = {
+                i,
+                is_kernel, 
+                set<int>(), 
+                set<int>(), 
+                set<int>(), 
+                task_feature_map[i].compute, 
+                task_feature_map[i].memory,
+                -1
+                          };
+        }
+        
+        // Build edges
+        for (auto edge : edges) {
+            original_map[edge.second].prev_nodes.insert(edge.first);
+            original_map[edge.first].next_nodes.insert(edge.second);
+        }
+        update_stages(original_map);
+
+        for (int i = 1; i < graph_size-1; i++) {
+            bool is_kernel = kernel_map[i] != "-1";
             node_map[i] = {
                 i,
                 is_kernel, 
@@ -2385,14 +2406,15 @@ public:
                 -1
                           };
         }
-
-        // Build edges
         for (auto edge : edges) {
+
+            if(edge.first == 0 || edge.second == graph_size - 1) {
+                continue;
+            }
             node_map[edge.second].prev_nodes.insert(edge.first);
             node_map[edge.first].next_nodes.insert(edge.second);
         }
-        update_stages();
-        original_map = node_map;
+        update_stages(node_map);
     }
 
     
@@ -2431,7 +2453,7 @@ public:
                 it++;
             }
         }
-        update_stages();
+        update_stages(node_map);
         return result;
     }
     bool breadth_wise_merge() {
@@ -2549,6 +2571,8 @@ public:
                 schedule.insert(schedule.end(), merged_from_nodes_vector.begin(), merged_from_nodes_vector.end());
                 pair_of_start_end_node_in_order.push_back({node, merged_from_nodes_vector.back()});
         }
+        schedule.push_back(graph_size - 1);
+        schedule.insert(schedule.begin(), 0);
         // print the schedule
         printf("schedule: ");
         for (auto node : schedule) {
