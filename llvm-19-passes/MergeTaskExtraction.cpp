@@ -101,11 +101,7 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
 
 struct MergeTaskExtractionWrapper : public PassInfoMixin<MergeTaskExtractionWrapper> {
     PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
-        auto BBIDInfo = AM.getResult<BBIDAnalysis>(M);
-        for (auto &[bbid, bb] : BBIDInfo.BBIDMap) {
-            errs() << "BBID: " << bbid << " BB: " << bb->getName() << "\n";
-        }
-
+        AM.getResult<BBIDAnalysis>(M);
         FunctionPassManager FPM;
         FPM.addPass(MergeTaskExtraction());
         auto FPMAdaptor = createModuleToFunctionPassAdaptor(std::move(FPM));
