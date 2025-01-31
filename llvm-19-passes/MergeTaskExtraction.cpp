@@ -18,6 +18,7 @@
 #include <vector>
 #include <set>
 #include <llvm/Transforms/Utils/CodeExtractor.h>
+#include "llvm/Support/CommandLine.h"
 using namespace llvm;
 
 
@@ -32,13 +33,10 @@ struct MergeTaskExtraction : public FunctionPass {
 private:
   uint64_t kern_instance_ctr;
 };
-std::vector<std::pair<int,int>> pair_of_start_end_node_in_order;
-// source node end bb -> old target start bb, new target start bb
-std::map<int64_t,std::pair<int64_t,int64_t>> MergingBBMapingTransform;
-std::map<int, std::set<int>> kernelControlMap;
 
-    
-   
+
+std::map<int, std::set<int>> kernelControlMap;
+cl::opt<std::string> TaskMergingInfo("tm", cl::desc("Schedule information file"), cl::value_desc("Schedule information file filename"), cl::Required);
 
 auto MergeTaskExtraction::runOnFunction(Function &F) -> bool
 {
@@ -61,27 +59,11 @@ auto MergeTaskExtraction::runOnFunction(Function &F) -> bool
 bool MergeTaskExtraction::doInitialization(Module &M)
 {  
 
-    pair_of_start_end_node_in_order.clear();
-    MergingBBMapingTransform.clear();
     nlohmann::json j;
-    std::ifstream inputStream("TaskMergingSchedule.json");
+    std::ifstream inputStream(TaskMergingInfo);
     inputStream >> j;
     inputStream.close();
-    
-    pair_of_start_end_node_in_order = j["pair_of_start_end_node_in_order"].get<std::vector<std::pair<int,int>>>();
-    
 
-    for (auto& [key, value] : j["MergingBBMapingTransform"].items()) {
-        if (value.is_array() && value.size() == 2) {
-            int64_t firstValue = value[1][0].get<int64_t>();
-            int64_t secondValue = value[1][1].get<int64_t>();
-            
-            MergingBBMapingTransform[value[0].get<int64_t>()] = std::make_pair(firstValue, secondValue);
-        } else {
-            errs() << "Invalid format for MergingBBMapingTransform entry: " << key << "\n";
-            return false;
-        }
-    }
     
     for (auto& [key, value] : j["kernelControlMap"].items()) {
         int kernelId = value[0].get<int>();

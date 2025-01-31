@@ -3,5 +3,22 @@
 
 # compile command
 
-clang++ -fPIC -shared -o CodeExtractPass.so CodeExtractPass.cpp \
-    `llvm-config --cxxflags --ldflags --system-libs --libs core passes analysis transformutils` -O3
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang-19 \
+        -g \
+        -shared \
+        -fPIC \
+        -std=c++17 \
+        -Wall -fno-rtti \
+        -I /heorot/lchang21/llvm-release/llvm-19/llvm-19/include/ \
+        -I ../vcpkg/installed/x64-linux/include \
+        MergeTaskExtraction.cpp \
+        -o MergeTaskExtraction.so
+
+# test command
+
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/opt -load-pass-plugin /heorot/lchang21/TraceAtlas/llvm-19-passes/MergeTaskExtraction.so -passes=MergeTaskExtraction -tm task_merging_schedule.json pulse_doppler-merging.bc -S -o pulse_doppler-extraction.bc
+
+
+# flags why no needed?
+`llvm-config --ldflags --system-libs --libs core passes analysis transformutils` \
+maybe these are already included in the clang-19 command?
