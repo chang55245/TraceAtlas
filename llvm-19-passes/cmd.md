@@ -16,7 +16,11 @@
 
 # test command
 
-/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/opt -load-pass-plugin /heorot/lchang21/TraceAtlas/llvm-19-passes/MergeTaskExtraction.so -passes=MergeTaskExtraction -tm task_merging_schedule.json pulse_doppler-merging.bc -S -o pulse_doppler-extraction.bc
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/opt \
+    -load-pass-plugin=/heorot/lchang21/TraceAtlas/llvm-19-passes/MergeTaskExtraction.so \
+    -passes="MergeTaskExtraction" \
+    -tm task_merging_schedule.json \
+    pulse_doppler-merging.bc -S -o pulse_doppler-extraction.bc
 
 
 # flags why no needed?

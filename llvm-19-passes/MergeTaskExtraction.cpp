@@ -2,6 +2,9 @@
 #error "This file requires C++17 or later"
 #endif
 
+#include "llvm/IR/PassManager.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/PassPlugin.h"
 #include "llvm/IR/DataLayout.h"
 #include <fstream>
 #include <llvm/IR/Verifier.h>
@@ -10,7 +13,6 @@
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Type.h>
-#include <llvm/Pass.h>
 #include <llvm/Support/raw_ostream.h>
 #include <map>
 #include <nlohmann/json.hpp>
@@ -19,63 +21,64 @@
 #include <set>
 #include <llvm/Transforms/Utils/CodeExtractor.h>
 #include "llvm/Support/CommandLine.h"
+
 using namespace llvm;
 
+// Command line option
+static cl::opt<std::string> TaskMergingInfo("tm", 
+    cl::desc("Schedule information file"), 
+    cl::value_desc("Schedule information file filename"), 
+    cl::Required);
 
+namespace {
+std::map<int, std::set<int>> kernelControlMap;
 
+struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
+    PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM) {
+        // extract the basic blocks of tasks to form functions
+        for (auto& [key, value] : kernelControlMap) {
+            errs() << "Kernel ID: " << key << " Control: ";
+            for (int control : value) {
+                errs() << control << " ";
+            }
+        }
 
-struct MergeTaskExtraction : public FunctionPass {
-  static char ID;
-  MergeTaskExtraction() : FunctionPass(ID) { kern_instance_ctr = 0; }
-  auto runOnFunction(Function &F) -> bool override;
-  auto doInitialization(Module &M) -> bool override;
+        return PreservedAnalyses::all();
+    }
 
-private:
-  uint64_t kern_instance_ctr;
+    static bool isRequired() { return true; }
 };
 
-
-std::map<int, std::set<int>> kernelControlMap;
-cl::opt<std::string> TaskMergingInfo("tm", cl::desc("Schedule information file"), cl::value_desc("Schedule information file filename"), cl::Required);
-
-auto MergeTaskExtraction::runOnFunction(Function &F) -> bool
-{
-  
-    // extract the basic blocks of tasks to form functions
-    for (auto& [key, value] : kernelControlMap) {
-        // extract bb from the basic blocks of tasks
-        // 1. the parent function has to be main
-        // 2. the function has to be named with a dedicated name
-
-        errs() << "Kernel ID: " << key << " Control: ";
-        for (int control : value) {
-            errs() << control << " ";
+// New Pass Plugin Registration
+extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
+llvmGetPassPluginInfo() {
+    return {
+        LLVM_PLUGIN_API_VERSION, "MergeTaskExtraction", LLVM_VERSION_STRING,
+        [](PassBuilder &PB) {
+            PB.registerPipelineParsingCallback(
+                [](StringRef Name, FunctionPassManager &FPM,
+                   ArrayRef<PassBuilder::PipelineElement>) {
+                    if (Name == "MergeTaskExtraction") {
+                        // Read the JSON file here before adding the pass
+                        nlohmann::json j;
+                        std::ifstream inputStream(TaskMergingInfo);
+                        inputStream >> j;
+                        inputStream.close();
+                        
+                        for (auto& [key, value] : j["kernelControlMap"].items()) {
+                            int kernelId = value[0].get<int>();
+                            for (auto& control : value[1]) {
+                                kernelControlMap[kernelId].insert(control.get<int>());
+                            }
+                        }
+                        
+                        FPM.addPass(MergeTaskExtraction());
+                        return true;
+                    }
+                    return false;
+                });
         }
-    }
-
-    return true;
+    };
 }
 
-bool MergeTaskExtraction::doInitialization(Module &M)
-{  
-
-    nlohmann::json j;
-    std::ifstream inputStream(TaskMergingInfo);
-    inputStream >> j;
-    inputStream.close();
-
-    
-    for (auto& [key, value] : j["kernelControlMap"].items()) {
-        int kernelId = value[0].get<int>();
-        for (auto& control : value[1]) {
-            kernelControlMap[kernelId].insert(control.get<int>());
-        }
-    }
-    
-    return false;
-}
-
- // namespace DashTracer::Passes
-
-char MergeTaskExtraction::ID = 1;
-static RegisterPass<MergeTaskExtraction> Y("MergeTaskExtraction", "MergeTaskExtraction pass", true, false);
+} // end anonymous namespace

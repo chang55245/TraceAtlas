@@ -9,7 +9,6 @@ pass:
 		-I ../vcpkg/installed/x64-linux/include \
 		MergeTaskExtraction.cpp \
 		-o MergeTaskExtraction.so
-		
 
 clean:
 	rm -f MergeTaskExtraction.so
