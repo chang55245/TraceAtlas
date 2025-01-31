@@ -1,7 +1,7 @@
 #if __cplusplus < 201703L
 #error "This file requires C++17 or later"
 #endif
-
+#include "MergeTaskExtraction.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
@@ -37,9 +37,7 @@ std::map<int, std::set<int>> kernelControlMap;
 
 // New Module Pass for BB_ID_Dump analysis
 struct BBIDAnalysis : public AnalysisInfoMixin<BBIDAnalysis> {
-    struct Result {
-        std::map<int, BasicBlock*> BBIDMap;
-    };
+    using Result = BBIDAnalysisInfo;
     Result run(Module &M, ModuleAnalysisManager &AM) {
         std::map<int, BasicBlock*> BBIDMap;
         
@@ -72,10 +70,19 @@ AnalysisKey BBIDAnalysis::Key;
 struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
     PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
 
-        Module *M = F.getParent();
-        ModuleAnalysisManager MAM;
-        auto &result = MAM.getResult<BBIDAnalysis>(*M);
-        auto &BBIDMap = result.BBIDMap;
+ 
+        // Get the module analysis results through the proxy
+        auto &MAMProxy = FAM.getResult<ModuleAnalysisManagerFunctionProxy>(F);
+        
+        // Get the analysis result directly through the proxy
+        BBIDAnalysisInfo  *BBIDInfo = MAMProxy.getCachedResult<BBIDAnalysis>(*F.getParent());
+
+        // Use the analysis results
+        for (auto &[bbid, bb] : BBIDInfo->BBIDMap) {
+            errs() << "BBID: " << bbid << " BB: " << bb->getName() << "\n";
+        }
+        
+
 
         // extract the basic blocks of tasks to form functions
         for (auto& [key, value] : kernelControlMap) {
@@ -91,6 +98,21 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
     static bool isRequired() { return true; }
 };
 
+
+struct MergeTaskExtractionWrapper : public PassInfoMixin<MergeTaskExtractionWrapper> {
+    PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
+        auto BBIDInfo = AM.getResult<BBIDAnalysis>(M);
+        for (auto &[bbid, bb] : BBIDInfo.BBIDMap) {
+            errs() << "BBID: " << bbid << " BB: " << bb->getName() << "\n";
+        }
+
+        FunctionPassManager FPM;
+        FPM.addPass(MergeTaskExtraction());
+        auto FPMAdaptor = createModuleToFunctionPassAdaptor(std::move(FPM));
+        return FPMAdaptor.run(M, AM);
+    }
+};
+
 // Modified Pass Plugin Registration
 extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
 llvmGetPassPluginInfo() {
@@ -98,7 +120,7 @@ llvmGetPassPluginInfo() {
         LLVM_PLUGIN_API_VERSION, "MergeTaskExtraction", LLVM_VERSION_STRING,
         [](PassBuilder &PB) {
             PB.registerPipelineParsingCallback(
-                [](StringRef Name, FunctionPassManager &FPM,
+                [](StringRef Name, ModulePassManager &MPM,
                    ArrayRef<PassBuilder::PipelineElement>) {
                     if (Name == "MergeTaskExtraction") {
                         // Read the JSON file
@@ -112,8 +134,9 @@ llvmGetPassPluginInfo() {
                             for (auto& control : value[1]) {
                                 kernelControlMap[kernelId].insert(control.get<int>());
                             }
-                        }                        
-                        FPM.addPass(MergeTaskExtraction());
+                        }
+                        MPM.addPass(MergeTaskExtractionWrapper());
+                                                
                         return true;
                     }
                     return false;
