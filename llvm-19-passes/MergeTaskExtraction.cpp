@@ -7,6 +7,7 @@
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/IR/DataLayout.h"
 #include <fstream>
+#include "llvm/IR/Module.h" 
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
@@ -33,8 +34,49 @@ static cl::opt<std::string> TaskMergingInfo("tm",
 namespace {
 std::map<int, std::set<int>> kernelControlMap;
 
+
+// New Module Pass for BB_ID_Dump analysis
+struct BBIDAnalysis : public AnalysisInfoMixin<BBIDAnalysis> {
+    struct Result {
+        std::map<int, BasicBlock*> BBIDMap;
+    };
+    Result run(Module &M, ModuleAnalysisManager &AM) {
+        std::map<int, BasicBlock*> BBIDMap;
+        
+        for (auto &F : M) {
+            for (auto &BB : F) {
+                for (auto &inst : BB) {
+                    if (auto *CI = dyn_cast<CallInst>(&inst)) {
+                        Function *calledFunc = CI->getCalledFunction();
+                        if (calledFunc && calledFunc->getName() == "BB_ID_Dump") {
+                            auto *cons = dyn_cast<ConstantInt>(CI->getArgOperand(0));
+                            if (cons) {
+                                auto number = cons->getSExtValue();
+                                BBIDMap[int(number)] = &BB;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return Result{BBIDMap};
+    }
+
+    static AnalysisKey Key;
+};
+
+AnalysisKey BBIDAnalysis::Key;
+
+// Original Function Pass (simplified)
 struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
-    PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM) {
+    PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
+
+        Module *M = F.getParent();
+        ModuleAnalysisManager MAM;
+        auto &result = MAM.getResult<BBIDAnalysis>(*M);
+        auto &BBIDMap = result.BBIDMap;
+
         // extract the basic blocks of tasks to form functions
         for (auto& [key, value] : kernelControlMap) {
             errs() << "Kernel ID: " << key << " Control: ";
@@ -49,7 +91,7 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
     static bool isRequired() { return true; }
 };
 
-// New Pass Plugin Registration
+// Modified Pass Plugin Registration
 extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
 llvmGetPassPluginInfo() {
     return {
@@ -59,7 +101,7 @@ llvmGetPassPluginInfo() {
                 [](StringRef Name, FunctionPassManager &FPM,
                    ArrayRef<PassBuilder::PipelineElement>) {
                     if (Name == "MergeTaskExtraction") {
-                        // Read the JSON file here before adding the pass
+                        // Read the JSON file
                         nlohmann::json j;
                         std::ifstream inputStream(TaskMergingInfo);
                         inputStream >> j;
@@ -70,15 +112,20 @@ llvmGetPassPluginInfo() {
                             for (auto& control : value[1]) {
                                 kernelControlMap[kernelId].insert(control.get<int>());
                             }
-                        }
-                        
+                        }                        
                         FPM.addPass(MergeTaskExtraction());
                         return true;
                     }
                     return false;
                 });
+            PB.registerAnalysisRegistrationCallback([](ModuleAnalysisManager &MAM) {
+                    MAM.registerPass([] { return BBIDAnalysis(); });
+                });
         }
     };
 }
+
+
+
 
 } // end anonymous namespace
