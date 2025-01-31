@@ -34,6 +34,7 @@ KernelSerial.cpp contains a schedule algorithm to schedule the merged nodes.
 ## Task Merging Reorder
 The TaskMergingReorder pass is used to reorder the merged nodes according to the schedule of each child node. 
 1. generate the branch map for the merged dag according to the schedule of each child node. 
+2. add task segmentation flags for code generation. 
 
 ## program correctness
 1. need to prevent the start node and end node from being merged and reordered. they need to be the first and last node in the schedule and excuted in serial. 

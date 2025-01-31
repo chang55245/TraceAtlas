@@ -2644,7 +2644,7 @@ void generateScheduleJson(const vector<int> &schedule, const vector<pair<int,int
         lastNode = i;
     }
 
-
+    scheduleJson["kernelControlMap"] = kernelControlMap;
     scheduleJson["MergingBBMapingTransform"] = MergingBBMapingTransform;
 
     std::ofstream file(filename);

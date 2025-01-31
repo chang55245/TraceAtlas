@@ -18,7 +18,8 @@
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
-
+#include <set>
+#include <llvm/Transforms/Utils/CodeExtractor.h>
 using namespace llvm;
 using namespace std;
 
@@ -28,7 +29,7 @@ namespace DashTracer::Passes
     vector<pair<int,int>> pair_of_start_end_node_in_order;
     // source node end bb -> old target start bb, new target start bb
     static map<int64_t,pair<int64_t,int64_t>> MergingBBMapingTransform;
-    
+    map<int, set<int>> kernelControlMap;
    
 
     bool TaskMergingReorder::runOnFunction(Function &F)
@@ -67,6 +68,21 @@ namespace DashTracer::Passes
                 }
             }
         }
+
+
+
+        // extract the basic blocks of tasks to form functions
+        for (auto& [key, value] : kernelControlMap) {
+            // extract bb from the basic blocks of tasks
+            // 1. the parent function has to be main
+            // 2. the function has to be named with a dedicated name
+
+            errs() << "Kernel ID: " << key << " Control: ";
+            for (int control : value) {
+                errs() << control << " ";
+            }
+        }
+
         return true;
     }
 
@@ -92,6 +108,13 @@ namespace DashTracer::Passes
             } else {
                 errs() << "Invalid format for MergingBBMapingTransform entry: " << key << "\n";
                 return false;
+            }
+        }
+        
+        for (auto& [key, value] : j["kernelControlMap"].items()) {
+            int kernelId = value[0].get<int>();
+            for (auto& control : value[1]) {
+                kernelControlMap[kernelId].insert(control.get<int>());
             }
         }
         
