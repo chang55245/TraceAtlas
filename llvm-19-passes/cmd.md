@@ -26,3 +26,25 @@
 # flags why no needed?
 `llvm-config --ldflags --system-libs --libs core passes analysis transformutils` \
 maybe these are already included in the clang-19 command?
+
+
+# function extraction llvm-extract
+
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/llvm-extract \
+    pulse_doppler-extraction.bc \
+    -func=main \
+    -o main-extracted.bc
+
+# function extraction llvm-dis
+
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/llvm-dis \
+    main-extracted.bc \
+    -o main-extracted.ll
+
+# convert the extracted function to mlir
+
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/mlir-translate \
+    -import-llvm main-extracted.ll \
+    -mlir-print-debuginfo \
+    -o main-extracted.mlir
+

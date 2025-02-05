@@ -10,8 +10,5 @@ pass:
 		MergeTaskExtraction.cpp \
 		-o MergeTaskExtraction.so
 
-pipeline:
-	/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang++ -std=c++17 -g `/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/llvm-config --cxxflags --ldflags --system-libs --libs core irreader passes` -o ExtrationPassPipeline ExtrationPassPipeline.cpp
-
 clean:
 	rm -f MergeTaskExtraction.so
