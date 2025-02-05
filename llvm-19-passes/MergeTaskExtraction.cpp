@@ -110,7 +110,7 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
         for (auto& [key, value] : taskMergingNodeMap) {
             std::vector<BasicBlock*> taskBBs;
 
-            // get rid of the var arg stuff
+           
             for (int bb : value) {
                 BasicBlock *BBPtr = BBIDMap[bb];
                 if (BBPtr->getParent()->getName() == "main") {
@@ -121,6 +121,7 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
 
             CodeExtractor CE(taskBBs);
 
+             // isBlockValidForExtraction is the function that checks if the task is extractable
             if (!CE.isEligible()) {
                 errs() << "Task BB id: " << key << " not Extractable: " << CE.isEligible() << "\n";
                 continue;
