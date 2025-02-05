@@ -1,3 +1,4 @@
+#include "llvm/ADT/SetVector.h"
 #if __cplusplus < 201703L
 #error "This file requires C++17 or later"
 #endif
@@ -28,14 +29,17 @@
 using namespace llvm;
 
 // Command line option
-static cl::opt<std::string> TaskMergingInfo("tm", 
+static cl::opt<std::string> TaskMergingSchedule("tm", 
     cl::desc("Schedule information file"), 
     cl::value_desc("Schedule information file filename"), 
     cl::Required);
 
-namespace {
-std::map<int, std::set<int>> kernelControlMap;
 
+namespace {
+
+
+// merged task id --> basic block ids
+std::map<int, std::set<int>> taskMergingNodeMap;
 
 // New Module Pass for BB_ID_Dump analysis
 struct BBIDAnalysis : public AnalysisInfoMixin<BBIDAnalysis> {
@@ -75,7 +79,7 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
         if (F.getName() != "main") {
             return PreservedAnalyses::all();
         }
- 
+
         // Get the module analysis results through the proxy
         auto &MAMProxy = FAM.getResult<ModuleAnalysisManagerFunctionProxy>(F);
         
@@ -103,29 +107,35 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
             
         }
 
-        for (auto& [key, value] : kernelControlMap) {
+        for (auto& [key, value] : taskMergingNodeMap) {
             std::vector<BasicBlock*> taskBBs;
-        
-            for (int BB : value) {
-                BasicBlock *BBPtr = BBIDMap[BB];
+
+            // get rid of the var arg stuff
+            for (int bb : value) {
+                BasicBlock *BBPtr = BBIDMap[bb];
                 if (BBPtr->getParent()->getName() == "main") {
                     taskBBs.push_back(BBPtr);
-                    // errs() << "Task BB id: " << BB << "\n" << "BB block: " << *BBPtr << "\n";
+                    // errs() <<   "Task BB id: " << BB << "\n" << "BB block: " << *BBPtr << "\n";
                 }
             }
-        
-            // extract the taskBBs to form a new function
+
             CodeExtractor CE(taskBBs);
+
+            if (!CE.isEligible()) {
+                errs() << "Task BB id: " << key << " not Extractable: " << CE.isEligible() << "\n";
+                continue;
+            }
+
             errs() << "Extracting task BBs: " << taskBBs.size() << " Extractable: " << CE.isEligible() << "\n";
             CodeExtractorAnalysisCache CEAC(F);
             Function *newFunc = CE.extractCodeRegion(CEAC);
             errs() << "Extracted function: " << newFunc << "\n";
-
+        
             // set the name of the new function
-            // newFunc->setName(F.getName() + "_task_" + std::to_string(key));
+            newFunc->setName("_task_" + std::to_string(key));
             // F.getParent()->getFunctionList().push_back(newFunc);
 
-            // todo first and last task should not be extracted
+            // todo dont extract the first and last task
            
         }
 
@@ -158,16 +168,17 @@ llvmGetPassPluginInfo() {
                     if (Name == "MergeTaskExtraction") {
                         // Read the JSON file
                         nlohmann::json j;
-                        std::ifstream inputStream(TaskMergingInfo);
+                        
+                        // read the task merging node file
+                        std::ifstream inputStream(TaskMergingSchedule);
                         inputStream >> j;
                         inputStream.close();
-                        
-                        for (auto& [key, value] : j["kernelControlMap"].items()) {
-                            int kernelId = value[0].get<int>();
-                            for (auto& control : value[1]) {
-                                kernelControlMap[kernelId].insert(control.get<int>());
-                            }
+
+                        for (auto& [key, value] : j["merged_from_nodes"].items()) {
+                            int taskId = value[0].get<int>();
+                            taskMergingNodeMap[taskId] = value[1].get<std::set<int>>();
                         }
+
                         MPM.addPass(MergeTaskExtractionWrapper());
                                                 
                         return true;

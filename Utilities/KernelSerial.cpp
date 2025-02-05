@@ -2611,12 +2611,29 @@ void generateDAGJson(const map<int, graph_node> &node_map, const string &filenam
     file.close();
 }
 
-void generateScheduleJson(const vector<int> &schedule, const vector<pair<int,int>> &pair_of_start_end_node_in_order, const string &filename) {
+void generateScheduleJson(TaskMerging &merger, const string &filename) {
+    vector<int> schedule = merger.schedule;
+    vector<pair<int,int>> pair_of_start_end_node_in_order = merger.pair_of_start_end_node_in_order;
     nlohmann::json scheduleJson;
-    scheduleJson["schedule"] = schedule;
-    scheduleJson["pair_of_start_end_node_in_order"] = pair_of_start_end_node_in_order;
+    // scheduleJson["schedule"] = schedule;
+    // scheduleJson["pair_of_start_end_node_in_order"] = pair_of_start_end_node_in_order;
 
     map<int, pair<int,int>> NodeIO;
+
+    map<int, set<int>> merged_from_nodes;
+
+    map<int, graph_node> node_map = merger.get_merged_graph();
+
+    for (auto &[id, node] : node_map) {
+        for (auto bb : kernelControlMap[id]) {
+            merged_from_nodes[id].insert(bb);
+        }
+        for (auto merged_from : node.merged_from_nodes) {
+            for (auto bb : kernelControlMap[merged_from]) {
+                merged_from_nodes[id].insert(bb);
+            } 
+        }
+    }
 
     for (auto sti : StartBBinNode)
     {
@@ -2629,7 +2646,7 @@ void generateScheduleJson(const vector<int> &schedule, const vector<pair<int,int
             NodeIO[sti.first] = {sti.second,-1};     
         }
     }
-    scheduleJson["NodeIO"] = NodeIO;
+    // scheduleJson["NodeIO"] = NodeIO;
 
 
     map<int, pair<int,int>> MergingBBMapingTransform;
@@ -2644,8 +2661,9 @@ void generateScheduleJson(const vector<int> &schedule, const vector<pair<int,int
         lastNode = i;
     }
 
-    scheduleJson["kernelControlMap"] = kernelControlMap;
+    // scheduleJson["kernelControlMap"] = kernelControlMap;
     scheduleJson["MergingBBMapingTransform"] = MergingBBMapingTransform;
+    scheduleJson["merged_from_nodes"] = merged_from_nodes;
 
     std::ofstream file(filename);
     file << std::setw(4) << scheduleJson << std::endl;
@@ -2677,7 +2695,8 @@ void task_merging(map<int, task_feature> &task_feature_map) {
     // Generate JSON for DAG after merging
     generateDAGJson(merger.get_merged_graph(), "dag_after_merge.json");
     // generate the schedule json file
-    generateScheduleJson(merger.schedule, merger.pair_of_start_end_node_in_order, "task_merging_schedule.json");
+    generateScheduleJson(merger, "task_merging_schedule.json");
+
 }
 
 int main(int argc, char **argv)
