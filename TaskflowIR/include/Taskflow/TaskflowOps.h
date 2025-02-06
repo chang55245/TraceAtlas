@@ -6,6 +6,8 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 
+#include "Taskflow/TaskflowTypes.h"
+
 #define GET_OP_CLASSES
 #include "Taskflow/TaskflowOps.h.inc"
 
