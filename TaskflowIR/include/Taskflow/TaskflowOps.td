@@ -16,72 +16,69 @@ include "mlir/Dialect/LLVMIR/LLVMOpBase.td"
 include "mlir/Dialect/LLVMIR/LLVMInterfaces.td"
 
 
-def executeOp : Taskflow_Op<"execute"> {
-	let summary = "execute operation";
-	//no argument
-	//no result
-
-	// Simply the operation name, nothing else in asm attr-dict `(` `)`  
-	let assemblyFormat = [{
-		attr-dict  	
-  	}];
+// Application level operations
+def ApplicationStartOp : Taskflow_Op<"application_start"> {
+  let summary = "Initialize taskflow application";
+  let description = [{
+    Initializes the taskflow library and creates a new taskflow application context.
+    This operation should be called before any other taskflow operations.
+  }];
+  
+  let assemblyFormat = "attr-dict";
 }
 
-
-//  inspired from async dialect: https://github.com/llvm/llvm-project/blob/main/mlir/test/mlir-opt/async.mlir
-//  https://github.com/llvm/llvm-project/blob/c50f7e9a425bfa4ab8655c79a715c88ed3b1e830/mlir/include/mlir/Dialect/Async/IR/AsyncOps.td#L36
-
-// def taskOp : Taskflow_Op<"task",[SingleBlockImplicitTerminator<"yieldOp">]> {
-// 	let summary = "task operation";
-
-// 	//arguments: a code region
-
-// 	//attributes: task_name:string, dependence: tasknode
-// 	let arguments = (ins OptionalAttr<Builtin_StringAttr>:$taskName);
-// 	// task body a region of blocks
-// 	let regions = (region SizedRegion<1>:$region);
-// 	//results tasknode type var
-// 	let results = (outs TaskNodeType:$outputTask);
-// 	let assemblyFormat = [{
-// 		$region attr-dict   
-//   	}];
-// }
-
-
-// def yieldOp :
-//     Taskflow_Op<"yield", [
-//       HasParent<"taskOp">, Pure, Terminator, ReturnLike]> {
-//   let summary = "terminator for task operation";
-//   let description = [{
-//     The `taskflow.yield` is a special terminator operation for the block inside
-//     `taskflow.task` operation.
-//   }];
-
-//   let assemblyFormat = [{
-// 		attr-dict  	
-//   	}];
-// }
-
-
-def definitionOp : Taskflow_Op<"definition"> {
-	let summary = "definition operation";
-	// arguments: prev task, next task
-	let arguments = (ins AnyMemRef : $taskName, AnyMemRef : $taskFunc);
-	let results = (outs AnyMemRef : $definedTask);
-	// let assemblyFormat = [{
-	// 	`(` $taskName `,` $taskFunc `)` attr-dict  	  
-  	// }];
+def GraphStartOp : Taskflow_Op<"graph_start"> {
+  let summary = "Start a new taskflow graph";
+  let description = [{
+    Creates a new taskflow graph with the given identifier.
+    Multiple graphs can exist within one application.
+  }];
+  
+  let arguments = (ins I32Attr:$graph_id);
+  let assemblyFormat = "`(` $graph_id `)` attr-dict";
 }
 
+def TaskDefOp : Taskflow_Op<"task_def", [SingleBlockImplicitTerminator<"TaskYieldOp">]> {
+  let summary = "Define a taskflow task";
+  let description = [{
+    Defines a new task in the taskflow graph. The task can contain a body region
+    and specify precedence constraints with other tasks.
+  }];
 
-def precedeOp : Taskflow_Op<"precede"> {
-	let summary = "precede operation";
-	// arguments: prev task, next task
-	// let arguments = (ins TaskNodeType:$prevTask, TaskNodeType:$nextTask);
-	let arguments = (ins AnyMemRef:$prevTask, AnyMemRef:$nextTask);
-	//no result
-	// let assemblyFormat = [{
-	// 	`(` $prevTask `,` $nextTask `)` attr-dict  	  
-  	// }];
+  // Task body region
+  let regions = (region SizedRegion<1>:$body);
+  
+  // Optional precedence constraints
+  let arguments = (ins Variadic<TaskNodeType>:$dependencies);
+  
+  // Returns a task handle
+  let results = (outs TaskNodeType:$task_handle);
+  
+  let assemblyFormat = [{
+    `(`$dependencies `)` type($task_handle) $body attr-dict
+  }];
+}
+
+def TaskYieldOp : Taskflow_Op<"yield", [
+    HasParent<"TaskDefOp">, 
+    Pure, 
+    Terminator
+]> {
+  let summary = "Terminator for task definition regions";
+  let description = [{
+    Terminates a task definition region. This is implicitly added if not present.
+  }];
+  
+  let assemblyFormat = "attr-dict";
+}
+
+def GraphEndOp : Taskflow_Op<"graph_end"> {
+  let summary = "End and execute a taskflow graph";
+  let description = [{
+    Finalizes and executes the taskflow graph with the given identifier.
+  }];
+  
+  let arguments = (ins I32Attr:$graph_id);
+  let assemblyFormat = "`(` $graph_id `)` attr-dict";
 }
 #endif //TASKFLOW_OPS

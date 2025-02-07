@@ -7,7 +7,7 @@
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
-
+#include "llvm/ADT/TypeSwitch.h"
 #define GET_TYPEDEF_CLASSES
 #include "Taskflow/TaskflowOpsTypes.h.inc"
 
