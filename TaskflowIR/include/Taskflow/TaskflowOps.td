@@ -38,7 +38,7 @@ def GraphStartOp : Taskflow_Op<"graph_start"> {
   let assemblyFormat = "`(` $graph_id `)` attr-dict";
 }
 
-def TaskDefOp : Taskflow_Op<"task_def", [SingleBlockImplicitTerminator<"TaskYieldOp">]> {
+def TaskDefOp : Taskflow_Op<"task_def"> {
   let summary = "Define a taskflow task";
   let description = [{
     Defines a new task in the taskflow graph. The task can contain a body region
@@ -55,7 +55,7 @@ def TaskDefOp : Taskflow_Op<"task_def", [SingleBlockImplicitTerminator<"TaskYiel
   let results = (outs TaskNodeType:$task_handle);
   
   let assemblyFormat = [{
-    `(`$dependencies `)` type($task_handle) $body attr-dict
+    `(`$dependencies `)` $body attr-dict
   }];
 }
 
