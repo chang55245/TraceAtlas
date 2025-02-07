@@ -10,6 +10,7 @@ target_link_libraries(taskflow-opt
 #   ${dialect_libs}
 #   ${conversion_libs}
   MLIRLLVMDialect
+  MLIRDLTIDialect
   MLIRIR
   MLIRParser
   MLIRPass

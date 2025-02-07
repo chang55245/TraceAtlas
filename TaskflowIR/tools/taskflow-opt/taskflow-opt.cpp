@@ -7,6 +7,7 @@
 #include "Taskflow/TaskflowOps.h"
 #include "Taskflow/Passes/Passes.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/DLTI/DLTI.h"
 
 
 int main(int argc, char **argv) {
@@ -14,6 +15,7 @@ int main(int argc, char **argv) {
 //   mlir::registerAllDialects(registry);
   registry.insert<mlir::LLVM::LLVMDialect>();
   registry.insert<mlir::taskflow::TaskflowDialect>();
+  registry.insert<mlir::DLTIDialect>();
 
   mlir::registerTaskflowPasses();
 
