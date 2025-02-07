@@ -6,6 +6,11 @@ cmake -G "Unix Makefiles" \
     -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     ..
+
+# test
+ ./bin/taskflow-opt ../test/test.mlir
+ ./bin/taskflow-opt ../test/input.mlir --taskflow-insertion
+
 # debugging 
 make VERBOSE=1
 

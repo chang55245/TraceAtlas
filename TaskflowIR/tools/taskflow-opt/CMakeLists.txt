@@ -15,4 +15,5 @@ target_link_libraries(taskflow-opt
   MLIRSupport
   MLIROptLib
   MLIRTaskflow
+  MLIRTaskflowRaising
 ) 
