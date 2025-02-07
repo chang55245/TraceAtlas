@@ -134,7 +134,7 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
             errs() << "Extracted function: " << newFunc << "\n";
         
             // set the name of the new function
-            newFunc->setName("_task_" + std::to_string(key));
+            newFunc->setName("taskflow_task_" + std::to_string(key));
 
             // todo dont extract the first and last task, may not be necessary because of graph reordering
            
