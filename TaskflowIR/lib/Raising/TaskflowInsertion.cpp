@@ -5,16 +5,28 @@
 #include "Taskflow/TaskflowDialect.h"
 #include "Taskflow/TaskflowOps.h"
 #include "mlir/Pass/PassRegistry.h"
+#include "Taskflow/Passes/Passes.h"
+
+
+namespace mlir {
+namespace taskflow {
+#define GEN_PASS_DEF_TASKFLOWINSERTION
+#include "Taskflow/Passes/Passes.h.inc"
+} // namespace taskflow
+} // namespace mlir
 
 using namespace mlir;
+using namespace mlir::taskflow;
 
 namespace {
-struct TaskflowInsertionPass
-    : public PassWrapper<TaskflowInsertionPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TaskflowInsertionPass)
+class TaskflowInsertionPass
+    : public taskflow::impl::TaskflowInsertionBase<TaskflowInsertionPass> {
+    
+public:
+  TaskflowInsertionPass() = default;
 
   void runOnOperation() override {
-    ModuleOp module = getOperation();
+    ModuleOp module = cast<ModuleOp>(getOperation());
     OpBuilder builder(&getContext());
 
     // Insert application_start at the beginning of the module
@@ -69,13 +81,7 @@ struct TaskflowInsertionPass
       }
     });
   }
-  StringRef getArgument() const final {
-    return "convert-to-taskflow";
-  }
 
-  StringRef getDescription() const final {
-    return "Convert LLVM calls to Taskflow operations";
-  }
 };
 } // namespace
 
