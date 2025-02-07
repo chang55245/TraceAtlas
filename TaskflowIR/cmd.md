@@ -9,7 +9,7 @@ cmake -G "Unix Makefiles" \
 
 # test
  ./bin/taskflow-opt ../test/test.mlir
- ./bin/taskflow-opt ../test/input.mlir --taskflow-insertion
+./bin/taskflow-opt -taskflow-insertion ../test/input.mlir
 
 # debugging 
 make VERBOSE=1
