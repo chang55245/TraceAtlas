@@ -1,5 +1,6 @@
 add_mlir_dialect_library(MLIRTaskflowRaising
     TaskflowInsertion.cpp
+    TaskflowPatternInsertion.cpp
 
     DEPENDS
     MLIRTaskflowOpsIncGen
