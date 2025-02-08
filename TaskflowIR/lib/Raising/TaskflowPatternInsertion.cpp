@@ -29,8 +29,6 @@ public:
 
   LogicalResult matchAndRewrite(LLVM::CallOp callOp,
                               PatternRewriter &rewriter) const override {
-    // llvm::errs() << "callOp: " << *callOp << "\n";
-    // llvm::errs() << "callOp parent: " << *callOp->getParentOp() << "\n";
     // Check if this is a taskflow function call
     StringRef calleeName = callOp.getCallee().value();
     if (!calleeName.starts_with("tf_") && !calleeName.starts_with("taskflow_"))
@@ -44,6 +42,7 @@ public:
         callOp.getLoc(),
         rewriter.getI32IntegerAttr(graphId));
 
+    
     // Create task definition
     auto taskDefOp = rewriter.create<taskflow::TaskDefOp>(
         callOp.getLoc(),
