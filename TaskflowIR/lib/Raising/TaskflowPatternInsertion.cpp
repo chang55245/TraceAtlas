@@ -29,15 +29,14 @@ public:
 
   LogicalResult matchAndRewrite(LLVM::CallOp callOp,
                               PatternRewriter &rewriter) const override {
+    // llvm::errs() << "callOp: " << *callOp << "\n";
+    // llvm::errs() << "callOp parent: " << *callOp->getParentOp() << "\n";
     // Check if this is a taskflow function call
     StringRef calleeName = callOp.getCallee().value();
     if (!calleeName.starts_with("tf_") && !calleeName.starts_with("taskflow_"))
       return failure();
    
-    if (callOp->getParentOp()->getParentOfType<taskflow::TaskDefOp>())
-      return failure();
-
-    if (!isa<LLVM::LLVMFuncOp>(callOp->getParentOp()))
+    if (isa<taskflow::TaskDefOp>(callOp->getParentOp()))
       return failure();
 
     // Create graph_start operation
@@ -106,7 +105,7 @@ class TaskflowPatternInsertionPass
     populateTaskflowPatternInsertionPatterns(patterns, graphId);
 
     // Apply the patterns
-    if (failed(applyPatternsAndFoldGreedily(module, std::move(patterns)))) {
+    if (failed(applyPatternsAndFoldGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();
     }
   }
