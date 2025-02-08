@@ -29,9 +29,14 @@ public:
 
   LogicalResult matchAndRewrite(LLVM::CallOp callOp,
                               PatternRewriter &rewriter) const override {
+    // llvm::errs() << "callOp: " << *callOp << "\n";
+    // llvm::errs() << "callOp parent: " << *callOp->getParentOp() << "\n";
     // Check if this is a taskflow function call
     StringRef calleeName = callOp.getCallee().value();
     if (!calleeName.starts_with("tf_") && !calleeName.starts_with("taskflow_"))
+      return failure();
+   
+    if (callOp->getParentOp()->getParentOfType<taskflow::TaskDefOp>())
       return failure();
 
     // Create graph_start operation
@@ -51,7 +56,8 @@ public:
     rewriter.setInsertionPointToStart(taskBody);
 
     // Clone the original call into the task body
-    Operation *newCall = rewriter.clone(*callOp.getOperation());
+    // Operation *newCall = rewriter.clone(*callOp.getOperation());
+    Operation *newCall = callOp.clone();
     rewriter.insert(newCall);
 
     // Add yield operation
