@@ -2570,9 +2570,6 @@ public:
         } 
         // get the schedule of all original nodes
         for (auto node : merged_schedule) {
-            if (node == 0 || node == graph_size - 1) {
-                continue;
-            }
             // get the schedule of the merged node
             vector<int> merged_from_nodes_vector;
             for (auto merged_node : node_map[node].merged_from_nodes) {
@@ -2585,10 +2582,11 @@ public:
             });
             schedule.push_back(node);
             schedule.insert(schedule.end(), merged_from_nodes_vector.begin(), merged_from_nodes_vector.end());
-            pair_of_start_end_node_in_order.push_back({node, merged_from_nodes_vector.back()});
+            if (merged_from_nodes_vector.size() > 0) {
+                pair_of_start_end_node_in_order.push_back({node, merged_from_nodes_vector.back()});
+            }
         }
-        schedule.push_back(graph_size - 1);
-        schedule.insert(schedule.begin(), 0);
+
         // print the schedule
         printf("schedule: ");
         for (auto node : schedule) {
@@ -2681,9 +2679,11 @@ void generateScheduleJson(TaskMerging &merger, const string &filename) {
         lastNode = i;
     }
 
+    scheduleJson["DAGEdge"] = merger.get_merged_edges();
     // scheduleJson["kernelControlMap"] = kernelControlMap;
     scheduleJson["MergingBBMapingTransform"] = MergingBBMapingTransform;
     scheduleJson["merged_from_nodes"] = merged_from_nodes;
+    
 
     std::ofstream file(filename);
     file << std::setw(4) << scheduleJson << std::endl;
@@ -2710,7 +2710,7 @@ void task_merging(map<int, task_feature> &task_feature_map) {
         merged = merger.depth_wise_merge();
         if (!merged) break;
     }
-    DAGEdge = merger.get_merged_edges();
+
     merger.analyze_schedule();
     // Generate JSON for DAG after merging
     generateDAGJson(merger.get_merged_graph(), "dag_after_merge.json");

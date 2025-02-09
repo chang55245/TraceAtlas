@@ -9,6 +9,10 @@ def TaskflowInsertion : Pass<"taskflow-insertion"> {
     "LLVM::LLVMDialect",
     "taskflow::TaskflowDialect"
   ];
+  let options = [
+    Option<"dagFile", "dag-file", "std::string", 
+           "", "Path to DAG configuration file">
+  ];
   let constructor = "mlir::taskflow::createTaskflowInsertionPass()";
 }
 

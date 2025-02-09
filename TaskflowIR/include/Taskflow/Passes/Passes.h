@@ -13,7 +13,7 @@ std::unique_ptr<Pass> createTaskflowInsertionPass();
 std::unique_ptr<Pass> createTaskflowPatternInsertionPass();
 
 } // namespace taskflow
-
+#define GEN_PASS_DECL
 #define GEN_PASS_REGISTRATION
 #include "Taskflow/Passes/Passes.h.inc"
 
