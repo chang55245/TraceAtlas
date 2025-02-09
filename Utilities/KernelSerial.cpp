@@ -2361,6 +2361,23 @@ private:
         prune_edges();
     }
 
+    void process_first_last_node() {
+        // the first node is the start node
+        auto& first_node = node_map[0];
+        // the last node is the end node
+        auto& last_node = node_map[graph_size - 1];
+        for (auto &node : node_map) {
+            if (node.second.stage == 1) {
+                node.second.prev_nodes.insert(first_node.id);
+                first_node.next_nodes.insert(node.first);
+            }
+            if (node.second.next_nodes.size() == 0 && node.first != graph_size - 1) {
+                node.second.next_nodes.insert(last_node.id);
+                last_node.prev_nodes.insert(node.first);
+            }
+        }
+    }
+
 public:
     // the schedule of all original nodes
     vector<int> schedule;
@@ -2392,6 +2409,9 @@ public:
             node_map[edge.first].next_nodes.insert(edge.second);
         }
         update_stages();
+        process_first_last_node();
+        update_stages();
+
         original_map = node_map;
     }
 
