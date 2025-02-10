@@ -7,7 +7,7 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "Taskflow/Passes/Passes.h"
 #include "llvm/Support/JSON.h"
-
+#include <fstream>
 
 namespace mlir {
 namespace taskflow {
@@ -24,7 +24,63 @@ namespace {
 class TaskflowInsertionPass
     : public taskflow::impl::TaskflowInsertionBase<TaskflowInsertionPass> {
         
-    
+private:
+
+void parseDagFile(StringRef dagFile) {
+  llvm::errs() << "DAG file: " << dagFile << "\n";
+    std::ifstream fileStream(dagFile.str());
+    if (!fileStream.is_open()) {
+      getOperation()->emitError() << "Could not open dagFile JSON file: " << dagFile;
+      signalPassFailure();
+      return;
+    }
+    std::stringstream buffer;
+    buffer << fileStream.rdbuf();
+    std::string jsonText = buffer.str();
+
+    auto jsonOrError = llvm::json::parse(jsonText);
+    if (!jsonOrError) {
+      getOperation()->emitError() << "JSON parsing error: " 
+                                << llvm::toString(jsonOrError.takeError());
+      signalPassFailure();
+      return;
+    }
+  llvm::json::Value jsonConfig = std::move(*jsonOrError);
+  auto *DagEdgeJson = jsonConfig.getAsObject()->get("DAGEdge");
+  if (!DagEdgeJson) {
+      getOperation()->emitError() << "DagEdgeJson is null" 
+                                << llvm::toString(jsonOrError.takeError());
+      signalPassFailure();
+      return;
+    }
+  // Now you can use jsonConfig to control your transformation.
+  llvm::json::Array *arrayValue = DagEdgeJson->getAsArray();
+  for (auto arrValue : *arrayValue) {
+    llvm::json::Array *arr = arrValue.getAsArray();
+    if (arr->size() != 2) {
+      getOperation()->emitError() << "Expected an array with exactly two elements";
+      signalPassFailure();
+      return;
+    }
+    if (auto first = (*arr)[0].getAsInteger()) {
+      int first_element = static_cast<int>(*first);
+      llvm::errs() << "First element: " << first_element << "\n";
+    } else {
+      getOperation()->emitError() << "First element is not an integer";
+      signalPassFailure();
+      return;
+    }
+    // Extract the second element as an integer
+    if (auto second = (*arr)[1].getAsInteger()) {
+      int second_element = static_cast<int>(*second);
+      llvm::errs() << "Second element: " << second_element << "\n";
+    } else {
+        getOperation()->emitError() << "Second element is not an integer";
+        signalPassFailure();
+        return;
+      }
+    }
+  }
 public:
   TaskflowInsertionPass() = default;  
   void runOnOperation() override {
@@ -32,7 +88,8 @@ public:
     OpBuilder builder(&getContext());
     // Read the DAG file
     StringRef dagFile = this->dagFile; 
-    llvm::errs() << "DAG file: " << dagFile << "\n";
+    parseDagFile(dagFile);
+    
     // Insert application_start at the beginning of the module
     builder.setInsertionPointToStart(module.getBody());
     builder.create<taskflow::ApplicationStartOp>(module.getLoc());

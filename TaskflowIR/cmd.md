@@ -12,7 +12,7 @@ cmake -G "Unix Makefiles" \
 ./bin/taskflow-opt -taskflow-insertion ../test/input.mlir
 
 
-./bin/taskflow-opt --pass-pipeline="builtin.module(taskflow-insertion{dag-file=\"../test/test.dag\"})" ../test/input.mlir
+./bin/taskflow-opt --pass-pipeline="builtin.module(taskflow-insertion{dag-file=\"../test/input/task_merging_schedule.json\"})" ../test/input/pulse_doppler_main-extracted.mlir
 
 # debugging 
 make VERBOSE=1
