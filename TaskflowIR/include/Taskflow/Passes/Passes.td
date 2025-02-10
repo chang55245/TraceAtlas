@@ -11,7 +11,7 @@ def TaskflowInsertion : Pass<"taskflow-insertion"> {
   ];
   let options = [
     Option<"dagFile", "dag-file", "std::string", 
-           "", "Path to DAG configuration file">
+           "\"test.dag\"", "Path to DAG configuration file">
   ];
   let constructor = "mlir::taskflow::createTaskflowInsertionPass()";
 }

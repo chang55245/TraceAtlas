@@ -30,13 +30,16 @@ public:
   void runOnOperation() override {
     ModuleOp module = cast<ModuleOp>(getOperation());
     OpBuilder builder(&getContext());
-
+    // Read the DAG file
+    StringRef dagFile = this->dagFile; 
+    llvm::errs() << "DAG file: " << dagFile << "\n";
     // Insert application_start at the beginning of the module
     builder.setInsertionPointToStart(module.getBody());
     builder.create<taskflow::ApplicationStartOp>(module.getLoc());
 
     // Create a unique graph ID
     int graphId = 0;
+
 
     // Walk through all LLVM function calls
     module.walk([&](LLVM::CallOp callOp) {

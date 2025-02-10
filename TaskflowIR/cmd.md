@@ -11,6 +11,9 @@ cmake -G "Unix Makefiles" \
  ./bin/taskflow-opt ../test/test.mlir
 ./bin/taskflow-opt -taskflow-insertion ../test/input.mlir
 
+
+./bin/taskflow-opt --pass-pipeline="builtin.module(taskflow-insertion{dag-file=\"../test/test.dag\"})" ../test/input.mlir
+
 # debugging 
 make VERBOSE=1
 
