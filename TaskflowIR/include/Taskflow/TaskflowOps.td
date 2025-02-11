@@ -59,9 +59,14 @@ def TaskDefOp : Taskflow_Op<"task_def"> {
   // Assembly format
   let assemblyFormat = " `{` `predecessors` `=` `[` $dependencies `]` `,` `node_id` `=` $node_id `}` attr-dict `:` $body";
   // // Declare the custom method
-  // let extraClassDeclaration = [{
-  //   void setDependencies(std::vector<Value> dependencies);
-  // }];
+  let extraClassDeclaration = [{
+    void setDependencies(ArrayRef<Value> newDependencies);
+  }];
+  let extraClassDefinition = [{
+    void TaskDefOp::setDependencies(ArrayRef<Value> newDependencies) {
+      getOperation()->setOperands(newDependencies);
+    }
+  }];
 }
 
 def TaskYieldOp : Taskflow_Op<"yield", [
