@@ -2633,7 +2633,7 @@ void generateScheduleJson(TaskMerging &merger, const string &filename) {
     vector<int> schedule = merger.schedule;
     vector<pair<int,int>> pair_of_start_end_node_in_order = merger.pair_of_start_end_node_in_order;
     nlohmann::json scheduleJson;
-    // scheduleJson["schedule"] = schedule;
+    scheduleJson["schedule"] = schedule;
     // scheduleJson["pair_of_start_end_node_in_order"] = pair_of_start_end_node_in_order;
 
     map<int, pair<int,int>> NodeIO;

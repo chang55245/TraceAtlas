@@ -11,6 +11,7 @@ namespace mlir {
 namespace taskflow {
 std::unique_ptr<Pass> createTaskflowInsertionPass();
 std::unique_ptr<Pass> createTaskflowPatternInsertionPass();
+std::unique_ptr<Pass> createResolveTaskDependenciesPass();
 
 } // namespace taskflow
 #define GEN_PASS_DECL

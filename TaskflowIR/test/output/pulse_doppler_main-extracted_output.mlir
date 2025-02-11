@@ -282,11 +282,10 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<i1, dense<8> : ve
     llvm.intr.lifetime.start -1, %16 : !llvm.ptr
     llvm.intr.lifetime.start -1, %17 : !llvm.ptr
     taskflow.graph_start(0)
-    %241 = taskflow.task_def() {
+    %241 = taskflow.task_def{predecessors = [], node_id = 1} : {
       llvm.call @taskflow_task_1(%156, %155, %154, %153, %200, %152, %11, %12, %13, %14, %15, %16, %17, %151, %199, %150, %198, %149, %148, %159, %147, %197, %146, %20, %196, %145, %140, %139, %138, %137, %136, %42, %41, %40, %39, %165, %33, %32, %164, %31, %163, %30, %29, %28, %162, %27, %161, %26, %25, %24, %23, %22, %21) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
       taskflow.yield
     }
-    taskflow.graph_end(0)
     llvm.br ^bb8
   ^bb8:  // pred: ^bb7
     llvm.intr.lifetime.start -1, %11 : !llvm.ptr
@@ -296,12 +295,10 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<i1, dense<8> : ve
     llvm.intr.lifetime.start -1, %15 : !llvm.ptr
     llvm.intr.lifetime.start -1, %16 : !llvm.ptr
     llvm.intr.lifetime.start -1, %17 : !llvm.ptr
-    taskflow.graph_start(1)
-    %242 = taskflow.task_def() {
+    %242 = taskflow.task_def{predecessors = [], node_id = 4} : {
       llvm.call @taskflow_task_4(%144, %143, %142, %141, %195, %135, %11, %12, %13, %14, %15, %16, %17, %134, %194, %133, %193, %132, %131, %159, %130, %192, %129, %20, %191, %128, %123, %122, %121, %120, %119, %54, %53, %52, %51, %170, %50, %49, %169, %48, %168, %47, %46, %45, %167, %44, %166, %43, %38, %37, %36, %35, %34) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
       taskflow.yield
     }
-    taskflow.graph_end(1)
     llvm.br ^bb9
   ^bb9:  // pred: ^bb8
     llvm.intr.lifetime.start -1, %11 : !llvm.ptr
@@ -311,12 +308,10 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<i1, dense<8> : ve
     llvm.intr.lifetime.start -1, %15 : !llvm.ptr
     llvm.intr.lifetime.start -1, %16 : !llvm.ptr
     llvm.intr.lifetime.start -1, %17 : !llvm.ptr
-    taskflow.graph_start(2)
-    %243 = taskflow.task_def() {
+    %243 = taskflow.task_def{predecessors = [], node_id = 7} : {
       llvm.call @taskflow_task_7(%127, %126, %125, %124, %190, %118, %11, %12, %13, %14, %15, %16, %17, %117, %189, %116, %188, %115, %114, %159, %113, %187, %112, %20, %186, %111, %106, %105, %104, %103, %102, %76, %75, %74, %73, %175, %67, %66, %65, %174, %64, %173, %63, %62, %61, %60, %59, %172, %58, %57, %171, %56, %55) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
       taskflow.yield
     }
-    taskflow.graph_end(2)
     llvm.br ^bb10
   ^bb10:  // pred: ^bb9
     llvm.intr.lifetime.start -1, %11 : !llvm.ptr
@@ -326,20 +321,17 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<i1, dense<8> : ve
     llvm.intr.lifetime.start -1, %15 : !llvm.ptr
     llvm.intr.lifetime.start -1, %16 : !llvm.ptr
     llvm.intr.lifetime.start -1, %17 : !llvm.ptr
-    taskflow.graph_start(3)
-    %244 = taskflow.task_def() {
+    %244 = taskflow.task_def{predecessors = [], node_id = 10} : {
       llvm.call @taskflow_task_10(%110, %109, %108, %107, %185, %101, %11, %12, %13, %14, %15, %16, %17, %100, %184, %99, %183, %98, %97, %159, %96, %182, %95, %20, %181, %94, %93, %92, %91, %90, %180, %89, %88, %87, %86, %85, %84, %83, %179, %82, %178, %81, %80, %79, %177, %78, %176, %77, %72, %71, %70, %69, %68) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
       taskflow.yield
     }
-    taskflow.graph_end(3)
     llvm.br ^bb11
   ^bb11:  // pred: ^bb10
-    taskflow.graph_start(4)
-    %245 = taskflow.task_def() {
+    %245 = taskflow.task_def{predecessors = [], node_id = 25} : {
       llvm.call @taskflow_task_25(%19, %18) : (!llvm.ptr, !llvm.ptr) -> ()
       taskflow.yield
     }
-    taskflow.graph_end(4)
+    taskflow.graph_end(0)
     llvm.br ^bb12
   ^bb12:  // pred: ^bb11
     llvm.return %1 : i32

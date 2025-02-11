@@ -16,6 +16,15 @@ def TaskflowInsertion : Pass<"taskflow-insertion"> {
   let constructor = "mlir::taskflow::createTaskflowInsertionPass()";
 }
 
+def ResolveTaskDependencies : Pass<"resolve-task-dependencies"> {
+  let summary = "Resolve task dependencies";
+  let dependentDialects = [
+    "LLVM::LLVMDialect",
+    "taskflow::TaskflowDialect"
+  ];
+  let constructor = "mlir::taskflow::createResolveTaskDependenciesPass()";
+}
+
 def TaskflowPatternInsertion : Pass<"taskflow-pattern-insertion"> {
   let summary = "Convert LLVM calls to Taskflow operations using pattern matching";
   let description = [{

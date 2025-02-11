@@ -5,6 +5,7 @@
 #include "Taskflow/TaskflowDialect.h"
 #include "Taskflow/TaskflowOps.h"
 #include "mlir/Pass/PassRegistry.h"
+#include "mlir/Pass/PassManager.h"
 #include "Taskflow/Passes/Passes.h"
 #include "llvm/Support/JSON.h"
 #include <fstream>
@@ -12,6 +13,7 @@
 namespace mlir {
 namespace taskflow {
 #define GEN_PASS_DEF_TASKFLOWINSERTION
+#define GEN_PASS_DEF_RESOLVETASKDEPENDENCIES
 #include "Taskflow/Passes/Passes.h.inc"
 } // namespace taskflow
 } // namespace mlir
@@ -26,6 +28,7 @@ class TaskflowInsertionPass
         
 private:
     std::map<int, std::set<int>> dagEdges;
+    std::vector<int> schedule;
 void parseDagFile(StringRef dagFile) {
   llvm::errs() << "DAG file: " << dagFile << "\n";
     std::ifstream fileStream(dagFile.str());
@@ -65,6 +68,18 @@ void parseDagFile(StringRef dagFile) {
     dagEdges[static_cast<int>(*(*arr)[0].getAsInteger())].insert(static_cast<int>(*(*arr)[1].getAsInteger()));
 
   }
+
+  auto *ScheduleJson = jsonConfig.getAsObject()->get("schedule");
+  if (!ScheduleJson) {
+      getOperation()->emitError() << "ScheduleJson is null" 
+                                << llvm::toString(jsonOrError.takeError());
+      signalPassFailure();
+      return;
+    }
+    llvm::json::Array *scheduleArrayValue = ScheduleJson->getAsArray();
+    for (auto arrValue : *scheduleArrayValue) {
+      schedule.push_back(static_cast<int>(*arrValue.getAsInteger()));
+    }
 }
 public:
   TaskflowInsertionPass() = default;  
@@ -97,9 +112,11 @@ public:
         builder.setInsertionPoint(callOp);
         
         // Create graph_start before the first taskflow operation in sequence
-        auto graphStartOp = builder.create<taskflow::GraphStartOp>(
-            callOp.getLoc(), 
-            builder.getI32IntegerAttr(graphId));
+        if (schedule.size() > 0 && schedule[1] == taskid_int) {
+          auto graphStartOp = builder.create<taskflow::GraphStartOp>(
+              callOp.getLoc(), 
+              builder.getI32IntegerAttr(graphId));
+        }
 
         // Create task definition
         std::vector<Value> dependencies;
@@ -110,7 +127,8 @@ public:
         auto taskDefOp = builder.create<taskflow::TaskDefOp>(
             callOp.getLoc(),            
             /*task_handle=*/builder.getType<taskflow::TaskNodeType>(),
-            /*dependencies=*/ValueRange{dependencies});
+            /*dependencies=*/ValueRange{},
+            /*node_id=*/builder.getI32IntegerAttr(taskid_int));
         
 
         // Move the original call into the task body
@@ -126,26 +144,46 @@ public:
         builder.create<taskflow::TaskYieldOp>(callOp.getLoc());
 
         // Create graph_end after the task
-        builder.setInsertionPointAfter(taskDefOp);
-        builder.create<taskflow::GraphEndOp>(
-            callOp.getLoc(),
-            builder.getI32IntegerAttr(graphId));
+        int schedule_size = schedule.size();
+        if (schedule_size > 0 && schedule[schedule_size - 1] == taskid_int) {
+          builder.setInsertionPointAfter(taskDefOp);
+          builder.create<taskflow::GraphEndOp>(
+              callOp.getLoc(),
+              builder.getI32IntegerAttr(graphId));
+          graphId++;
+        }
 
         // Remove the original call
-        callOp.erase();
-        
-        graphId++;
+        callOp.erase();      
       }
+      
     });
+
+    // Create a pass manager and run the resolve task dependencies pass
+    PassManager pm(&getContext());
+    pm.addPass(createResolveTaskDependenciesPass());
+    if (failed(runPipeline(pm, module))) {
+      signalPassFailure();
+    }    
   }
 
 };
-} // namespace
 
+class ResolveTaskDependenciesPass
+    : public taskflow::impl::ResolveTaskDependenciesBase<ResolveTaskDependenciesPass> {
+public:  
+  ResolveTaskDependenciesPass() = default;  
+  void runOnOperation() override {}
+};
+}// namespace
 namespace mlir {
 namespace taskflow {
 std::unique_ptr<Pass> createTaskflowInsertionPass() {
   return std::make_unique<TaskflowInsertionPass>();
+}
+
+std::unique_ptr<Pass> createResolveTaskDependenciesPass() {
+  return std::make_unique<ResolveTaskDependenciesPass>();
 }
 
 } // namespace taskflow
