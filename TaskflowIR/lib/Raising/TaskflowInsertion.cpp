@@ -10,6 +10,7 @@
 #include "llvm/Support/JSON.h"
 #include <fstream>
 
+
 namespace mlir {
 namespace taskflow {
 #define GEN_PASS_DEF_TASKFLOWINSERTION
@@ -27,7 +28,6 @@ class TaskflowInsertionPass
     : public taskflow::impl::TaskflowInsertionBase<TaskflowInsertionPass> {
         
 private:
-    std::map<int, std::set<int>> dagEdges;
     std::vector<int> schedule;
 void parseDagFile(StringRef dagFile) {
   llvm::errs() << "DAG file: " << dagFile << "\n";
@@ -49,26 +49,6 @@ void parseDagFile(StringRef dagFile) {
       return;
     }
   llvm::json::Value jsonConfig = std::move(*jsonOrError);
-  auto *DagEdgeJson = jsonConfig.getAsObject()->get("DAGEdge");
-  if (!DagEdgeJson) {
-      getOperation()->emitError() << "DagEdgeJson is null" 
-                                << llvm::toString(jsonOrError.takeError());
-      signalPassFailure();
-      return;
-    }
-  // Now you can use jsonConfig to control your transformation.
-  llvm::json::Array *arrayValue = DagEdgeJson->getAsArray();
-  for (auto arrValue : *arrayValue) {
-    llvm::json::Array *arr = arrValue.getAsArray();
-    if (arr->size() != 2) {
-      getOperation()->emitError() << "Expected an array with exactly two elements";
-      signalPassFailure();
-      return;
-    }
-    dagEdges[static_cast<int>(*(*arr)[0].getAsInteger())].insert(static_cast<int>(*(*arr)[1].getAsInteger()));
-
-  }
-
   auto *ScheduleJson = jsonConfig.getAsObject()->get("schedule");
   if (!ScheduleJson) {
       getOperation()->emitError() << "ScheduleJson is null" 
@@ -119,11 +99,7 @@ public:
         }
 
         // Create task definition
-        std::vector<Value> dependencies;
-        for (auto dep : dagEdges[taskid_int]) {
-          // todo, dependecies are not created yet, dedencies are task type,
-          // but we only have number
-        }
+        
         auto taskDefOp = builder.create<taskflow::TaskDefOp>(
             callOp.getLoc(),            
             /*task_handle=*/builder.getType<taskflow::TaskNodeType>(),
@@ -161,7 +137,7 @@ public:
 
     // Create a pass manager and run the resolve task dependencies pass
     PassManager pm(&getContext());
-    pm.addPass(createResolveTaskDependenciesPass());
+    pm.addPass(createResolveTaskDependenciesPass(dagFile));
     if (failed(runPipeline(pm, module))) {
       signalPassFailure();
     }    
@@ -171,9 +147,67 @@ public:
 
 class ResolveTaskDependenciesPass
     : public taskflow::impl::ResolveTaskDependenciesBase<ResolveTaskDependenciesPass> {
+private:
+  std::map<int, std::set<int>> dagDependencies;
+  void parseDagFile(StringRef dagFile) {
+  llvm::errs() << "dependece pass DAG file: " << dagFile << "\n";
+    std::ifstream fileStream(dagFile.str());
+    if (!fileStream.is_open()) {
+      getOperation()->emitError() << "Could not open dagFile JSON file: " << dagFile;
+      signalPassFailure();
+      return;
+    }
+    std::stringstream buffer;
+    buffer << fileStream.rdbuf();
+    std::string jsonText = buffer.str();
+
+    auto jsonOrError = llvm::json::parse(jsonText);
+    if (!jsonOrError) {
+      getOperation()->emitError() << "JSON parsing error: " 
+                                << llvm::toString(jsonOrError.takeError());
+      signalPassFailure();
+      return;
+    }
+  llvm::json::Value jsonConfig = std::move(*jsonOrError);
+  auto *DagEdgeJson = jsonConfig.getAsObject()->get("DAGEdge");
+  if (!DagEdgeJson) {
+      getOperation()->emitError() << "DagEdgeJson is null" 
+                                << llvm::toString(jsonOrError.takeError());
+      signalPassFailure();
+      return;
+    }
+  // Now you can use jsonConfig to control your transformation.
+  llvm::json::Array *arrayValue = DagEdgeJson->getAsArray();
+  for (auto arrValue : *arrayValue) {
+    llvm::json::Array *arr = arrValue.getAsArray();
+    if (arr->size() != 2) {
+      getOperation()->emitError() << "Expected an array with exactly two elements";
+      signalPassFailure();
+      return;
+    }
+    dagDependencies[static_cast<int>(*(*arr)[1].getAsInteger())].insert(static_cast<int>(*(*arr)[0].getAsInteger()));
+
+  }
+}
 public:  
-  ResolveTaskDependenciesPass() = default;  
-  void runOnOperation() override {}
+  ResolveTaskDependenciesPass(StringRef dagFile) : taskflow::impl::ResolveTaskDependenciesBase<ResolveTaskDependenciesPass>() {
+    this->dagFile = dagFile.str();
+  }
+  void runOnOperation() override {
+    ModuleOp module = cast<ModuleOp>(getOperation());
+    OpBuilder builder(&getContext());
+    // Read the DAG file
+    StringRef tdagFile = this->dagFile; 
+    parseDagFile(tdagFile);
+    // std::vector<Value> dependencies;
+    // module.walk([&](taskflow::TaskDefOp taskDefOp) {
+    //   int taskid = taskDefOp.getNodeId();
+    //   for (auto dep : dagDependencies[taskid]) {
+    //     dependencies.push_back(taskDefOp.getDependencies()[dep]);
+    //   }
+    //   // taskDefOp.setDependencies(dependencies);
+    // });
+  }
 };
 }// namespace
 namespace mlir {
@@ -182,8 +216,8 @@ std::unique_ptr<Pass> createTaskflowInsertionPass() {
   return std::make_unique<TaskflowInsertionPass>();
 }
 
-std::unique_ptr<Pass> createResolveTaskDependenciesPass() {
-  return std::make_unique<ResolveTaskDependenciesPass>();
+std::unique_ptr<Pass> createResolveTaskDependenciesPass(StringRef dagFile) {
+  return std::make_unique<ResolveTaskDependenciesPass>(dagFile);
 }
 
 } // namespace taskflow

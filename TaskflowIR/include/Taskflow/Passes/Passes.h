@@ -9,14 +9,17 @@
 namespace mlir {
 
 namespace taskflow {
+#define GEN_PASS_DECL
+#include "Taskflow/Passes/Passes.h.inc"
 std::unique_ptr<Pass> createTaskflowInsertionPass();
 std::unique_ptr<Pass> createTaskflowPatternInsertionPass();
-std::unique_ptr<Pass> createResolveTaskDependenciesPass();
+std::unique_ptr<Pass> createResolveTaskDependenciesPass(StringRef dagFile= "test.dag");
 
-} // namespace taskflow
-#define GEN_PASS_DECL
+
 #define GEN_PASS_REGISTRATION
 #include "Taskflow/Passes/Passes.h.inc"
+
+} // namespace taskflow
 
 } // namespace mlir
 

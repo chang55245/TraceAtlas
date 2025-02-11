@@ -22,6 +22,10 @@ def ResolveTaskDependencies : Pass<"resolve-task-dependencies"> {
     "LLVM::LLVMDialect",
     "taskflow::TaskflowDialect"
   ];
+  let options = [
+    Option<"dagFile", "dag-file", "std::string", 
+           "\"test.dag\"", "Path to DAG configuration file">
+  ];
   let constructor = "mlir::taskflow::createResolveTaskDependenciesPass()";
 }
 

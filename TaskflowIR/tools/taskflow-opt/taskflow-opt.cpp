@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
   registry.insert<mlir::taskflow::TaskflowDialect>();
   registry.insert<mlir::DLTIDialect>();
 
-  mlir::registerTaskflowPasses();
+  mlir::taskflow::registerTaskflowPasses();
 
   // Register the taskflow insertion pass
   
