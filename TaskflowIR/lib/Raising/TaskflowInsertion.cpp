@@ -25,7 +25,7 @@ class TaskflowInsertionPass
     : public taskflow::impl::TaskflowInsertionBase<TaskflowInsertionPass> {
         
 private:
-
+    std::map<int, std::set<int>> dagEdges;
 void parseDagFile(StringRef dagFile) {
   llvm::errs() << "DAG file: " << dagFile << "\n";
     std::ifstream fileStream(dagFile.str());
@@ -62,25 +62,10 @@ void parseDagFile(StringRef dagFile) {
       signalPassFailure();
       return;
     }
-    if (auto first = (*arr)[0].getAsInteger()) {
-      int first_element = static_cast<int>(*first);
-      llvm::errs() << "First element: " << first_element << "\n";
-    } else {
-      getOperation()->emitError() << "First element is not an integer";
-      signalPassFailure();
-      return;
-    }
-    // Extract the second element as an integer
-    if (auto second = (*arr)[1].getAsInteger()) {
-      int second_element = static_cast<int>(*second);
-      llvm::errs() << "Second element: " << second_element << "\n";
-    } else {
-        getOperation()->emitError() << "Second element is not an integer";
-        signalPassFailure();
-        return;
-      }
-    }
+    dagEdges[static_cast<int>(*(*arr)[0].getAsInteger())].insert(static_cast<int>(*(*arr)[1].getAsInteger()));
+
   }
+}
 public:
   TaskflowInsertionPass() = default;  
   void runOnOperation() override {
@@ -104,7 +89,11 @@ public:
       StringRef calleeName = callOp.getCallee().value();
       
       // If the function name starts with "tf_" or "taskflow_", create taskflow operations
-      if (calleeName.starts_with("tf_") || calleeName.starts_with("taskflow_")) {
+      if (calleeName.starts_with("taskflow_task")) {
+        std::string taskid = calleeName.split('_').second.split('_').second.str();
+        int taskid_int = std::stoi(taskid);
+
+
         builder.setInsertionPoint(callOp);
         
         // Create graph_start before the first taskflow operation in sequence
@@ -113,10 +102,16 @@ public:
             builder.getI32IntegerAttr(graphId));
 
         // Create task definition
+        std::vector<Value> dependencies;
+        for (auto dep : dagEdges[taskid_int]) {
+          // todo, dependecies are not created yet, dedencies are task type,
+          // but we only have number
+        }
         auto taskDefOp = builder.create<taskflow::TaskDefOp>(
             callOp.getLoc(),            
             /*task_handle=*/builder.getType<taskflow::TaskNodeType>(),
-            /*dependencies=*/ValueRange{});
+            /*dependencies=*/ValueRange{dependencies});
+        
 
         // Move the original call into the task body
         Block *taskBody = new Block();
