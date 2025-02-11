@@ -1,7 +1,6 @@
 # task_def: predecessors field
 
-this can be generated from a pass, but not neccesary. because we can handle it in the lowering pass.
+another pass to resolve task dependencies
 
-# 
-
- 
+1. read json in this pass
+2. change the task_def predecessors field
