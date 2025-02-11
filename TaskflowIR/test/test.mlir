@@ -5,16 +5,16 @@ taskflow.application_start
 taskflow.graph_start(0)
 
 // Define tasks
-%t1 = taskflow.task_def() {
+%t1 = taskflow.task_def {predecessors = [], node_id =1} :{
   taskflow.yield
 }
 
-%t2 = taskflow.task_def() {
+%t2 = taskflow.task_def {predecessors = [], node_id=2} :{
   taskflow.yield
 }
 
 // Task with dependencies
-%t3 = taskflow.task_def(%t1, %t2) {
+%t3 = taskflow.task_def {predecessors = [%t1, %t2], node_id=3} :{
   taskflow.yield
 }
 

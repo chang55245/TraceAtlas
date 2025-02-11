@@ -49,14 +49,15 @@ def TaskDefOp : Taskflow_Op<"task_def"> {
   let regions = (region SizedRegion<1>:$body);
   
   // Optional precedence constraints
-  let arguments = (ins Variadic<TaskNodeType>:$dependencies);
+  let arguments = (ins Variadic<TaskNodeType>:$dependencies,
+    I32Attr:$node_id
+  );
   
   // Returns a task handle
   let results = (outs TaskNodeType:$task_handle);
   
-  let assemblyFormat = [{
-    `(`$dependencies `)` $body attr-dict
-  }];
+  // Assembly format
+  let assemblyFormat = " `{` `predecessors` `=` `[` $dependencies `]` `,` `node_id` `=` $node_id `}` attr-dict `:` $body";
 }
 
 def TaskYieldOp : Taskflow_Op<"yield", [
