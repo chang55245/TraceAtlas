@@ -15,3 +15,8 @@
 #include "Taskflow/TaskflowOps.h.inc"
 
 #endif // TASKFLOW_TASKFLOWOPS_H 
+namespace mlir {
+namespace taskflow {
+    void setDependencies(taskflow::TaskDefOp taskDefOp, std::vector<Value> newDependencies);
+}
+}

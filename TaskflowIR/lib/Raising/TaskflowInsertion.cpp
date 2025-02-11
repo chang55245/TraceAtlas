@@ -178,6 +178,7 @@ private:
     }
   // Now you can use jsonConfig to control your transformation.
   llvm::json::Array *arrayValue = DagEdgeJson->getAsArray();
+  llvm::errs() << "arrayValue size: " << arrayValue->size() << "\n";
   for (auto arrValue : *arrayValue) {
     llvm::json::Array *arr = arrValue.getAsArray();
     if (arr->size() != 2) {
@@ -185,6 +186,8 @@ private:
       signalPassFailure();
       return;
     }
+    llvm::errs() << "arr[0]: " << *(*arr)[0].getAsInteger() << "\n";
+    llvm::errs() << "arr[1]: " << *(*arr)[1].getAsInteger() << "\n";
     dagDependencies[static_cast<int>(*(*arr)[1].getAsInteger())].insert(static_cast<int>(*(*arr)[0].getAsInteger()));
 
   }
@@ -199,14 +202,42 @@ public:
     // Read the DAG file
     StringRef tdagFile = this->dagFile; 
     parseDagFile(tdagFile);
-    // std::vector<Value> dependencies;
-    // module.walk([&](taskflow::TaskDefOp taskDefOp) {
-    //   int taskid = taskDefOp.getNodeId();
-    //   for (auto dep : dagDependencies[taskid]) {
-    //     dependencies.push_back(taskDefOp.getDependencies()[dep]);
-    //   }
-    //   // taskDefOp.setDependencies(dependencies);
-    // });
+    std::map<int, Value> taskDefOpMap;
+    llvm::errs() << "dagDependencies size: " << dagDependencies.size() << "\n";
+    module.walk([&](taskflow::TaskDefOp taskDefOp) {
+      int taskid = taskDefOp.getNodeId();
+      auto taskHandle = taskDefOp.getTaskHandle();
+      taskDefOpMap[taskid] = taskHandle;  
+      llvm::errs() << "taskHandle: " << taskHandle << "\n";
+    });
+
+    llvm::errs() << "taskDefOpMap size: " << taskDefOpMap.size() << "\n";
+    
+    module.walk([&](taskflow::TaskDefOp taskDefOp) {
+      std::vector<Value> dependencies;
+      int taskid = taskDefOp.getNodeId();
+      if (dagDependencies.find(taskid) != dagDependencies.end()) {
+        for (auto dep : dagDependencies[taskid]) {
+          dependencies.push_back(taskDefOpMap[dep]);
+        }
+      }
+      llvm::errs() << "dependencies size: " << dependencies.size() << "\n";
+      if (dependencies.size() > 0) {
+        
+        // create a constant value for the taskid
+        // auto taskId = builder.create<LLVM::ConstantOp>(taskDefOp.getLoc(), builder.getI32Type(), builder.getI32IntegerAttr(taskid));
+        // dependencies.push_back(taskId);
+        ArrayRef<Value> dependenciesArrayRef(dependencies);
+        llvm::errs() << "dependenciesArrayRef size: " << dependenciesArrayRef.size() << "\n";
+
+        llvm::errs() << " n of op" << getOperation()->getNumOperands() << "\n";
+        llvm::errs() << "taskDefOp dependencies size: " << taskDefOp.getOperation()->getOperands().size() << "\n";
+
+        taskDefOp.getOperation()->setOperands(dependencies);
+        llvm::errs() << "done" << "\n";
+        llvm::errs() << "taskDefOp dependencies size: " << taskDefOp.getOperation()->getOperands().size() << "\n";
+      }
+    });
   }
 };
 }// namespace
