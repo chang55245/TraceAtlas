@@ -7,6 +7,9 @@
 #include "Taskflow/TaskflowOps.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "Taskflow/Passes/Passes.h"
+#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypes.h"
 
 namespace mlir {
 namespace taskflow {
@@ -42,8 +45,8 @@ public:
 // Convert TaskDefOp to LLVM calls
 class TaskDefOpLowering : public OpConversionPattern<TaskDefOp> {
 public:
-  explicit TaskDefOpLowering(LLVMTypeConverter &typeConverter)
-      : OpConversionPattern<TaskDefOp>(typeConverter) {}
+  explicit TaskDefOpLowering(LLVMTypeConverter &typeConverter, MLIRContext *context)
+      : OpConversionPattern<TaskDefOp>(typeConverter, context) {}
 
   LogicalResult matchAndRewrite(
       TaskDefOp op, OpAdaptor adaptor,
@@ -52,7 +55,7 @@ public:
     auto *context = rewriter.getContext();
     
     // Get LLVM types for task handle
-    auto i8PtrTy = LLVM::LLVMPointerType::get(IntegerType::get(context, 8));
+    auto i8PtrTy = LLVM::LLVMPointerType::get(context, 8);
     
     // Create task object
     auto taskHandle = rewriter.create<LLVM::CallOp>(
@@ -66,9 +69,9 @@ public:
       rewriter.create<LLVM::CallOp>(
           loc,
           TypeRange{},
-          "taskflow_set_task_id",
-          ValueRange{taskHandle.getResult(0), 
-                    rewriter.create<LLVM::ConstantOp>(loc, nodeId)});
+          ValueRange{taskHandle.getResult(), 
+                    rewriter.create<LLVM::ConstantOp>(loc, nodeId)},
+                    "taskflow_set_task_id");
     }
 
     // Handle task body
@@ -77,11 +80,11 @@ public:
         loc,
         TypeRange{},
         "taskflow_set_task_work",
-        ValueRange{taskHandle.getResult(0)});
+        ValueRange{taskHandle.getResult()});
 
     // Move body operations into a new function
     auto moduleOp = op->getParentOfType<ModuleOp>();
-    auto funcName = ("task_work_" + std::to_string(taskCounter++)).str();
+    auto funcName = ("task_work_" + std::to_string(taskCounter++));
     auto funcType = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context), {});
     
     auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
@@ -103,7 +106,7 @@ public:
           loc,
           TypeRange{},
           "taskflow_add_dependency",
-          ValueRange{taskHandle.getResult(0), dep});
+          ValueRange{taskHandle.getResult(), dep});
     }
 
     rewriter.replaceOp(op, taskHandle.getResults());
@@ -130,7 +133,7 @@ public:
     // Create new taskflow graph
     auto graphHandle = rewriter.create<LLVM::CallOp>(
         loc,
-        TypeRange{LLVM::LLVMPointerType::get(IntegerType::get(context, 8))},
+        TypeRange{LLVM::LLVMPointerType::get(context, 8)},
         "taskflow_create_graph",
         ValueRange{});
     
@@ -139,7 +142,7 @@ public:
         loc,
         TypeRange{},
         "taskflow_set_graph_id",
-        ValueRange{graphHandle.getResult(0), 
+        ValueRange{graphHandle.getResult(), 
                   rewriter.create<LLVM::ConstantOp>(loc, op.getGraphId())});
     
     rewriter.eraseOp(op);
@@ -192,8 +195,8 @@ public:
 
     // Convert Taskflow types to LLVM types
     LLVMTypeConverter typeConverter(context);
-    typeConverter.addConversion([](taskflow::TaskNodeType type) {
-      return LLVM::LLVMPointerType::get(IntegerType::get(type.getContext(), 8));
+    typeConverter.addConversion([&context](taskflow::TaskNodeType type) {
+      return LLVM::LLVMPointerType::get(context, 8);
     });
     
     // Setup the conversion target
