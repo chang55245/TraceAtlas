@@ -42,4 +42,18 @@ def TaskflowPatternInsertion : Pass<"taskflow-pattern-insertion"> {
   let constructor = "mlir::taskflow::createTaskflowPatternInsertionPass()";
 }
 
+// Lowering Passes
+def TaskflowToLLVM : Pass<"taskflow-to-llvm", "ModuleOp"> {
+  let summary = "Lower Taskflow operations to LLVM dialect";
+  let description = [{
+    This pass lowers Taskflow dialect operations to LLVM dialect operations,
+    converting task definitions and dependencies into appropriate taskflow library calls.
+  }];
+  let dependentDialects = [
+    "LLVM::LLVMDialect",
+    "taskflow::TaskflowDialect"
+  ];
+  let constructor = "mlir::taskflow::createTaskflowToLLVMLoweringPass()";
+}
+
 #endif // TASKFLOW_PASSES_TD

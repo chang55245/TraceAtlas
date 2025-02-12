@@ -14,6 +14,7 @@ namespace taskflow {
 std::unique_ptr<Pass> createTaskflowInsertionPass();
 std::unique_ptr<Pass> createTaskflowPatternInsertionPass();
 std::unique_ptr<Pass> createResolveTaskDependenciesPass(StringRef dagFile= "test.dag");
+std::unique_ptr<Pass> createTaskflowToLLVMLoweringPass();
 
 
 #define GEN_PASS_REGISTRATION
