@@ -12,4 +12,6 @@ add_mlir_dialect_library(MLIRTaskflowLowering
     MLIRLLVMDialect
     MLIRTargetLLVMIRExport
     MLIRTransforms
+    MLIRSupport
+    MLIRLLVMCommonConversion
 ) 

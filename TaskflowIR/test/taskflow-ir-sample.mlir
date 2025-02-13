@@ -2,7 +2,7 @@ module {
   taskflow.application_start
   llvm.func @main() {
     taskflow.graph_start(0)
-    %0 = taskflow.task_def() {
+    %0 = taskflow.task_def{predecessors = [], node_id =1} : {
       llvm.call @tf_some_function() : () -> ()
       taskflow.yield
     }
@@ -11,7 +11,7 @@ module {
     llvm.call @unextractable_function_1() : () -> ()
     llvm.call @unextractable_function_2() : () -> ()
     taskflow.graph_start(1)
-    %1 = taskflow.task_def() {
+    %1 = taskflow.task_def{predecessors = [], node_id =2} : {
       llvm.call @tf_another_function() : () -> ()
       taskflow.yield
     }

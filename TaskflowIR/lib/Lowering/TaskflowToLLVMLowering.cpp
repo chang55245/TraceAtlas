@@ -69,9 +69,9 @@ public:
       rewriter.create<LLVM::CallOp>(
           loc,
           TypeRange{},
+          "taskflow_set_task_id",
           ValueRange{taskHandle.getResult(), 
-                    rewriter.create<LLVM::ConstantOp>(loc, nodeId)},
-                    "taskflow_set_task_id");
+                    rewriter.create<LLVM::ConstantOp>(loc,rewriter.getIntegerType(32), nodeId)});
     }
 
     // Handle task body
@@ -143,7 +143,7 @@ public:
         TypeRange{},
         "taskflow_set_graph_id",
         ValueRange{graphHandle.getResult(), 
-                  rewriter.create<LLVM::ConstantOp>(loc, op.getGraphId())});
+                  rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), op.getGraphId())});
     
     rewriter.eraseOp(op);
     return success();
@@ -194,6 +194,7 @@ public:
     MLIRContext *context = &getContext();
 
     // Convert Taskflow types to LLVM types
+    // LLVMTypeConverter typeConverter(&getContext());
     LLVMTypeConverter typeConverter(context);
     typeConverter.addConversion([&context](taskflow::TaskNodeType type) {
       return LLVM::LLVMPointerType::get(context, 8);
@@ -207,7 +208,7 @@ public:
     // Setup patterns
     RewritePatternSet patterns(context);
     patterns.add<ApplicationStartOpLowering>(typeConverter, context);
-    patterns.add<TaskDefOpLowering>(typeConverter);
+    patterns.add<TaskDefOpLowering>(typeConverter, context);
     patterns.add<GraphStartOpLowering>(typeConverter, context);
     patterns.add<GraphEndOpLowering>(typeConverter, context);
     patterns.add<TaskYieldOpLowering>(typeConverter, context);
