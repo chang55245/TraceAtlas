@@ -201,6 +201,31 @@ public:
         module->setAttr(LLVM::LLVMDialect::getTargetTripleAttrName(),
                      StringAttr::get(context, ""));
 
+    // Add taskflow runtime function declarations
+    OpBuilder builder(module.getBody(), module.getBody()->end());
+    
+    // Common types
+    auto voidTy = LLVM::LLVMVoidType::get(context);
+    auto i8PtrTy = LLVM::LLVMPointerType::get(context, 8);
+    auto i32Ty = IntegerType::get(context, 32);
+    
+    // Declare taskflow runtime functions
+    auto declareFunc = [&](StringRef name, Type resultTy, ArrayRef<Type> argTypes) {
+        auto funcTy = LLVM::LLVMFunctionType::get(resultTy, argTypes, false);
+        builder.create<LLVM::LLVMFuncOp>(module.getLoc(), name, funcTy);
+    };
+
+    // Add necessary function declarations
+    declareFunc("taskflow_init", voidTy, {});
+    declareFunc("taskflow_executor_init", voidTy, {});
+    declareFunc("taskflow_create_task", i8PtrTy, {});
+    declareFunc("taskflow_set_task_id", voidTy, {i8PtrTy, i32Ty});
+    declareFunc("taskflow_set_task_work", voidTy, {i8PtrTy});
+    declareFunc("taskflow_add_dependency", voidTy, {i8PtrTy, i8PtrTy});
+    declareFunc("taskflow_create_graph", i8PtrTy, {});
+    declareFunc("taskflow_set_graph_id", voidTy, {i8PtrTy, i32Ty});
+    declareFunc("taskflow_run_graph", voidTy, {});
+
     // Convert Taskflow types to LLVM types
     LLVMTypeConverter typeConverter(context);
     typeConverter.addConversion([&context](taskflow::TaskNodeType type) {
@@ -216,8 +241,8 @@ public:
     RewritePatternSet patterns(context);
     patterns.add<ApplicationStartOpLowering>(typeConverter, context);
     // patterns.add<TaskDefOpLowering>(typeConverter, context);
-    // patterns.add<GraphStartOpLowering>(typeConverter, context);
-    // patterns.add<GraphEndOpLowering>(typeConverter, context);
+    patterns.add<GraphStartOpLowering>(typeConverter, context);
+    patterns.add<GraphEndOpLowering>(typeConverter, context);
     // patterns.add<TaskYieldOpLowering>(typeConverter, context);
 
     // Apply the conversion
