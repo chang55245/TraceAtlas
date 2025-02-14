@@ -71,13 +71,30 @@ public:
     parseDagFile(dagFile);
     
     // Insert application_start at the beginning of the module
-    builder.setInsertionPointToStart(module.getBody());
-    builder.create<taskflow::ApplicationStartOp>(module.getLoc());
+    // builder.setInsertionPointToStart(module.getBody());
+    // builder.create<taskflow::ApplicationStartOp>(module.getLoc());
+    for (auto func : module.getOps<LLVM::LLVMFuncOp>()) {
+        if (func.getName() == "main") {
+            // Ensure the function has a body with at least one block.
+            if (!func.empty()) {
+                // Get the entry block of the 'main' function.
+                Block &entryBlock = func.front();
 
+                // Set the insertion point to the start of the entry block.
+                builder.setInsertionPointToStart(&entryBlock);
+
+                // Create the ApplicationStartOp at the specified location.
+                builder.create<taskflow::ApplicationStartOp>(func.getLoc());
+
+                // Operation successfully inserted; exit the function.
+                return;
+            }
+        }
+    }
     // Create a unique graph ID
     int graphId = 0;
 
-
+   
     // Walk through all LLVM function calls
     module.walk([&](LLVM::CallOp callOp) {
       // Get the callee name
