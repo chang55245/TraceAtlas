@@ -16,7 +16,11 @@ cmake -G "Unix Makefiles" \
 
 
 ./bin/taskflow-opt -taskflow-to-llvm ../test/taskflow-ir-sample.mlir --mlir-print-ir-after-all
-
+# import llvm ir to llvm dialect
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/mlir-translate \
+    -import-llvm ../test/sample-llvm-ir-final.ll \
+    -mlir-print-debuginfo \
+    -o ../test/sample-llvm-ir-final.mlir
 # debugging 
 make VERBOSE=1
 
