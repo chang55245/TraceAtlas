@@ -193,8 +193,15 @@ public:
     ModuleOp module = getOperation();
     MLIRContext *context = &getContext();
 
+    // Set LLVM module attributes
+    if (!module->hasAttr(LLVM::LLVMDialect::getDataLayoutAttrName()))
+        module->setAttr(LLVM::LLVMDialect::getDataLayoutAttrName(),
+                     StringAttr::get(context, ""));
+    if (!module->hasAttr(LLVM::LLVMDialect::getTargetTripleAttrName()))
+        module->setAttr(LLVM::LLVMDialect::getTargetTripleAttrName(),
+                     StringAttr::get(context, ""));
+
     // Convert Taskflow types to LLVM types
-    // LLVMTypeConverter typeConverter(&getContext());
     LLVMTypeConverter typeConverter(context);
     typeConverter.addConversion([&context](taskflow::TaskNodeType type) {
       return LLVM::LLVMPointerType::get(context, 8);
@@ -203,15 +210,15 @@ public:
     // Setup the conversion target
     ConversionTarget target(*context);
     target.addLegalDialect<LLVM::LLVMDialect>();
-    target.addIllegalDialect<taskflow::TaskflowDialect>();
-
+    // target.addIllegalDialect<taskflow::TaskflowDialect>();
+    
     // Setup patterns
     RewritePatternSet patterns(context);
     patterns.add<ApplicationStartOpLowering>(typeConverter, context);
-    patterns.add<TaskDefOpLowering>(typeConverter, context);
-    patterns.add<GraphStartOpLowering>(typeConverter, context);
-    patterns.add<GraphEndOpLowering>(typeConverter, context);
-    patterns.add<TaskYieldOpLowering>(typeConverter, context);
+    // patterns.add<TaskDefOpLowering>(typeConverter, context);
+    // patterns.add<GraphStartOpLowering>(typeConverter, context);
+    // patterns.add<GraphEndOpLowering>(typeConverter, context);
+    // patterns.add<TaskYieldOpLowering>(typeConverter, context);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {

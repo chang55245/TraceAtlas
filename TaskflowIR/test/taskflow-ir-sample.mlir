@@ -1,6 +1,6 @@
-module {
-  taskflow.application_start
+module { 
   llvm.func @main() {
+    taskflow.application_start
     taskflow.graph_start(0)
     %0 = taskflow.task_def{predecessors = [], node_id =1} : {
       llvm.call @tf_some_function() : () -> ()
@@ -18,6 +18,8 @@ module {
     taskflow.graph_end(1)
     llvm.return
   }
+  llvm.func @taskflow_init()
+  llvm.func @taskflow_executor_init()
   llvm.func @tf_some_function()
   llvm.func @tf_another_function()
   llvm.func @unextractable_function_0()
