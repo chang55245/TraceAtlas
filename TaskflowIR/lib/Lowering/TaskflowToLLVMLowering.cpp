@@ -33,9 +33,12 @@ public:
       ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
     
-    // Create LLVM function calls for taskflow initialization
-    rewriter.create<LLVM::CallOp>(loc, TypeRange{}, "taskflow_init", ValueRange{});
-    rewriter.create<LLVM::CallOp>(loc, TypeRange{}, "taskflow_executor_init", ValueRange{});
+    // Create taskflow instance
+    auto tfHandle = rewriter.create<LLVM::CallOp>(
+        loc, 
+        LLVM::LLVMPointerType::get(rewriter.getContext(), 8),
+        "taskflow_create",
+        ValueRange{});
     
     rewriter.eraseOp(op);
     return success();
@@ -45,79 +48,62 @@ public:
 // Convert TaskDefOp to LLVM calls
 class TaskDefOpLowering : public OpConversionPattern<TaskDefOp> {
 public:
-  explicit TaskDefOpLowering(LLVMTypeConverter &typeConverter, MLIRContext *context)
-      : OpConversionPattern<TaskDefOp>(typeConverter, context) {}
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult matchAndRewrite(
       TaskDefOp op, OpAdaptor adaptor,
       ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
-    auto *context = rewriter.getContext();
     
-    // Get LLVM types for task handle
-    auto i8PtrTy = LLVM::LLVMPointerType::get(context, 8);
+    // Get the first function call from the body
+    LLVM::CallOp funcCall;
+    for (Operation &bodyOp : op.getBody().front()) {
+      if (auto callOp = dyn_cast<LLVM::CallOp>(&bodyOp)) {
+        funcCall = callOp;
+        break;
+      }
+    }
     
-    // Create task object
+    if (!funcCall)
+      return failure();
+    
+    // Get the taskflow handle from the parent ApplicationStartOp
+    Value tfHandle;
+    op->getParentRegion()->walk([&](LLVM::CallOp callOp) {
+      if (auto callee = callOp.getCallee()) {
+        if (*callee == "taskflow_create") {
+          tfHandle = callOp.getResult();
+        }
+      }
+    });
+    
+    if (!tfHandle)
+      return failure();
+
+    // Create task with the function
+    SmallVector<Value, 3> args;
+    args.push_back(tfHandle);
+    
+    // Convert function name to LLVM pointer type
+    auto funcType = LLVM::LLVMPointerType::get(rewriter.getContext(), 8);
+    auto callee = funcCall.getCallee();
+    if (!callee) return failure();
+    auto symbolRef = FlatSymbolRefAttr::get(rewriter.getContext(), *callee);
+    auto globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, funcType, symbolRef);
+    
+    args.push_back(globalPtr);
+    args.push_back(globalPtr);  // Same pointer for both function and data
+
     auto taskHandle = rewriter.create<LLVM::CallOp>(
         loc,
-        TypeRange{i8PtrTy}, 
+        LLVM::LLVMPointerType::get(rewriter.getContext(), 8),
         "taskflow_create_task",
-        ValueRange{});
-
-    // Set task ID if available
-    if (auto nodeId = op.getNodeId()) {
-      rewriter.create<LLVM::CallOp>(
-          loc,
-          TypeRange{},
-          "taskflow_set_task_id",
-          ValueRange{taskHandle.getResult(), 
-                    rewriter.create<LLVM::ConstantOp>(loc,rewriter.getIntegerType(32), nodeId)});
-    }
-
-    // Handle task body
-    Block &body = op.getBody().front();
-    rewriter.create<LLVM::CallOp>(
-        loc,
-        TypeRange{},
-        "taskflow_set_task_work",
-        ValueRange{taskHandle.getResult()});
-
-    // Move body operations into a new function
-    auto moduleOp = op->getParentOfType<ModuleOp>();
-    auto funcName = ("task_work_" + std::to_string(taskCounter++));
-    auto funcType = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context), {});
+        args);
     
-    auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
-        moduleOp.getLoc(), funcName, funcType);
-    
-    auto *entryBlock = rewriter.createBlock(&funcOp.getBody());
-    rewriter.setInsertionPointToStart(entryBlock);
-    
-    // Clone body operations into the new function
-    for (auto &bodyOp : body.without_terminator()) {
-      rewriter.clone(bodyOp);
-    }
-    
-    rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
-
-    // Add dependencies
-    for (Value dep : op.getDependencies()) {
-      rewriter.create<LLVM::CallOp>(
-          loc,
-          TypeRange{},
-          "taskflow_add_dependency",
-          ValueRange{taskHandle.getResult(), dep});
-    }
-
     rewriter.replaceOp(op, taskHandle.getResults());
     return success();
   }
-
-private:
-  static int taskCounter;
 };
-
-int TaskDefOpLowering::taskCounter = 0;
 
 // Convert GraphStartOp to LLVM calls
 class GraphStartOpLowering : public OpConversionPattern<GraphStartOp> {
@@ -127,24 +113,7 @@ public:
   LogicalResult matchAndRewrite(
       GraphStartOp op, OpAdaptor adaptor,
       ConversionPatternRewriter &rewriter) const override {
-    auto loc = op.getLoc();
-    auto *context = rewriter.getContext();
-    
-    // Create new taskflow graph
-    auto graphHandle = rewriter.create<LLVM::CallOp>(
-        loc,
-        TypeRange{LLVM::LLVMPointerType::get(context, 8)},
-        "taskflow_create_graph",
-        ValueRange{});
-    
-    // Set graph ID
-    rewriter.create<LLVM::CallOp>(
-        loc,
-        TypeRange{},
-        "taskflow_set_graph_id",
-        ValueRange{graphHandle.getResult(), 
-                  rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), op.getGraphId())});
-    
+    auto loc = op.getLoc(); 
     rewriter.eraseOp(op);
     return success();
   }
@@ -160,12 +129,39 @@ public:
       ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
     
-    // Execute graph
+    // Get the taskflow handle from the parent ApplicationStartOp
+    Value tfHandle;
+    op->getParentRegion()->walk([&](LLVM::CallOp callOp) {
+      if (auto callee = callOp.getCallee()) {
+        if (*callee == "taskflow_create") {
+          tfHandle = callOp.getResult();
+        }
+      }
+    });
+    
+    if (!tfHandle)
+      return failure();
+
+    // Add dependencies for all TaskDefOps before this GraphEndOp
+    Block *parentBlock = op->getBlock();
+    for (Operation &blockOp : *parentBlock) {
+      if (auto taskOp = dyn_cast<TaskDefOp>(&blockOp)) {
+        for (Value dep : taskOp.getDependencies()) {
+          rewriter.create<LLVM::CallOp>(
+              loc,
+              TypeRange{},
+              "taskflow_add_dependency",
+              ValueRange{taskOp.getResult(), dep});
+        }
+      }
+    }
+    
+    // Execute the taskflow with the handle
     rewriter.create<LLVM::CallOp>(
         loc,
         TypeRange{},
-        "taskflow_run_graph",
-        ValueRange{});
+        "taskflow_execute",
+        ValueRange{tfHandle});
     
     rewriter.eraseOp(op);
     return success();
@@ -180,7 +176,7 @@ public:
   LogicalResult matchAndRewrite(
       TaskYieldOp op, OpAdaptor adaptor,
       ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, ValueRange{});
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -201,30 +197,43 @@ public:
         module->setAttr(LLVM::LLVMDialect::getTargetTripleAttrName(),
                      StringAttr::get(context, ""));
 
-    // Add taskflow runtime function declarations
+    // Add taskflow runtime function declarations at the end of module
     OpBuilder builder(module.getBody(), module.getBody()->end());
     
     // Common types
-    auto voidTy = LLVM::LLVMVoidType::get(context);
     auto i8PtrTy = LLVM::LLVMPointerType::get(context, 8);
-    auto i32Ty = IntegerType::get(context, 32);
+    auto voidTy = LLVM::LLVMVoidType::get(context);
     
-    // Declare taskflow runtime functions
-    auto declareFunc = [&](StringRef name, Type resultTy, ArrayRef<Type> argTypes) {
-        auto funcTy = LLVM::LLVMFunctionType::get(resultTy, argTypes, false);
-        builder.create<LLVM::LLVMFuncOp>(module.getLoc(), name, funcTy);
-    };
+    // Create function types
+    auto createFuncTy = LLVM::LLVMFunctionType::get(i8PtrTy, {}, false);
+    auto createTaskFuncTy = LLVM::LLVMFunctionType::get(i8PtrTy, {i8PtrTy, i8PtrTy, i8PtrTy}, false);
+    auto addDependencyFuncTy = LLVM::LLVMFunctionType::get(voidTy, {i8PtrTy, i8PtrTy}, false);
+    auto executeFuncTy = LLVM::LLVMFunctionType::get(voidTy, {i8PtrTy}, false);
 
-    // Add necessary function declarations
-    declareFunc("taskflow_init", voidTy, {});
-    declareFunc("taskflow_executor_init", voidTy, {});
-    declareFunc("taskflow_create_task", i8PtrTy, {});
-    declareFunc("taskflow_set_task_id", voidTy, {i8PtrTy, i32Ty});
-    declareFunc("taskflow_set_task_work", voidTy, {i8PtrTy});
-    declareFunc("taskflow_add_dependency", voidTy, {i8PtrTy, i8PtrTy});
-    declareFunc("taskflow_create_graph", i8PtrTy, {});
-    declareFunc("taskflow_set_graph_id", voidTy, {i8PtrTy, i32Ty});
-    declareFunc("taskflow_run_graph", voidTy, {});
+    // Declare taskflow runtime functions
+    builder.create<LLVM::LLVMFuncOp>(
+        module.getLoc(), 
+        "taskflow_create", 
+        createFuncTy,
+        LLVM::Linkage::External);
+
+    builder.create<LLVM::LLVMFuncOp>(
+        module.getLoc(), 
+        "taskflow_create_task",
+        createTaskFuncTy,
+        LLVM::Linkage::External);
+
+    builder.create<LLVM::LLVMFuncOp>(
+        module.getLoc(), 
+        "taskflow_add_dependency",
+        addDependencyFuncTy,
+        LLVM::Linkage::External);
+
+    builder.create<LLVM::LLVMFuncOp>(
+        module.getLoc(), 
+        "taskflow_execute",
+        executeFuncTy,
+        LLVM::Linkage::External);
 
     // Convert Taskflow types to LLVM types
     LLVMTypeConverter typeConverter(context);
@@ -235,15 +244,33 @@ public:
     // Setup the conversion target
     ConversionTarget target(*context);
     target.addLegalDialect<LLVM::LLVMDialect>();
-    // target.addIllegalDialect<taskflow::TaskflowDialect>();
+    target.addIllegalDialect<taskflow::TaskflowDialect>();
     
-    // Setup patterns
+    // Make sure to mark LLVM operations as legal
+    target.addLegalOp<ModuleOp>();
+    target.addLegalOp<LLVM::LLVMFuncOp>();
+    target.addLegalOp<LLVM::CallOp>();
+    target.addLegalOp<LLVM::ReturnOp>();
+    target.addLegalOp<LLVM::ConstantOp>();
+
+    // Add dependency between patterns
+    target.addDynamicallyLegalOp<TaskDefOp>([](TaskDefOp op) {
+      // Only allow TaskDefOp to be converted after GraphEndOp is converted
+      auto *parentBlock = op->getBlock();
+      for (Operation &blockOp : *parentBlock) {
+        if (isa<GraphEndOp>(blockOp))
+          return false;
+      }
+      return true;
+    });
+
+    // Setup patterns in the correct order
     RewritePatternSet patterns(context);
     patterns.add<ApplicationStartOpLowering>(typeConverter, context);
-    // patterns.add<TaskDefOpLowering>(typeConverter, context);
-    patterns.add<GraphStartOpLowering>(typeConverter, context);
     patterns.add<GraphEndOpLowering>(typeConverter, context);
-    // patterns.add<TaskYieldOpLowering>(typeConverter, context);
+    patterns.add<TaskDefOpLowering>(typeConverter, context);
+    patterns.add<GraphStartOpLowering>(typeConverter, context);
+    patterns.add<TaskYieldOpLowering>(typeConverter, context);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
