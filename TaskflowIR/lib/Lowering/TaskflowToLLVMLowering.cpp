@@ -48,14 +48,20 @@ public:
 // Convert TaskDefOp to LLVM calls
 class TaskDefOpLowering : public OpConversionPattern<TaskDefOp> {
 public:
-  using OpConversionPattern::OpConversionPattern;
+  
+  DenseMap<Operation*, Value> &loweredTaskResults;
+  DenseMap<Operation*, SmallVector<Value, 4>> &taskDependencies;
 
-  LogicalResult matchAndRewrite(
-      TaskDefOp op, OpAdaptor adaptor,
-      ConversionPatternRewriter &rewriter) const override {
+  TaskDefOpLowering(TypeConverter &typeConverter, MLIRContext *context, DenseMap<Operation*, Value> &loweredTaskResults, DenseMap<Operation*, SmallVector<Value, 4>> &taskDependencies)
+      : OpConversionPattern<TaskDefOp>(typeConverter, context),
+        loweredTaskResults(loweredTaskResults),
+        taskDependencies(taskDependencies) {}
+
+  LogicalResult matchAndRewrite(TaskDefOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
-    
-    // Get the first function call from the body
+
+    // Get the first function call from the body.
     LLVM::CallOp funcCall;
     for (Operation &bodyOp : op.getBody().front()) {
       if (auto callOp = dyn_cast<LLVM::CallOp>(&bodyOp)) {
@@ -63,40 +69,44 @@ public:
         break;
       }
     }
-    
     if (!funcCall)
       return failure();
-    // Get the taskflow handle from the parent ApplicationStartOp
+
+    // Get the taskflow handle from the parent ApplicationStartOp.
     Value tfHandle;
     op->getParentRegion()->walk([&](LLVM::CallOp callOp) {
       if (auto callee = callOp.getCallee()) {
-        if (*callee == "taskflow_create") {
+        if (*callee == "taskflow_create")
           tfHandle = callOp.getResult();
-        }
       }
     });
-    
     if (!tfHandle)
       return failure();
-    // Create task with the function
+
+    // Create the LLVM call to create a task.
     SmallVector<Value, 3> args;
     args.push_back(tfHandle);
-    // Convert function name to LLVM pointer type
     auto funcType = LLVM::LLVMPointerType::get(rewriter.getContext(), 8);
     auto callee = funcCall.getCallee();
-    if (!callee) return failure();
+    if (!callee)
+      return failure();
     auto symbolRef = FlatSymbolRefAttr::get(rewriter.getContext(), *callee);
     auto globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, funcType, symbolRef);
     args.push_back(globalPtr);
-    args.push_back(globalPtr);  // Same pointer for both function and data
+    args.push_back(globalPtr);  // Same pointer for function and data.
 
     auto taskHandle = rewriter.create<LLVM::CallOp>(
-        loc,
-        LLVM::LLVMPointerType::get(rewriter.getContext(), 8),
-        "taskflow_create_task",
-        args);
-    rewriter.replaceOp(op, taskHandle.getResults());
+        loc, LLVM::LLVMPointerType::get(rewriter.getContext(), 8),
+        "taskflow_create_task", args);
 
+    // **Record the lowered result and the dependency list.**
+    loweredTaskResults[op.getOperation()] = taskHandle.getResult();
+    SmallVector<Value, 4> deps;
+    for (Value dep : op.getDependencies())
+      deps.push_back(dep);
+    taskDependencies[op.getOperation()] = deps;
+
+    rewriter.replaceOp(op, taskHandle.getResults());
     return success();
   }
 };
@@ -119,11 +129,16 @@ public:
 class GraphEndOpLowering : public OpConversionPattern<GraphEndOp> {
 private:
   TypeConverter &typeConverter;
+  DenseMap<Operation*, Value> &loweredTaskResults;
+  DenseMap<Operation*, SmallVector<Value, 4>> &taskDependencies;
 
 public:
-  GraphEndOpLowering(TypeConverter &typeConverter, MLIRContext *context)
+    GraphEndOpLowering(TypeConverter &typeConverter, MLIRContext *context,
+                     DenseMap<Operation*, Value> &loweredTaskResults,
+                     DenseMap<Operation*, SmallVector<Value, 4>> &taskDependencies)
       : OpConversionPattern<GraphEndOp>(typeConverter, context),
-        typeConverter(typeConverter) {}
+        typeConverter(typeConverter), loweredTaskResults(loweredTaskResults),
+        taskDependencies(taskDependencies) {}
 
   LogicalResult matchAndRewrite(
       GraphEndOp op, OpAdaptor adaptor,
@@ -136,69 +151,48 @@ public:
       if (auto callee = callOp.getCallee()) {
         if (*callee == "taskflow_create") {
           tfHandle = callOp.getResult();
+          return WalkResult::interrupt();
         }
       }
+      return WalkResult::advance();
     });
     
     if (!tfHandle)
       return failure();
 
-    // Add dependencies for all TaskDefOps before this GraphEndOp
+    auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext(), 8);
 
-    auto mainFuncOp = op->getParentOp();
-
-      if (auto main = dyn_cast<LLVM::LLVMFuncOp>(mainFuncOp)) {
-        mlir::Region &region = main.getBody();
-        for (auto &block : region) {
-          for (auto &op : block) {
-            if (auto taskOp = dyn_cast<TaskDefOp>(&op)) {
-              for (Value dep : taskOp.getDependencies()) {
-                auto taskResult = taskOp.getResult();
-                llvm::outs() << "GraphEndOp lowered 0\n";
-                taskResult.dump();
-                auto taskResultType = typeConverter.convertType(taskResult.getType());
-                if (!taskResultType) 
-            return rewriter.notifyMatchFailure(loc, "Failed to convert task result type");
-                auto taskResultPtr = rewriter.create<LLVM::BitcastOp>(
-                      loc,
-                      taskResultType,
-                      taskResult);
-
-                llvm::outs() << "GraphEndOp lowered 1\n"<<taskResultPtr;
-                // taskResultPtr->dump();
-                auto depType = typeConverter.convertType(dep.getType());
-                if (!depType)
-            return rewriter.notifyMatchFailure(loc, "Failed to convert dependency type");
-          auto depPtr = rewriter.create<LLVM::BitcastOp>(
-              loc,
-              depType,
-              dep);
-
-                llvm::outs() << "GraphEndOp lowered 2\n"<<depPtr;
-                // depPtr->dump();
-
-                auto callOp = rewriter.create<LLVM::CallOp>(
-                    loc,
-                    TypeRange{},
-                    "taskflow_add_dependency",
-                    ValueRange{taskResultPtr, depPtr});
-
-                llvm::outs() << "GraphEndOp lowered 2\n"<<callOp;
-                // c  allOp->dump();  
-              } 
-            }
-          }
+    // Iterate over each recorded TaskDefOp.
+    for (auto &entry : taskDependencies) {
+      Operation *origTaskOp = entry.first;
+      // Look up the lowered result for this task.
+      auto loweredTaskResult = loweredTaskResults.lookup(origTaskOp);
+      if (!loweredTaskResult)
+        continue; // or return failure if this is unexpected.
+      auto &deps = entry.second;
+      for (Value dep : deps) {
+        // If the dependency comes from a TaskDefOp, use its lowered value.
+        if (auto depDefOp = dep.getDefiningOp()) {
+          if (loweredTaskResults.count(depDefOp))
+            dep = loweredTaskResults.lookup(depDefOp);
         }
+        // Optionally, ensure the dependency is LLVM-compatible.
+        auto depLLVMTy = typeConverter.convertType(dep.getType());
+        if (!depLLVMTy)
+          return failure();
+        auto depPtr = rewriter.create<LLVM::BitcastOp>(loc, ptrType, dep);
+        // Create the call to add the dependency.
+        rewriter.create<LLVM::CallOp>(
+            loc, TypeRange{}, "taskflow_add_dependency",
+            ValueRange{depPtr, loweredTaskResult});
       }
-      // Execute the taskflow with the handle
-      rewriter.create<LLVM::CallOp>(
-          loc,
-          TypeRange{},
-          "taskflow_execute",
-          ValueRange{tfHandle});
-      rewriter.eraseOp(op);
-      return success();
-    
+    }
+
+    // Finally, execute the taskflow.
+    rewriter.create<LLVM::CallOp>(
+        loc, TypeRange{}, "taskflow_execute", ValueRange{tfHandle});
+    rewriter.eraseOp(op);
+    return success();
   }
 };
 
@@ -223,13 +217,7 @@ public:
     ModuleOp module = getOperation();
     MLIRContext *context = &getContext();
 
-    // Print initial IR
-    llvm::outs() << "Before lowering:\n";
-    // module.dump();
-
-    // Add debug prints before each major operation
-    llvm::outs() << "Starting ApplicationStartOp lowering...\n";
-    
+   
     // Set LLVM module attributes
     if (!module->hasAttr(LLVM::LLVMDialect::getDataLayoutAttrName()))
         module->setAttr(LLVM::LLVMDialect::getDataLayoutAttrName(),
@@ -285,7 +273,7 @@ public:
     // Setup the conversion target
     ConversionTarget target(*context);
     target.addLegalDialect<LLVM::LLVMDialect>();
-    // target.addIllegalDialect<taskflow::TaskflowDialect>();
+    target.addIllegalDialect<taskflow::TaskflowDialect>();
     
     // Make sure to mark LLVM operations as legal
     target.addLegalOp<ModuleOp>();
@@ -294,28 +282,22 @@ public:
     target.addLegalOp<LLVM::ReturnOp>();
     target.addLegalOp<LLVM::ConstantOp>();
 
-
+    DenseMap<Operation*, Value> loweredTaskResults;
+    DenseMap<Operation*, SmallVector<Value, 4>> taskDependencies;
 
     // Setup patterns in the correct order
     RewritePatternSet patterns(context);
     patterns.add<ApplicationStartOpLowering>(typeConverter, context);
-    patterns.add<GraphEndOpLowering>(typeConverter, context);
-    // patterns.add<TaskDefOpLowering>(typeConverter, context);
+    patterns.add<TaskDefOpLowering>(typeConverter, context, loweredTaskResults, taskDependencies);
+    
     patterns.add<GraphStartOpLowering>(typeConverter, context);
-    // patterns.add<TaskYieldOpLowering>(typeConverter, context);
+    patterns.add<TaskYieldOpLowering>(typeConverter, context);
+    patterns.add<GraphEndOpLowering>(typeConverter, context, loweredTaskResults, taskDependencies);
 
-    // Add more debug prints
-    llvm::outs() << "After pattern registration:\n";
-    // module.dump();
-
-    // Before conversion
-    llvm::outs() << "Applying conversion...\n";
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
-      llvm::outs() << "Conversion failed!\n";
       signalPassFailure();
     }
     
-    llvm::outs() << "After conversion:\n";
   }
 };
 
