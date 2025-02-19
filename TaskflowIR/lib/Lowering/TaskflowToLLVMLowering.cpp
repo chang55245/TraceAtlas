@@ -109,175 +109,194 @@ public:
     // Get task function name first.
     std::string taskFuncName = "taskflow_task_" + std::to_string(op.getNodeId());
     std::string wrapperFuncName = "taskflow_task_wrapper_" + std::to_string(op.getNodeId());
+    llvm::errs() << "Creating wrapper function: " << wrapperFuncName << "\n";
+
+    // Get the parent module
+    if (!moduleOp) {
+        llvm::errs() << "Failed to find parent ModuleOp\n";
+        return failure();
+    }
+
 
     // Save current insertion point.
     auto savedIP = rewriter.saveInsertionPoint();
 
     // Move to module scope to create the wrapper function.
-    rewriter.setInsertionPointToEnd(moduleOp.getBody());
+    rewriter.setInsertionPointToStart(moduleOp.getBody());
 
     // Create wrapper function type (TaskArgs* -> void)
     auto voidTy = LLVM::LLVMVoidType::get(rewriter.getContext());
     auto ptrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
 
-    // Define TaskArg struct type
-    auto boolTy = IntegerType::get(rewriter.getContext(), 1);  // i1 for bool
+    // Define TaskArg struct type with unique name
+    auto boolTy = IntegerType::get(rewriter.getContext(), 1);
+    std::string taskArgStructName = "TaskArg." + std::to_string(op.getNodeId());
     auto taskArgStructTy = LLVM::LLVMStructType::getNewIdentified(
         rewriter.getContext(), 
-        "TaskArg",
-        ArrayRef<Type>{ptrTy, boolTy});  // {void* ptr, bool is_value}
+        taskArgStructName,
+        ArrayRef<Type>{ptrTy, boolTy});
 
-    // Define TaskArgs struct type
-    auto sizeTy = IntegerType::get(rewriter.getContext(), 64);  // i64 for size_t
-    auto taskArgPtrTy = LLVM::LLVMPointerType::get(rewriter.getContext());  // Fixed: removed taskArgStructTy
+    // Define TaskArgs struct type with unique name
+    auto sizeTy = IntegerType::get(rewriter.getContext(), 64);
+    auto taskArgPtrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
+    std::string taskArgsStructName = "TaskArgs." + std::to_string(op.getNodeId());
     auto taskArgsStructTy = LLVM::LLVMStructType::getNewIdentified(
         rewriter.getContext(), 
-        "TaskArgs",
-        ArrayRef<Type>{taskArgPtrTy, sizeTy});  // {TaskArg* args, size_t num_args}
+        taskArgsStructName,
+        ArrayRef<Type>{taskArgPtrTy, sizeTy});
 
     auto wrapperFuncType = LLVM::LLVMFunctionType::get(voidTy, {ptrTy}, false);
 
-    // Create wrapper function
+    // Create the functions in the module context
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPointToEnd(moduleOp.getBody());
+
+    // Create wrapper function with unique name
     auto wrapperFunc = rewriter.create<LLVM::LLVMFuncOp>(
         loc, wrapperFuncName, wrapperFuncType, LLVM::Linkage::Internal);
+    llvm::errs() << "Created wrapper function:\n" << wrapperFunc << "\n";
 
+    // Create the entry block with the TaskArgs* argument
     auto &entryBlock = *wrapperFunc.addEntryBlock(rewriter);
     Value taskArg = entryBlock.getArgument(0);
+    llvm::errs() << "Entry block created with argument:\n" << taskArg << "\n";
 
-    // First get num_args
-    auto zeroIdx = rewriter.create<LLVM::ConstantOp>(  // Renamed from zero
-        loc, 
-        rewriter.getI32Type(),
-        rewriter.getI32IntegerAttr(0));
-    auto oneIdx = rewriter.create<LLVM::ConstantOp>(  // Renamed from one
-        loc, 
-        rewriter.getI32Type(),
-        rewriter.getI32IntegerAttr(1));
+    rewriter.setInsertionPointToStart(&entryBlock);
 
-    // Get num_args field using GEP: args->num_args
-    auto numArgsPtr = rewriter.create<LLVM::GEPOp>(
-        loc,
-        LLVM::LLVMPointerType::get(rewriter.getContext()),
-        taskArgsStructTy,
-        taskArg,
-        ValueRange{zeroIdx, oneIdx});  // Second field (num_args)
+    // Extract arguments from TaskArgs structure
+    auto zeroIdx = rewriter.create<LLVM::ConstantOp>(
+        loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(0));
+    llvm::errs() << "Created zero index:\n" << zeroIdx << "\n";
 
-    auto loadedNumArgs = rewriter.create<LLVM::LoadOp>(  // Renamed from numArgs
-        loc, 
-        sizeTy,
-        numArgsPtr);
+    auto oneIdx = rewriter.create<LLVM::ConstantOp>(
+        loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(1));
+    llvm::errs() << "Created one index:\n" << oneIdx << "\n";
 
-    // Get args pointer field using GEP: args->args
+    // Get args array pointer
     auto argsArrayPtr = rewriter.create<LLVM::GEPOp>(
         loc,
         LLVM::LLVMPointerType::get(rewriter.getContext()),
         taskArgsStructTy,
         taskArg,
-        ValueRange{zeroIdx, zeroIdx});  // First field (args)
+        ValueRange{zeroIdx, zeroIdx});
+    llvm::errs() << "Created GEP for args array:\n" << argsArrayPtr << "\n";
 
     auto argsArray = rewriter.create<LLVM::LoadOp>(
-        loc, 
-        taskArgPtrTy,
-        argsArrayPtr);
+        loc, taskArgPtrTy, argsArrayPtr);
+    llvm::errs() << "Created load for args array:\n" << argsArray << "\n";
 
-    // Extract arguments from the task argument pointer
+    // Extract arguments and create function call
     SmallVector<Value, 4> extractedArgs;
     for (size_t i = 0; i < funcCall.getNumOperands(); ++i) {
+        llvm::errs() << "Processing argument " << i << "\n";
         auto argType = funcCall.getOperand(i).getType();
+        llvm::errs() << "Argument type: " << argType << "\n";
         
         auto idx = rewriter.create<LLVM::ConstantOp>(
-            loc, 
-            rewriter.getI32Type(),
-            rewriter.getI32IntegerAttr(i));
+            loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(i));
+        llvm::errs() << "Created index constant:\n" << idx << "\n";
             
-        // Access args[i].ptr using GEP
         auto argPtr = rewriter.create<LLVM::GEPOp>(
             loc,
             LLVM::LLVMPointerType::get(rewriter.getContext()),
             taskArgStructTy,
             argsArray,
-            ValueRange{idx, zeroIdx});  // Access i-th element's ptr field
+            ValueRange{idx, zeroIdx});
+        llvm::errs() << "Created GEP for argument:\n" << argPtr << "\n";
             
-        // Load and cast the pointer to the correct type
         auto loadedArg = rewriter.create<LLVM::LoadOp>(
-            loc, 
-            LLVM::LLVMPointerType::get(rewriter.getContext()),
-            argPtr);
+            loc, LLVM::LLVMPointerType::get(rewriter.getContext()), argPtr);
+        llvm::errs() << "Created load for argument:\n" << loadedArg << "\n";
+
         auto castedArg = rewriter.create<LLVM::BitcastOp>(
-            loc, 
-            argType,
-            loadedArg);
+            loc, argType, loadedArg);
+        llvm::errs() << "Created bitcast for argument:\n" << castedArg << "\n";
             
         extractedArgs.push_back(castedArg);
     }
 
-    // Create call and return inside the wrapper function.
-    rewriter.setInsertionPointToEnd(&entryBlock);
+    // // Create the task function body
+    // auto &taskBlock = *taskFunc.addEntryBlock(rewriter);
+    
+    // // Move the original function call to the task function
+    // rewriter.setInsertionPointToStart(&taskBlock);
+    // rewriter.create<LLVM::CallOp>(
+    //     loc,
+    //     funcCall.getResultTypes(),
+    //     funcCall.getCalleeAttr(),
+    //     taskBlock.getArguments());
+    // rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
 
-    // Clone the original function call with the extracted arguments.
+    // Back in wrapper function, create call to task function
+    rewriter.setInsertionPointToEnd(&entryBlock);
     rewriter.create<LLVM::CallOp>(
         loc,
-        TypeRange(),
+        TypeRange{},
         FlatSymbolRefAttr::get(rewriter.getContext(), taskFuncName),
         extractedArgs);
-    rewriter.create<LLVM::ReturnOp>(loc, ValueRange());
+    rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
 
-    // Restore original insertion point for the rest of the lowering.
+    // Restore original insertion point for the rest of the lowering
     rewriter.restoreInsertionPoint(savedIP);
 
-    // Create task arguments.
-    auto numArgs = funcCall.getOperands().size();
-    auto numArgsConst = rewriter.create<LLVM::ConstantOp>(
+    // Create task arguments structure
+    auto numArgs = rewriter.create<LLVM::ConstantOp>(
         loc, 
-        rewriter.getI32Type(),
-        rewriter.getI32IntegerAttr(numArgs));
-    
-    auto taskArgs = rewriter.create<LLVM::CallOp>(
-        loc, ptrType, "create_task_args", ValueRange{numArgsConst});
+        rewriter.getI64Type(),
+        rewriter.getI64IntegerAttr(funcCall.getNumOperands()));
 
-    // Set up task arguments.
-    for (auto argPair : llvm::enumerate(funcCall.getOperands())) {
-      auto idx = rewriter.create<LLVM::ConstantOp>(
-          loc,
-          rewriter.getI32Type(),
-          rewriter.getI32IntegerAttr(argPair.index()));
-          
-      auto argPtr = rewriter.create<LLVM::BitcastOp>(
-          loc, ptrType, argPair.value());
-          
-      rewriter.create<LLVM::CallOp>(
-          loc,
-          TypeRange{},
-          "set_task_arg_ptr",
-          ValueRange{taskArgs.getResult(), idx, argPtr});
+    auto taskArgsAlloca = rewriter.create<LLVM::CallOp>(
+        loc,
+        LLVM::LLVMPointerType::get(rewriter.getContext()),
+        "create_task_args",
+        ValueRange{numArgs});
+
+    // Initialize the arguments array
+    for (size_t i = 0; i < funcCall.getNumOperands(); ++i) {
+        auto idx = rewriter.create<LLVM::ConstantOp>(
+            loc, 
+            rewriter.getI32Type(),
+            rewriter.getI32IntegerAttr(i));
+            
+        auto argPtr = rewriter.create<LLVM::BitcastOp>(
+            loc,
+            LLVM::LLVMPointerType::get(rewriter.getContext()),
+            funcCall.getOperand(i));
+            
+        rewriter.create<LLVM::CallOp>(
+            loc,
+            TypeRange{},
+            "set_task_arg_ptr",
+            ValueRange{taskArgsAlloca.getResult(), idx, argPtr});
     }
 
-    // Create task name global string.
+    // Create task name global string
     LLVM::GlobalOp funcNameGlobal;
     {
-      OpBuilder::InsertionGuard guard(rewriter);
-      rewriter.setInsertionPointToStart(moduleOp.getBody());
-      
-      std::string uniqueName = "func_name_" + std::to_string(op.getNodeId());
-      std::string taskName = "taskflow_task_" + std::to_string(op.getNodeId());
-      auto funcNameStr = StringAttr::get(rewriter.getContext(), taskName);
-      
-      auto arrayType = LLVM::LLVMArrayType::get(
-          IntegerType::get(rewriter.getContext(), 8), 
-          funcNameStr.getValue().size());
-          
-      funcNameGlobal = rewriter.create<LLVM::GlobalOp>(
-          moduleOp.getLoc(), 
-          arrayType,
-          /*isConstant=*/true,
-          LLVM::Linkage::Internal,
-          uniqueName,
-          funcNameStr);
+        OpBuilder::InsertionGuard guard(rewriter);
+        rewriter.setInsertionPointToStart(moduleOp.getBody());
+        
+        std::string uniqueName = "func_name_" + std::to_string(op.getNodeId());
+        auto funcNameStr = StringAttr::get(rewriter.getContext(), taskFuncName);
+        
+        auto arrayType = LLVM::LLVMArrayType::get(
+            IntegerType::get(rewriter.getContext(), 8), 
+            funcNameStr.getValue().size());
+            
+        funcNameGlobal = rewriter.create<LLVM::GlobalOp>(
+            moduleOp.getLoc(), 
+            arrayType,
+            /*isConstant=*/true,
+            LLVM::Linkage::Internal,
+            uniqueName,
+            funcNameStr);
     }
     
     auto funcNameGlobalPtr = rewriter.create<LLVM::AddressOfOp>(loc, funcNameGlobal);
-    auto zero = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI64Type(), 
-                                                    rewriter.getI64IntegerAttr(0));
+    auto zero = rewriter.create<LLVM::ConstantOp>(
+        loc, 
+        rewriter.getI64Type(), 
+        rewriter.getI64IntegerAttr(0));
     auto funcNamePtr = rewriter.create<LLVM::GEPOp>(
         loc,
         LLVM::LLVMPointerType::get(rewriter.getContext()),
@@ -285,27 +304,27 @@ public:
         funcNameGlobalPtr,
         ArrayRef<Value>({zero, zero}));
 
-    // Create the wrapper function reference.
+    // Create the wrapper function reference
     auto wrapperSymbolRef = FlatSymbolRefAttr::get(rewriter.getContext(), wrapperFuncName);
     auto wrapperPtr = rewriter.create<LLVM::AddressOfOp>(loc, ptrType, wrapperSymbolRef);
 
-    // Create the task with all required arguments.
+    // Create the task with all required arguments
     auto taskHandle = rewriter.create<LLVM::CallOp>(
         loc, 
         ptrType,
         "taskflow_create_task",
         ValueRange{
-            tfHandle,           // taskflow instance
-            funcNamePtr,        // task function name
-            wrapperPtr,         // wrapper function pointer
-            taskArgs.getResult()// task arguments
+            tfHandle,
+            funcNamePtr,
+            wrapperPtr,
+            taskArgsAlloca.getResult()
         });
 
-    // Record results and update.
+    // Record results and update dependencies
     loweredTaskResults[op.getOperation()] = taskHandle.getResult();
     SmallVector<Value, 4> deps;
     for (Value dep : adaptor.getDependencies())
-      deps.push_back(dep);
+        deps.push_back(dep);
     taskDependencies[op.getOperation()] = deps;
 
     rewriter.replaceOp(op, taskHandle.getResults());
@@ -419,12 +438,16 @@ public:
     // Common types.
     auto PtrTy = LLVM::LLVMPointerType::get(context);
     auto voidTy = LLVM::LLVMVoidType::get(context);
+    auto i64Ty = IntegerType::get(context, 64);
+    auto i32Ty = IntegerType::get(context, 32);
     
     // Create function types.
     auto createFuncTy = LLVM::LLVMFunctionType::get(PtrTy, {}, false);
     auto createTaskFuncTy = LLVM::LLVMFunctionType::get(PtrTy, {PtrTy, PtrTy, PtrTy, PtrTy}, false);
     auto addDependencyFuncTy = LLVM::LLVMFunctionType::get(voidTy, {PtrTy, PtrTy}, false);
     auto executeFuncTy = LLVM::LLVMFunctionType::get(voidTy, {PtrTy}, false);
+    auto createTaskArgsFuncTy = LLVM::LLVMFunctionType::get(PtrTy, {i64Ty}, false);
+    auto setTaskArgPtrFuncTy = LLVM::LLVMFunctionType::get(voidTy, {PtrTy, i32Ty, PtrTy}, false);
 
     // Declare taskflow runtime functions.
     builder.create<LLVM::LLVMFuncOp>(
@@ -449,6 +472,18 @@ public:
         module.getLoc(), 
         "taskflow_execute",
         executeFuncTy,
+        LLVM::Linkage::External);
+
+    builder.create<LLVM::LLVMFuncOp>(
+        module.getLoc(),
+        "create_task_args",
+        createTaskArgsFuncTy,
+        LLVM::Linkage::External);
+
+    builder.create<LLVM::LLVMFuncOp>(
+        module.getLoc(),
+        "set_task_arg_ptr",
+        setTaskArgPtrFuncTy,
         LLVM::Linkage::External);
 
     // Convert Taskflow types to LLVM types.
