@@ -36,6 +36,13 @@ maybe these are already included in the clang-19 command?
     -func=main \
     -o main-extracted.bc
 
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/llvm-extract \
+    -S \
+    --delete \
+    pulse_doppler-extraction.bc \
+    -func=main \
+    -o main-extracted-no-main.bc
+
 /heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/opt \
     -load-pass-plugin=/heorot/lchang21/TraceAtlas/llvm-19-passes/TaskExtraction.so \
     -passes="remove-main" \
@@ -54,3 +61,5 @@ maybe these are already included in the clang-19 command?
     -mlir-print-debuginfo \
     -o main-extracted.mlir
 
+# test link
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/llvm-link -S /heorot/lchang21/TraceAtlas/llvm-19-passes/main-extracted.ll /heorot/lchang21/TraceAtlas/llvm-19-passes/main-extracted-no-main.bc -o pulse_doppler_link.bc

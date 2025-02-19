@@ -31,11 +31,11 @@ cmake -G "Unix Makefiles" \
 /heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/mlir-translate \
     --mlir-to-llvmir ../test/output/pulse_doppler_llvm.mlir \
     -o ../test/output/pulse_doppler_llvm.ll
-/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang -c ../test/output/pulse_doppler_llvm.ll -o ../test/output/pulse_doppler_llvm.o
 
 
 # fix me
-/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang ../test/output/pulse_doppler_llvm.ll /heorot/lchang21/TraceAtlas/TaskflowIR/test/output/pulse_doppler-no-main.bc /heorot/lchang21/TraceAtlas/build/lib/libAtlasBackend.a -o ../test/output/pulse_doppler_llvm -L/heorot/lchang21/taskflow/taskflow/taskflow-lib/build -ltaskflow_lib -lstdc++
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang -I /heorot/lchang21/cedr-old/zynq_hardware_emulator/libdash ../test/output/pulse_doppler_llvm.ll /heorot/lchang21/TraceAtlas/TaskflowIR/test/output/pulse_doppler-no-main.bc /heorot/lchang21/TraceAtlas/build/lib/libAtlasBackend.a -o ../test/output/pulse_doppler_llvm -L/heorot/lchang21/taskflow/taskflow/taskflow-lib/build -ltaskflow_lib -lstdc++ -lgsl -lgslcblas -lz
+
 # fix me
 
 

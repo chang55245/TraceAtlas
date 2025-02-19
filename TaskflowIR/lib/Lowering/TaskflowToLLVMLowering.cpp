@@ -92,8 +92,46 @@ public:
       return failure();
     auto symbolRef = FlatSymbolRefAttr::get(rewriter.getContext(), *callee);
     auto globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, funcType, symbolRef);
-    args.push_back(globalPtr);
-    args.push_back(globalPtr);  // Same pointer for function and data.
+    
+    // Create string constant for function name at module level
+    auto moduleOp = op->getParentOfType<ModuleOp>();
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPointToStart(moduleOp.getBody());
+    
+    std::string uniqueName = "func_name_" + std::to_string(
+        rewriter.getBlock()->getNumArguments());
+    
+    // Create the function name string with the task ID
+    std::string taskName = "taskflow_task_" + std::to_string(op.getNodeId());
+    auto funcNameStr = StringAttr::get(rewriter.getContext(), taskName);
+    
+    auto arrayType = LLVM::LLVMArrayType::get(
+        IntegerType::get(rewriter.getContext(), 8), 
+        funcNameStr.getValue().size());  // Use the actual string length
+        
+    auto funcNameGlobal = rewriter.create<LLVM::GlobalOp>(
+        loc, 
+        arrayType,
+        /*isConstant=*/true,
+        LLVM::Linkage::Internal,
+        uniqueName,
+        funcNameStr);
+    
+    // Restore insertion point
+    rewriter.restoreInsertionPoint(rewriter.saveInsertionPoint());
+    
+    auto funcNameGlobalPtr = rewriter.create<LLVM::AddressOfOp>(loc, funcNameGlobal);
+    auto zero = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI64Type(), 
+                                                 rewriter.getI64IntegerAttr(0));
+    auto funcNamePtr = rewriter.create<LLVM::GEPOp>(
+        loc,
+        LLVM::LLVMPointerType::get(rewriter.getContext()),
+        funcNameGlobal.getType(),
+        funcNameGlobalPtr,
+        ArrayRef<Value>({zero, zero}));
+    
+    args.push_back(funcNamePtr);
+    args.push_back(globalPtr);  // Function pointer as third argument
 
     auto taskHandle = rewriter.create<LLVM::CallOp>(
         loc, LLVM::LLVMPointerType::get(rewriter.getContext()),
