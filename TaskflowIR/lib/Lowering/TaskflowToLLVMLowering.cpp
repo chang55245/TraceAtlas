@@ -72,20 +72,33 @@ public:
     if (!funcCall)
       return failure();
 
-    // Get the taskflow handle from the parent ApplicationStartOp.
+    // Get the taskflow handle from the parent ApplicationStartOp
     Value tfHandle;
-    op->getParentRegion()->walk([&](LLVM::CallOp callOp) {
-      if (auto callee = callOp.getCallee()) {
-        if (*callee == "taskflow_create")
-          tfHandle = callOp.getResult();
+    auto parentRegion = op->getParentRegion();
+    while (parentRegion) {
+      for (Operation &op : parentRegion->getOps()) {
+        if (auto callOp = dyn_cast<LLVM::CallOp>(op)) {
+          if (auto callee = callOp.getCallee()) {
+            if (*callee == "taskflow_create") {
+              tfHandle = callOp.getResult();
+              break;
+            }
+          }
+        }
       }
-    });
+      if (tfHandle)
+        break;
+      parentRegion = parentRegion->getParentRegion();
+    }
+    
     if (!tfHandle)
       return failure();
 
-    // Create the LLVM call to create a task.
+    // Create the LLVM call to create a task
     SmallVector<Value, 3> args;
     args.push_back(tfHandle);
+    
+    // Rest of the function name and task creation logic
     auto funcType = LLVM::LLVMPointerType::get(rewriter.getContext());
     auto callee = funcCall.getCallee();
     if (!callee)
@@ -94,31 +107,32 @@ public:
     auto globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, funcType, symbolRef);
     
     // Create string constant for function name at module level
+    LLVM::GlobalOp funcNameGlobal;
     auto moduleOp = op->getParentOfType<ModuleOp>();
-    OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPointToStart(moduleOp.getBody());
-    
-    std::string uniqueName = "func_name_" + std::to_string(
-        rewriter.getBlock()->getNumArguments());
-    
-    // Create the function name string with the task ID
-    std::string taskName = "taskflow_task_" + std::to_string(op.getNodeId());
-    auto funcNameStr = StringAttr::get(rewriter.getContext(), taskName);
-    
-    auto arrayType = LLVM::LLVMArrayType::get(
-        IntegerType::get(rewriter.getContext(), 8), 
-        funcNameStr.getValue().size());  // Use the actual string length
-        
-    auto funcNameGlobal = rewriter.create<LLVM::GlobalOp>(
-        loc, 
-        arrayType,
-        /*isConstant=*/true,
-        LLVM::Linkage::Internal,
-        uniqueName,
-        funcNameStr);
-    
+    {
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPointToStart(moduleOp.getBody());
+      
+      std::string uniqueName = "func_name_" + std::to_string(op.getNodeId());  // Use task ID for unique name
+      
+      // Create the function name string with the task ID
+      std::string taskName = "taskflow_task_" + std::to_string(op.getNodeId());
+      auto funcNameStr = StringAttr::get(rewriter.getContext(), taskName);
+      
+      auto arrayType = LLVM::LLVMArrayType::get(
+          IntegerType::get(rewriter.getContext(), 8), 
+          funcNameStr.getValue().size());  // Use the actual string length
+          
+      funcNameGlobal = rewriter.create<LLVM::GlobalOp>(
+          moduleOp.getLoc(), 
+          arrayType,
+          /*isConstant=*/true,
+          LLVM::Linkage::Internal,
+          uniqueName,
+          funcNameStr);
+    }
     // Restore insertion point
-    rewriter.restoreInsertionPoint(rewriter.saveInsertionPoint());
+    // rewriter.restoreInsertionPoint(rewriter.saveInsertionPoint());
     
     auto funcNameGlobalPtr = rewriter.create<LLVM::AddressOfOp>(loc, funcNameGlobal);
     auto zero = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI64Type(), 
@@ -131,7 +145,7 @@ public:
         ArrayRef<Value>({zero, zero}));
     
     args.push_back(funcNamePtr);
-    args.push_back(globalPtr);  // Function pointer as third argument
+    args.push_back(globalPtr);
 
     auto taskHandle = rewriter.create<LLVM::CallOp>(
         loc, LLVM::LLVMPointerType::get(rewriter.getContext()),
@@ -140,7 +154,7 @@ public:
     // **Record the lowered result and the dependency list.**
     loweredTaskResults[op.getOperation()] = taskHandle.getResult();
     SmallVector<Value, 4> deps;
-    for (Value dep : op.getDependencies())
+    for (Value dep : adaptor.getDependencies())
       deps.push_back(dep);
     taskDependencies[op.getOperation()] = deps;
 
