@@ -8,10 +8,10 @@ pass:
 		-I /heorot/lchang21/llvm-release/llvm-19/llvm-19/include/ \
 		-I ../vcpkg/installed/x64-linux/include \
 		MergeTaskExtraction.cpp \
-		-o MergeTaskExtraction.so
+		-o TaskExtraction.so
 test:
 	/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/opt \
-    -load-pass-plugin=/heorot/lchang21/TraceAtlas/llvm-19-passes/MergeTaskExtraction.so \
+    -load-pass-plugin=/heorot/lchang21/TraceAtlas/llvm-19-passes/TaskExtraction.so \
     -passes="MergeTaskExtraction" \
     -tm task_merging_schedule.json \
     pulse_doppler-merging.bc -S -o pulse_doppler-extraction.bc

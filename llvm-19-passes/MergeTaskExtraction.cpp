@@ -32,7 +32,7 @@ using namespace llvm;
 static cl::opt<std::string> TaskMergingSchedule("tm", 
     cl::desc("Schedule information file"), 
     cl::value_desc("Schedule information file filename"), 
-    cl::Required);
+    cl::Optional);
 
 
 namespace {
@@ -156,6 +156,16 @@ struct MergeTaskExtractionWrapper : public PassInfoMixin<MergeTaskExtractionWrap
         return FPMAdaptor.run(M, AM);
     }
 };
+struct RemoveMainPass : public PassInfoMixin<RemoveMainPass> {
+    PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM) {
+        // Find and remove the main function
+        if (Function *Main = M.getFunction("main")) {
+            Main->deleteBody();
+            Main->eraseFromParent();
+        }
+        return PreservedAnalyses::all();
+    }
+};
 
 // Modified Pass Plugin Registration
 extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
@@ -169,7 +179,10 @@ llvmGetPassPluginInfo() {
                     if (Name == "MergeTaskExtraction") {
                         // Read the JSON file
                         nlohmann::json j;
-                        
+                        if (TaskMergingSchedule.empty()) {
+                            errs() << "Task merging schedule file not provided\n";
+                            return false;
+                        }
                         // read the task merging node file
                         std::ifstream inputStream(TaskMergingSchedule);
                         inputStream >> j;
@@ -189,6 +202,16 @@ llvmGetPassPluginInfo() {
             PB.registerAnalysisRegistrationCallback([](ModuleAnalysisManager &MAM) {
                     MAM.registerPass([] { return BBIDAnalysis(); });
                 });
+            PB.registerPipelineParsingCallback(
+            [](StringRef Name, ModulePassManager &MPM,
+                ArrayRef<PassBuilder::PipelineElement>) {
+                // Make sure this exactly matches what you use in the opt command
+                if (Name == "remove-main") {
+                    MPM.addPass(RemoveMainPass());
+                    return true;
+                }
+                return false;
+            });
         }
     };
 }

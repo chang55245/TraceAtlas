@@ -17,7 +17,7 @@
 # test command
 
 /heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/opt \
-    -load-pass-plugin=/heorot/lchang21/TraceAtlas/llvm-19-passes/MergeTaskExtraction.so \
+    -load-pass-plugin=/heorot/lchang21/TraceAtlas/llvm-19-passes/TaskExtraction.so \
     -passes="MergeTaskExtraction" \
     -tm task_merging_schedule.json \
     pulse_doppler-merging.bc -S -o pulse_doppler-extraction.bc
@@ -36,10 +36,10 @@ maybe these are already included in the clang-19 command?
     -func=main \
     -o main-extracted.bc
 
-/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/llvm-extract \
-    -rfunc '^taskflow_task.*' \
-    pulse_doppler-extraction.bc \
-    -o pulse_doppler-extraction-no-main.bc
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/opt \
+    -load-pass-plugin=/heorot/lchang21/TraceAtlas/llvm-19-passes/TaskExtraction.so \
+    -passes="remove-main" \
+    pulse_doppler-extraction.bc -S -o pulse_doppler-no-main.bc
 
 # function extraction llvm-dis
 
