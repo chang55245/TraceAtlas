@@ -193,7 +193,7 @@ public:
         llvm::errs() << "Argument type: " << argType << "\n";
         
         auto idx = rewriter.create<LLVM::ConstantOp>(
-            loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(i));
+            loc, rewriter.getI64Type(), rewriter.getI32IntegerAttr(i));
         llvm::errs() << "Created index constant:\n" << idx << "\n";
             
         auto argPtr = rewriter.create<LLVM::GEPOp>(
@@ -201,11 +201,19 @@ public:
             LLVM::LLVMPointerType::get(rewriter.getContext()),
             taskArgStructTy,
             argsArray,
-            ValueRange{idx, zeroIdx});
+            ValueRange{idx});
         llvm::errs() << "Created GEP for argument:\n" << argPtr << "\n";
+
+        auto argPtrPtr = rewriter.create<LLVM::GEPOp>(
+            loc,
+            LLVM::LLVMPointerType::get(rewriter.getContext()),
+            taskArgStructTy,
+            argPtr,
+            ValueRange{zeroIdx, zeroIdx});
+        llvm::errs() << "Created GEP for argument pointer:\n" << argPtrPtr << "\n";
             
         auto loadedArg = rewriter.create<LLVM::LoadOp>(
-            loc, LLVM::LLVMPointerType::get(rewriter.getContext()), argPtr);
+            loc, LLVM::LLVMPointerType::get(rewriter.getContext()), argPtrPtr);
         llvm::errs() << "Created load for argument:\n" << loadedArg << "\n";
 
         auto castedArg = rewriter.create<LLVM::BitcastOp>(
