@@ -41,7 +41,7 @@ cmake -G "Unix Makefiles" \
 
 /heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang -c ../test/sample-llvm-ir-back.ll -o ../test/sample-llvm-ir-back.o
 
-/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang ../test/sample-llvm-ir-back.o -o ../test/sample-llvm-ir-back -L/heorot/lchang21/taskflow/taskflow/taskflow-lib/build -ltaskflow_lib -lstdc++
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang ../test/sample-llvm-ir-back.ll -o ../test/sample-llvm-ir-back -L/heorot/lchang21/taskflow/taskflow/taskflow-lib/build -ltaskflow_lib -lstdc++
 
 # debugging 
 make VERBOSE=1
