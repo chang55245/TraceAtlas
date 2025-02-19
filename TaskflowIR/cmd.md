@@ -34,7 +34,10 @@ cmake -G "Unix Makefiles" \
 /heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang -c ../test/output/pulse_doppler_llvm.ll -o ../test/output/pulse_doppler_llvm.o
 
 
-/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang ../test/output/pulse_doppler_llvm.o /heorot/lchang21/TraceAtlas/TaskflowIR/test/output/pulse_doppler-extraction-no-main.bc -o ../test/output/pulse_doppler_llvm -L/heorot/lchang21/taskflow/taskflow/taskflow-lib/build -ltaskflow_lib -lstdc++
+# fix me
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang ../test/output/pulse_doppler_llvm.ll /heorot/lchang21/TraceAtlas/TaskflowIR/test/output/pulse_doppler-no-main.bc /heorot/lchang21/TraceAtlas/build/lib/libAtlasBackend.a -o ../test/output/pulse_doppler_llvm -L/heorot/lchang21/taskflow/taskflow/taskflow-lib/build -ltaskflow_lib -lstdc++
+# fix me
+
 
 /heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang -c ../test/sample-llvm-ir-back.ll -o ../test/sample-llvm-ir-back.o
 
