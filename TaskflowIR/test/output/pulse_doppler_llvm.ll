@@ -261,7 +261,6 @@ define i32 @main(i32 %0, ptr %1) #2 {
   %213 = load ptr, ptr %153, align 8
   %214 = call i32 (ptr, ptr, ...) @__isoc99_fscanf(ptr %213, ptr @.str.6, ptr %212)
   %215 = load i32, ptr %151, align 4
-  call void @ComputeDump()
   %216 = add nsw i32 %215, 1
   store i32 %216, ptr %150, align 4
   %217 = load i32, ptr %150, align 4
@@ -543,9 +542,9 @@ define i32 @main(i32 %0, ptr %1) #2 {
   call void @set_task_arg_ptr(ptr %236, i32 0, ptr %12)
   call void @set_task_arg_ptr(ptr %236, i32 1, ptr %11)
   %237 = call ptr @taskflow_create_task(ptr %3, ptr @func_name_25, ptr @taskflow_task_wrapper_25, ptr %236)
-  call void @taskflow_add_dependency(ptr %225, ptr %228)
-  call void @taskflow_add_dependency(ptr %228, ptr %231)
-  call void @taskflow_add_dependency(ptr %231, ptr %234)
+  call void @taskflow_add_dependency(ptr %225, ptr %237)
+  call void @taskflow_add_dependency(ptr %228, ptr %237)
+  call void @taskflow_add_dependency(ptr %231, ptr %237)
   call void @taskflow_add_dependency(ptr %234, ptr %237)
   call void @taskflow_execute(ptr %3)
   br label %238
@@ -567,7 +566,7 @@ declare i32 @fclose(ptr) #1
 
 declare void @NonKernelSplit(...) #1
 
-declare void @ComputeDump()
+
 
 ; Function Attrs: noinline nounwind uwtable
 declare hidden void @taskflow_task_1(ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr) #4

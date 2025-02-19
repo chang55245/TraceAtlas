@@ -75,6 +75,22 @@ AnalysisKey BBIDAnalysis::Key;
 // Original Function Pass (simplified)
 struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
     PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
+        for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E;) {
+            Instruction *inst = &*I;
+            I++;
+            
+                if (auto *CI = dyn_cast<CallInst>(inst)) {
+                    Function *calledFunc = CI->getCalledFunction();
+                    if (calledFunc) {
+                        auto funcName = calledFunc->getName();
+                        // name start mid
+                        if (funcName == "LoadDump"|| funcName == "StoreDump"|| funcName == "MemCpyDump"|| funcName == "BB_ID_Dump"|| funcName == "ComputeDump") {
+                            inst->eraseFromParent();
+                        }
+                    }
+                }
+            
+        }
 
         if (F.getName() != "main") {
             return PreservedAnalyses::all();
@@ -90,22 +106,7 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
 
         // extract the basic blocks of tasks to form functions
 
-        for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E;) {
-            Instruction *inst = &*I;
-            I++;
-            
-                if (auto *CI = dyn_cast<CallInst>(inst)) {
-                    Function *calledFunc = CI->getCalledFunction();
-                    if (calledFunc) {
-                        auto funcName = calledFunc->getName();
-                        // name start mid
-                        if (funcName == "LoadDump"|| funcName == "StoreDump"|| funcName == "MemCpyDump"|| funcName == "BB_ID_Dump") {
-                            inst->eraseFromParent();
-                        }
-                    }
-                }
-            
-        }
+        
 
         for (auto& [key, value] : taskMergingNodeMap) {
             std::vector<BasicBlock*> taskBBs;

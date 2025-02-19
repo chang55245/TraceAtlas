@@ -41,7 +41,7 @@ maybe these are already included in the clang-19 command?
     --delete \
     pulse_doppler-extraction.bc \
     -func=main \
-    -o main-extracted-no-main.bc
+    -o pulse_doppler-no-main.bc
 
 /heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/opt \
     -load-pass-plugin=/heorot/lchang21/TraceAtlas/llvm-19-passes/TaskExtraction.so \
