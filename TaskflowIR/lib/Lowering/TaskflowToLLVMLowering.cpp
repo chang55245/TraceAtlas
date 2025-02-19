@@ -36,7 +36,7 @@ public:
     // Create taskflow instance
     auto tfHandle = rewriter.create<LLVM::CallOp>(
         loc, 
-        LLVM::LLVMPointerType::get(rewriter.getContext(), 8),
+        LLVM::LLVMPointerType::get(rewriter.getContext()),
         "taskflow_create",
         ValueRange{});
     
@@ -86,7 +86,7 @@ public:
     // Create the LLVM call to create a task.
     SmallVector<Value, 3> args;
     args.push_back(tfHandle);
-    auto funcType = LLVM::LLVMPointerType::get(rewriter.getContext(), 8);
+    auto funcType = LLVM::LLVMPointerType::get(rewriter.getContext());
     auto callee = funcCall.getCallee();
     if (!callee)
       return failure();
@@ -96,7 +96,7 @@ public:
     args.push_back(globalPtr);  // Same pointer for function and data.
 
     auto taskHandle = rewriter.create<LLVM::CallOp>(
-        loc, LLVM::LLVMPointerType::get(rewriter.getContext(), 8),
+        loc, LLVM::LLVMPointerType::get(rewriter.getContext()),
         "taskflow_create_task", args);
 
     // **Record the lowered result and the dependency list.**
@@ -160,7 +160,7 @@ public:
     if (!tfHandle)
       return failure();
 
-    auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext(), 8);
+    auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
 
     // Iterate over each recorded TaskDefOp.
     for (auto &entry : taskDependencies) {
@@ -230,14 +230,14 @@ public:
     OpBuilder builder(module.getBody(), module.getBody()->end());
     
     // Common types
-    auto i8PtrTy = LLVM::LLVMPointerType::get(context, 8);
+    auto PtrTy = LLVM::LLVMPointerType::get(context);
     auto voidTy = LLVM::LLVMVoidType::get(context);
     
     // Create function types
-    auto createFuncTy = LLVM::LLVMFunctionType::get(i8PtrTy, {}, false);
-    auto createTaskFuncTy = LLVM::LLVMFunctionType::get(i8PtrTy, {i8PtrTy, i8PtrTy, i8PtrTy}, false);
-    auto addDependencyFuncTy = LLVM::LLVMFunctionType::get(voidTy, {i8PtrTy, i8PtrTy}, false);
-    auto executeFuncTy = LLVM::LLVMFunctionType::get(voidTy, {i8PtrTy}, false);
+    auto createFuncTy = LLVM::LLVMFunctionType::get(PtrTy, {}, false);
+    auto createTaskFuncTy = LLVM::LLVMFunctionType::get(PtrTy, {PtrTy, PtrTy, PtrTy}, false);
+    auto addDependencyFuncTy = LLVM::LLVMFunctionType::get(voidTy, {PtrTy, PtrTy}, false);
+    auto executeFuncTy = LLVM::LLVMFunctionType::get(voidTy, {PtrTy}, false);
 
     // Declare taskflow runtime functions
     builder.create<LLVM::LLVMFuncOp>(
@@ -267,7 +267,7 @@ public:
     // Convert Taskflow types to LLVM types
     LLVMTypeConverter typeConverter(context);
     typeConverter.addConversion([&context](taskflow::TaskNodeType type) {
-      return LLVM::LLVMPointerType::get(context, 8);
+      return LLVM::LLVMPointerType::get(context);
     });
     
     // Setup the conversion target

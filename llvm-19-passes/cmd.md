@@ -31,9 +31,15 @@ maybe these are already included in the clang-19 command?
 # function extraction llvm-extract
 
 /heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/llvm-extract \
+    -S \
     pulse_doppler-extraction.bc \
     -func=main \
     -o main-extracted.bc
+
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/llvm-extract \
+    -rfunc '^taskflow_task.*' \
+    pulse_doppler-extraction.bc \
+    -o pulse_doppler-extraction-no-main.bc
 
 # function extraction llvm-dis
 

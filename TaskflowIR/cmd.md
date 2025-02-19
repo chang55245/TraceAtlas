@@ -15,12 +15,31 @@ cmake -G "Unix Makefiles" \
 ./bin/taskflow-opt --pass-pipeline="builtin.module(taskflow-insertion{dag-file=\"../test/input/task_merging_schedule.json\"})" ../test/input/pulse_doppler_main-extracted.mlir
 
 
-./bin/taskflow-opt -taskflow-to-llvm ../test/output/pulse_doppler_main-extracted_output.mlir --mlir-print-ir-after-all
+./bin/taskflow-opt -taskflow-to-llvm ../test/output/pulse_doppler_main-extracted_output.mlir -o ../test/output/pulse_doppler_llvm.mlir
+
 # import llvm ir to llvm dialect
 /heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/mlir-translate \
     -import-llvm ../test/sample-llvm-ir-final.ll \
     -mlir-print-debuginfo \
     -o ../test/sample-llvm-ir-final.mlir
+
+# lower to llvm IR and run
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/mlir-translate \
+    --mlir-to-llvmir ../test/sample-llvm-ir-final.mlir \
+    -o ../test/sample-llvm-ir-back.ll
+
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/mlir-translate \
+    --mlir-to-llvmir ../test/output/pulse_doppler_llvm.mlir \
+    -o ../test/output/pulse_doppler_llvm.ll
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang -c ../test/output/pulse_doppler_llvm.ll -o ../test/output/pulse_doppler_llvm.o
+
+
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang ../test/output/pulse_doppler_llvm.o /heorot/lchang21/TraceAtlas/TaskflowIR/test/output/pulse_doppler-extraction-no-main.bc -o ../test/output/pulse_doppler_llvm -L/heorot/lchang21/taskflow/taskflow/taskflow-lib/build -ltaskflow_lib -lstdc++
+
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang -c ../test/sample-llvm-ir-back.ll -o ../test/sample-llvm-ir-back.o
+
+/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang ../test/sample-llvm-ir-back.o -o ../test/sample-llvm-ir-back -L/heorot/lchang21/taskflow/taskflow/taskflow-lib/build -ltaskflow_lib -lstdc++
+
 # debugging 
 make VERBOSE=1
 
