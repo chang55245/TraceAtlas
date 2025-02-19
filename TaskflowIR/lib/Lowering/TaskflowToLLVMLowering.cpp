@@ -94,21 +94,115 @@ public:
     if (!tfHandle)
       return failure();
 
-    // Create the LLVM call to create a task
-    SmallVector<Value, 3> args;
-    args.push_back(tfHandle);
-    
-    // Rest of the function name and task creation logic
-    auto funcType = LLVM::LLVMPointerType::get(rewriter.getContext());
-    auto callee = funcCall.getCallee();
-    if (!callee)
-      return failure();
-    auto symbolRef = FlatSymbolRefAttr::get(rewriter.getContext(), *callee);
-    auto globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, funcType, symbolRef);
-    
-    // Create string constant for function name at module level
-    LLVM::GlobalOp funcNameGlobal;
     auto moduleOp = op->getParentOfType<ModuleOp>();
+    auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+
+    // Get task function name first
+    std::string taskFuncName = "taskflow_task_" + std::to_string(op.getNodeId());
+    std::string wrapperFuncName = "taskflow_task_wrapper_" + std::to_string(op.getNodeId());
+
+    // Save current insertion point
+    auto savedIP = rewriter.saveInsertionPoint();
+
+    // Move to module scope
+    rewriter.setInsertionPointToEnd(moduleOp.getBody());
+
+    // Create wrapper function type (TaskArgs* -> void)
+    auto voidTy = LLVM::LLVMVoidType::get(rewriter.getContext());
+    auto wrapperFuncType = LLVM::LLVMFunctionType::get(voidTy, {ptrType}, false);
+    
+    // Create wrapper function
+    auto wrapperFunc = rewriter.create<LLVM::LLVMFuncOp>(
+        loc, wrapperFuncName, wrapperFuncType, LLVM::Linkage::Internal);
+
+    auto &entryBlock = *wrapperFunc.addEntryBlock(rewriter);
+    Value taskArg = entryBlock.getArgument(0);
+
+    // Create symbol table from the module
+    SymbolTable symbolTable(moduleOp);
+    // Get reference to the task function
+    auto callee = symbolTable.lookup<LLVM::LLVMFuncOp>(taskFuncName);
+    if (!callee)
+        return failure();
+
+    // Extract arguments from the task argument pointer
+    SmallVector<Value, 4> extractedArgs;
+    for (size_t i = 0; i < funcCall.getNumOperands(); ++i) {
+        // Get the argument type from the original function call
+        auto argType = funcCall.getOperand(i).getType();
+        
+        // Create GEP to access args[i].ptr
+        auto idx = rewriter.create<LLVM::ConstantOp>(
+            loc, 
+            rewriter.getI32Type(),
+            rewriter.getI32IntegerAttr(i));
+            
+        // Access args[i].ptr using GEP
+        auto argPtr = rewriter.create<LLVM::GEPOp>(
+            loc,
+            LLVM::LLVMPointerType::get(rewriter.getContext()),  // result type
+            LLVM::LLVMPointerType::get(rewriter.getContext()),  // element type
+            taskArg,                                            // base pointer
+            ValueRange{idx},                                    // indices
+            /*inbounds=*/false);                               // not inbounds
+            
+        // Load and cast the pointer to the correct type
+        auto loadedArg = rewriter.create<LLVM::LoadOp>(
+            loc, 
+            LLVM::LLVMPointerType::get(rewriter.getContext()),  // Changed to pointer type
+            argPtr);
+        auto castedArg = rewriter.create<LLVM::BitcastOp>(
+            loc, 
+            argType,
+            loadedArg);
+            
+        extractedArgs.push_back(castedArg);
+    }
+
+    // Create call and return inside the wrapper function
+    rewriter.setInsertionPointToEnd(&entryBlock);
+
+    // Clone the original function call with the extracted arguments
+    auto newCall = rewriter.create<LLVM::CallOp>(
+        loc,
+        TypeRange(),
+        FlatSymbolRefAttr::get(rewriter.getContext(), taskFuncName),
+        extractedArgs);
+
+    rewriter.create<LLVM::ReturnOp>(loc, ValueRange());
+
+    // Restore original insertion point for the rest of the lowering
+    rewriter.restoreInsertionPoint(savedIP);
+
+    // Create task arguments
+    auto numArgs = funcCall.getOperands().size();
+    auto numArgsConst = rewriter.create<LLVM::ConstantOp>(
+        loc, 
+        rewriter.getI32Type(),
+        rewriter.getI32IntegerAttr(numArgs));
+    
+    auto taskArgs = rewriter.create<LLVM::CallOp>(
+        loc, ptrType, "create_task_args", ValueRange{numArgsConst});
+
+    // Set up task arguments
+    for (auto argPair : llvm::enumerate(funcCall.getOperands())) {
+      auto idx = rewriter.create<LLVM::ConstantOp>(
+          loc,
+          rewriter.getI32Type(),
+          rewriter.getI32IntegerAttr(argPair.index()));
+          
+      auto argPtr = rewriter.create<LLVM::BitcastOp>(
+          loc, ptrType, argPair.value());
+          
+      rewriter.create<LLVM::CallOp>(
+          loc,
+          TypeRange{},
+          "set_task_arg_ptr",
+          ValueRange{taskArgs.getResult(), idx, argPtr});
+    }
+
+    // Create task name global string
+    LLVM::GlobalOp funcNameGlobal;
     {
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToStart(moduleOp.getBody());
@@ -143,15 +237,24 @@ public:
         funcNameGlobal.getType(),
         funcNameGlobalPtr,
         ArrayRef<Value>({zero, zero}));
-    
-    args.push_back(funcNamePtr);
-    args.push_back(globalPtr);
 
+    // Create the wrapper function reference
+    auto wrapperSymbolRef = FlatSymbolRefAttr::get(rewriter.getContext(), wrapperFuncName);
+    auto wrapperPtr = rewriter.create<LLVM::AddressOfOp>(loc, ptrType, wrapperSymbolRef);
+
+    // Create the task with all required arguments
     auto taskHandle = rewriter.create<LLVM::CallOp>(
-        loc, LLVM::LLVMPointerType::get(rewriter.getContext()),
-        "taskflow_create_task", args);
+        loc, 
+        ptrType,
+        "taskflow_create_task",
+        ValueRange{
+            tfHandle,           // taskflow instance
+            funcNamePtr,        // task function name
+            wrapperPtr,        // wrapper function pointer
+            taskArgs.getResult() // task arguments
+        });
 
-    // **Record the lowered result and the dependency list.**
+    // Record results and update
     loweredTaskResults[op.getOperation()] = taskHandle.getResult();
     SmallVector<Value, 4> deps;
     for (Value dep : adaptor.getDependencies())
@@ -287,7 +390,7 @@ public:
     
     // Create function types
     auto createFuncTy = LLVM::LLVMFunctionType::get(PtrTy, {}, false);
-    auto createTaskFuncTy = LLVM::LLVMFunctionType::get(PtrTy, {PtrTy, PtrTy, PtrTy}, false);
+    auto createTaskFuncTy = LLVM::LLVMFunctionType::get(PtrTy, {PtrTy, PtrTy, PtrTy, PtrTy}, false);
     auto addDependencyFuncTy = LLVM::LLVMFunctionType::get(voidTy, {PtrTy, PtrTy}, false);
     auto executeFuncTy = LLVM::LLVMFunctionType::get(voidTy, {PtrTy}, false);
 
