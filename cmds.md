@@ -9,3 +9,5 @@ cmake ../ -DLLVM_DIR=/heorot/lchang21/llvm-release/llvm-9/llvm-9/lib/cmake/llvm 
 
 
 python3 /heorot/lchang21/TraceAtlas/Utilities/dag-compare.py dag_before_merge.json dag_after_depth_merge.json
+
+make pulse_doppler_task_merging VERBOSE=1 >error.txt

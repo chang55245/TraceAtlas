@@ -45,7 +45,7 @@ function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
 
     add_custom_target(${TARGET_NAME}_DAG_generation
         # Initial compilation
-        COMMAND ${LLVM_9_PATH}/bin/${COMPILER_NAME} -Xclang -disable-O0-optnone -fPIC -DCPU_ONLY -flto 
+        COMMAND ${LLVM_9_PATH}/bin/${COMPILER_NAME} -g -Xclang -disable-O0-optnone -fPIC -DCPU_ONLY -flto 
                 -lgsl -lgslcblas -fuse-ld=lld -Wl,-plugin-opt=emit-llvm 
                 ${INCLUDES} ${CEDR_INTERFACE} ${SOURCE_FILE}
                 -o ${OUTPUT_DIR}/${TARGET_NAME}.initial.bc
@@ -121,7 +121,7 @@ function(add_task_merging_target TARGET_NAME)
                 -TaskMergingReorder -tm ${OUTPUT_DIR}/task_merging_schedule.json 
                 ${OUTPUT_DIR}/${TARGET_NAME}.encoded.bc 
                 -S -o ${OUTPUT_DIR}/${TARGET_NAME}.merged.bc
-        COMMAND ${LLVM_9_PATH}/bin/${COMPILER_NAME} -lm -lz -lpthread -I ./ 
+        COMMAND ${LLVM_9_PATH}/bin/${COMPILER_NAME} -g -lm -lz -lpthread -I ./ 
                 -lgsl -lgslcblas ${OUTPUT_DIR}/${TARGET_NAME}.merged.bc 
                 -o ${OUTPUT_DIR}/${TARGET_NAME}.merged.native -fuse-ld=lld 
                 ${TRACEATLAS_PASS_BACKEND_STATIC}
@@ -175,7 +175,8 @@ function(add_task_merging_target TARGET_NAME)
                 -o ${OUTPUT_DIR}/${TARGET_NAME}-llvm.ll
 
         # Final compilation with Taskflow
-        COMMAND ${LLVM_19_PATH}/bin/clang
+        COMMAND ${LLVM_19_PATH}/bin/clang 
+                -g 
                 -I ${CEDR_PATH}/libdash
                 ${OUTPUT_DIR}/${TARGET_NAME}-llvm.ll
                 ${OUTPUT_DIR}/${TARGET_NAME}-deleted-main.bc
