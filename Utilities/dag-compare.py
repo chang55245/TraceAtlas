@@ -2,6 +2,7 @@ from queue import Full
 import networkx as nx
 import matplotlib.pyplot as plt
 import json
+import os
 
 def read_dag_from_json(filepath):
     with open(filepath, 'r') as f:
@@ -98,8 +99,12 @@ def compare_dags(dag1_path, dag2_path):
     # Use tight_layout to improve spacing
     plt.tight_layout()
 
-    # Save the visualizations
-    plt.savefig("dags_comparison.png")
+    # Get output directory from environment variable or use current directory
+    output_dir = os.getenv('OUTPUT_DIR', '.')
+    
+    # Save the visualizations to the output directory
+    output_path = os.path.join(output_dir, "dags_comparison.png")
+    plt.savefig(output_path)
 
 if __name__ == "__main__":
     import sys

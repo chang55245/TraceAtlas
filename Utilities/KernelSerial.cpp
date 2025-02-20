@@ -2697,13 +2697,21 @@ void task_merging(map<int, task_feature> &task_feature_map) {
     // generate json files for dag before and after merging in this format
     TaskMerging merger(task_feature_map, DAGEdge, kernelIdMap);
     
+    // Get the output directory from the command line option or environment
+    string output_dir = ".";
+    if (const char* env_dir = getenv("OUTPUT_DIR")) {
+        output_dir = env_dir;
+    }
+    
     // Generate JSON for DAG before merging
-    generateDAGJson(merger.get_merged_graph(), "dag_before_merge.json");
+    generateDAGJson(merger.get_merged_graph(), 
+                   output_dir + "/dag_before_merge.json");
 
     // Perform merging
     bool merged = false;
     merger.depth_wise_merge();
-    generateDAGJson(merger.get_merged_graph(), "dag_after_depth_merge.json");
+    generateDAGJson(merger.get_merged_graph(), 
+                   output_dir + "/dag_after_depth_merge.json");
     while (true) {    
         merged = merger.breadth_wise_merge();
         if (!merged) break;
@@ -2713,10 +2721,11 @@ void task_merging(map<int, task_feature> &task_feature_map) {
 
     merger.analyze_schedule();
     // Generate JSON for DAG after merging
-    generateDAGJson(merger.get_merged_graph(), "dag_after_merge.json");
+    generateDAGJson(merger.get_merged_graph(), 
+                   output_dir + "/dag_after_merge.json");
     // generate the schedule json file
-    generateScheduleJson(merger, "task_merging_schedule.json");
-
+    generateScheduleJson(merger, 
+                        output_dir + "/task_merging_schedule.json");
 }
 
 int main(int argc, char **argv)

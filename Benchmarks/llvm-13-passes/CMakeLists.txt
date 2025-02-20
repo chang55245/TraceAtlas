@@ -1,43 +1,18 @@
-cmake_minimum_required(VERSION 3.13.4)
-project(llvm13_passes)
-
-# Set LLVM paths
-set(LLVM_PATH ${LLVM_13_PATH})
-
 # Add LLVM includes
-include_directories(${LLVM_PATH}/include)
+include_directories(
+    ${LLVM_13_PATH}/include
+    ${CEDR_PATH}/extern/include
+)
 
-# Create OMP parallel pass
-add_library(omp-parallel SHARED
+# Create function inlining pass
+add_library(llvm13_passes SHARED
+    erase.cpp
     omp-parallel.cpp
+    printBBName.cpp
+    api_swap.cpp
 )
 
-set_target_properties(omp-parallel PROPERTIES
-    COMPILE_FLAGS "-g -shared -fPIC -std=c++17 -Wall -fno-rtti"
+set_target_properties(llvm13_passes PROPERTIES
+    COMPILE_FLAGS "-g -shared -fPIC -fno-rtti"
     PREFIX ""
 )
-
-target_link_libraries(omp-parallel
-    PRIVATE
-    LLVMCore
-    LLVMSupport
-    LLVMAnalysis
-    LLVMTransformUtils
-)
-
-# Create SwapAPIs pass
-add_library(SwapAPIs SHARED
-    SwapAPIs.cpp
-)
-
-set_target_properties(SwapAPIs PROPERTIES
-    COMPILE_FLAGS "-g -shared -fPIC -std=c++17 -Wall -fno-rtti"
-    PREFIX ""
-)
-
-target_link_libraries(SwapAPIs
-    PRIVATE
-    LLVMCore
-    LLVMSupport
-    LLVMAnalysis
-) 

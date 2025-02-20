@@ -1,12 +1,6 @@
-cmake_minimum_required(VERSION 3.13.4)
-project(llvm9_passes)
-
-# Set LLVM paths
-set(LLVM_PATH ${LLVM_9_PATH})
-
 # Add LLVM includes
 include_directories(
-    ${LLVM_PATH}/include
+    ${LLVM_9_PATH}/include
     ${CEDR_PATH}/extern/include
 )
 
