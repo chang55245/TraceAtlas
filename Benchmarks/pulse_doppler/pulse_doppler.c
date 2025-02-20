@@ -16,12 +16,12 @@
 #define OUTPUT PROGPATH "output_pd_f.txt" 
                                               
 /* Function Declarations */               
-void xcorr(double *, double *, size_t, double *, struct timespec *);
+void xcorr(double *, double *, size_t, double *);
 void swap(double *, double *);  
 void fftshift(double *, double);
                      
 /* Function Definitions */                
-void xcorr(double *x, double *y, size_t n_samp, double *corr, struct timespec *start_nk) {
+void xcorr(double *x, double *y, size_t n_samp, double *corr) {
 
   // clock_t beforefft1 = clock();
   
@@ -92,10 +92,6 @@ void xcorr(double *x, double *y, size_t n_samp, double *corr, struct timespec *s
   // free(X2);
 
 
-  struct timespec  fft_start_t;
-  clock_gettime(CLOCK_MONOTONIC_RAW, &fft_start_t);
-  double time_taken = fft_start_t.tv_sec - start_nk->tv_sec + (fft_start_t.tv_nsec - start_nk->tv_nsec) / 1000000000.0;
-  printf("nk time taken: %f \n", time_taken); 
 
   
   
@@ -148,91 +144,39 @@ void fftshift(double *data, double count) {
 int main(int argc, char *argv[]) {
 
 
-  struct timespec  start, end;
-  clock_gettime(CLOCK_MONOTONIC_RAW, &start);
-
-  // struct timeval start, end;
-  // gettimeofday(&start, NULL);
-
-  // double *test_i = malloc(2 * 2 * sizeof(double));
-  // double *test_o = malloc(2 * 2 * sizeof(double));
-  // memset(test_i, 1, 2 * 2 * sizeof(double));
-  // KernelEnter("FFT");
-  // DASH_FFT(test_i, test_o, 2, true);
-  // KernelExit("FFT");
-
-  // int test_dep = test_o[0];
-
-  // clock_t init1 = clock();
-
-  // size_t m = 256 ;    // number of pulses 256
-  // size_t n_samples = 128; // length of single pulse 128
-  size_t m = 8;
-  size_t n_samples = 128;
-  
+  size_t m = 8;    // number of pulses
+  size_t n_samples = 4; // length of single pulse
   double PRI = 1.27e-4;
   int i, j, k, n, x, y, z, o;
 
- 
-
-
-              FILE *fp;
-  fp = fopen(PDPULSE, "r");
-
-  if(fp == NULL) {
-    perror("fopen");
-    printf("Error opening file %s\n", PDPULSE);
-    exit(1);
-  }
-
-       
-  double *pulse =
-      malloc(2 * n_samples * sizeof(double)); // array for the original pulse
-  
-
-  // Read the original pulse
- 
-  for (i = 0; i < 2 * n_samples; i++) {
-    fscanf(fp, "%lf", &pulse[i]);
-    // printf("%lf,", pulse[i]);
-  }
-  fclose(fp);
-// Run the input samples through the matched filter
-  // fp = fopen(PDPS, "r"); // read the multiple pulses with noise and delay
-  // if(fp == NULL) {
-  //   perror("fopen");
-  //   printf("Error opening file %s\n", PDPS);
-  //   exit(1);
-  // }
-
-
-
-  
-  // clock_t init2 = clock();
-  // printf("init: %d \n", (int)(init2-init1));
-      struct timespec  start_nk;
-  clock_gettime(CLOCK_MONOTONIC_RAW, &start_nk);
-  for (k = 0; k <m; k++) 
-  {
-
-    NonKernelSplit();
-
-          double *corr =
-      malloc(2 * (2 * n_samples) *
-             sizeof(double)); // array for the output of matched filter
-    double *mf = malloc((2 * n_samples) * m * 2 *
+  double *mf = malloc((2 * n_samples) * m * 2 *
                       sizeof(double)); // build a 2D array for the output of the
                                        // matched filter
   double *p =
       malloc(2 * n_samples * sizeof(double)); // array for pulse with noise
+  double *pulse =
+      malloc(2 * n_samples * sizeof(double)); // array for the original pulse
+  double *corr =
+      malloc(2 * (2 * n_samples) *
+             sizeof(double)); // array for the output of matched filter
 
+  // Read the original pulse
+  FILE *fp;
+  fp = fopen(PDPULSE, "r");
+  for (i = 0; i < 2 * n_samples; i++) {
+    fscanf(fp, "%lf", &pulse[i]);
+  }
+  fclose(fp);
 
+  // Run the input samples through the matched filter
   fp = fopen(PDPS, "r"); // read the multiple pulses with noise and delay
 
 
+  for (k = 0; k <m; k++) 
+  {
 
-
-
+    NonKernelSplit();
+    
     for (j = 0; j < 2 * n_samples; j++) {
       fscanf(fp, "%lf", &p[j]);
       // printf("%f,", p[j]);
@@ -241,7 +185,7 @@ int main(int argc, char *argv[]) {
 
     /* matched filter */
 
-    xcorr(p, pulse, n_samples, corr,&start_nk);  
+    xcorr(p, pulse, n_samples, corr);  
 
 
 
@@ -267,56 +211,56 @@ int main(int argc, char *argv[]) {
   // free(pulse);
   // free(corr);
 
-  // double *q = malloc(2 * m * sizeof(double));
-  // double *r = malloc(m * sizeof(double));
-  // double *l = malloc(2 * m * sizeof(double));
-  // double *f = malloc(m * (2 * n_samples) * sizeof(double));
-  // double max = 0, a, b;
+  double *q = malloc(2 * m * sizeof(double));
+  double *r = malloc(m * sizeof(double));
+  double *l = malloc(2 * m * sizeof(double));
+  double *f = malloc(m * (2 * n_samples) * sizeof(double));
+  double max = 0, a, b;
 
   /* FFT */
   
 
 
   // #pragma clang loop unroll_count(2000)
-  // for (x = 0; x < 2 * n_samples; x++) {
-  //      NonKernelSplit();
+  for (x = 0; x < 2 * n_samples; x++) {
+       NonKernelSplit();
 
-  //   // clock_t before2fft1 = clock();
-  //   for (o = 0; o < 2 * m; o++) {
-  //     l[o] = mf[x + o * (2 * n_samples)];
-  //   }
+    // clock_t before2fft1 = clock();
+    for (o = 0; o < 2 * m; o++) {
+      l[o] = mf[x + o * (2 * n_samples)];
+    }
 
-  //   // clock_t before2fft2 = clock();
-  //   // printf("before2fft: %d \n", (int)(before2fft2-before2fft1));
+    // clock_t before2fft2 = clock();
+    // printf("before2fft: %d \n", (int)(before2fft2-before2fft1));
     
-  //   // gsl_fft(l,q,m);
-  //   KernelEnter("FFT");
-  //   DASH_FFT(l, q, m, true /* is_forward_transform? */);
-  //   KernelExit("FFT");
+    // gsl_fft(l,q,m);
+    KernelEnter("FFT");
+    DASH_FFT(l, q, m, true /* is_forward_transform? */);
+    KernelExit("FFT");
 
 
-  //   // clock_t after2fft1 = clock();
+    // clock_t after2fft1 = clock();
 
-  //   for (y = 0; y < 2 * m; y += 2) {
-  //     r[y / 2] = sqrt(
-  //         q[y] * q[y] +
-  //         q[y + 1] * q[y + 1]); // calculate the absolute value of the output
-  //   }
-  //   fftshift(r, m);
+    for (y = 0; y < 2 * m; y += 2) {
+      r[y / 2] = sqrt(
+          q[y] * q[y] +
+          q[y + 1] * q[y + 1]); // calculate the absolute value of the output
+    }
+    fftshift(r, m);
 
-  //   for (z = 0; z < m; z++) {
-  //     f[x + z * (2 * n_samples)] = r[z]; // put the elements of output into corresponding location of the 2D array
-  //     if (r[z] > max) {
-  //       max = r[z];
-  //       a = z + 1;
-  //       b = x + 1;
-  //     }
-  //   }
+    for (z = 0; z < m; z++) {
+      f[x + z * (2 * n_samples)] = r[z]; // put the elements of output into corresponding location of the 2D array
+      if (r[z] > max) {
+        max = r[z];
+        a = z + 1;
+        b = x + 1;
+      }
+    }
 
-  //   // clock_t after2fft2 = clock();
-  //   // printf("after2fft: %d \n", (int)(after2fft2-after2fft1));
-  //   NonKernelSplit();
-  // }
+    // clock_t after2fft2 = clock();
+    // printf("after2fft: %d \n", (int)(after2fft2-after2fft1));
+    NonKernelSplit();
+  }
   
 
 
@@ -345,11 +289,9 @@ int main(int argc, char *argv[]) {
  //  double delta = ((end.tv_sec  - start.tv_sec) * 1000000u + 
     //      end.tv_usec - start.tv_usec) / 1.e6;
 
-  clock_gettime(CLOCK_MONOTONIC_RAW, &end);
-  double time_taken = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0;
   
 
 
-  printf("[Pulse Doppler] Execution is complete... %f\n", time_taken);
+  printf("[Pulse Doppler] Execution is complete...\n");
 
 }
