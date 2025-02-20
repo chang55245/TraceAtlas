@@ -180,6 +180,7 @@ function(add_task_merging_target TARGET_NAME)
                 -lgsl
                 -lgslcblas
                 -lz
+                -lm
         COMMAND cd ${OUTPUT_DIR} && ./${TARGET_NAME}-taskflow
         DEPENDS ${TARGET_NAME}_DAG_generation
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
