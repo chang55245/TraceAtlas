@@ -63,6 +63,38 @@ task_merging:
 	clang-9 -lm -lz -lpthread -I/mnt/nobackup-09/Dash/Sources/include/gsl/  -I ./ -lgsl -lgslcblas $(APP_NAME)-merging.bc -o $(APP_NAME)-merging.native -fuse-ld=lld $(TRACEATLAS_PASS_BACKEND_STATIC)
 	./$(APP_NAME)-merging.native
 
+	/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/opt \
+    -load-pass-plugin=/heorot/lchang21/TraceAtlas/llvm-19-passes/TaskExtraction.so \
+    -passes="MergeTaskExtraction" \
+    -tm task_merging_schedule.json \
+    $(APP_NAME)-merging.bc -S -o $(APP_NAME)-extraction.bc
+
+	/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/llvm-extract \
+    $(APP_NAME)-extraction.bc \
+    -func=main \
+    -o main-extracted.bc
+	
+	/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/llvm-extract \
+	-S \
+    --delete \
+    $(APP_NAME)-extraction.bc \
+    -func=main \
+    -o $(APP_NAME)-deleted-main.bc
+
+	/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/mlir-translate \
+    -import-llvm $(APP_NAME)-extracted-main.bc \
+    -o $(APP_NAME)-extracted-main.mlir
+
+	/heorot/lchang21/TraceAtlas/TaskflowIR/build/bin/taskflow-opt --pass-pipeline="builtin.module(taskflow-insertion{dag-file=\"../test/input/task_merging_schedule.json\"})" $(APP_NAME)_main-extracted.mlir -o $(APP_NAME)_main-taskflow.mlir
+
+	/heorot/lchang21/TraceAtlas/TaskflowIR/build/bin/taskflow-opt -taskflow-to-llvm $(APP_NAME)_main-taskflow.mlir -o $(APP_NAME)_main-llvm.mlir
+
+	/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/mlir-translate \
+    --mlir-to-llvmir $(APP_NAME)_main-llvm.mlir \
+    -o $(APP_NAME)_main-llvm.ll
+
+	/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang -I /heorot/lchang21/cedr-old/zynq_hardware_emulator/libdash $(APP_NAME)_main-llvm.ll /heorot/lchang21/TraceAtlas/TaskflowIR/test/output/pulse_doppler-no-main.bc /heorot/lchang21/TraceAtlas/build/lib/libAtlasBackend.a -o $(APP_NAME)_main-llvm -L/heorot/lchang21/taskflow/taskflow/taskflow-lib/build -ltaskflow_lib -lstdc++ -lgsl -lgslcblas -lz
+
 clean:
 	-rm $(APP_NAME)-*.so
 	-rm $(APP_NAME)-*.out

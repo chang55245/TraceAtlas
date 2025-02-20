@@ -9,6 +9,9 @@ set(LLVM_19_PATH "/heorot/lchang21/llvm-release/llvm-19/llvm-19" CACHE PATH "Pat
 # Set paths for other dependencies
 set(CEDR_PATH "/heorot/lchang21/cedr-old/zynq_hardware_emulator" CACHE PATH "Path to CEDR")
 set(TRACEATLAS_PATH "/heorot/lchang21/TraceAtlas" CACHE PATH "Path to TraceAtlas")
+set(LLVM_19_PASS_PATH "${TRACEATLAS_PATH}/llvm-19-passes" CACHE PATH "Path to LLVM 19 passes")
+set(TASKFLOW_LIB_PATH "/heorot/lchang21/taskflow/taskflow/taskflow-lib" CACHE PATH "Path to Taskflow library")
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 # Build LLVM passes
 add_subdirectory(llvm-13-passes)

@@ -28,6 +28,9 @@ set(ATLAS_UTILITIES_PATH "${TRACEATLAS_PATH}/Utilities")
 set(CEDR_INTERFACE ${CEDR_PATH}/libdash/dash.cpp ${CEDR_PATH}/libdash/kestrel.cpp)
 set(INCLUDES -I ${CEDR_PATH}/libdash)
 
+set(TASKFLOW_IR_PATH "${TRACEATLAS_PATH}/TaskflowIR")
+
+
 # Define function for DAG generation
 function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
     set(OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/${TARGET_NAME}")
@@ -106,16 +109,78 @@ function(add_task_merging_target TARGET_NAME)
     set(OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/${TARGET_NAME}")
 
     add_custom_target(${TARGET_NAME}_task_merging
+        # Task merging and reordering
         COMMAND ${LLVM_9_PATH}/bin/opt-9 -load ${TRACEATLAS_PASS_SHARED} 
-                -TaskMergingReorder -tm ${OUTPUT_DIR}/${TARGET_NAME}.task_merging_schedule.json 
+                -TaskMergingReorder -tm ${OUTPUT_DIR}/task_merging_schedule.json 
                 ${OUTPUT_DIR}/${TARGET_NAME}.encoded.bc 
                 -S -o ${OUTPUT_DIR}/${TARGET_NAME}.merged.bc
-        COMMAND ${LLVM_9_PATH}/bin/clang-9 -lm -lz -lpthread 
-                -I/mnt/nobackup-09/Dash/Sources/include/gsl/ -I ./ 
+        COMMAND ${LLVM_9_PATH}/bin/clang-9 -lm -lz -lpthread -I ./ 
                 -lgsl -lgslcblas ${OUTPUT_DIR}/${TARGET_NAME}.merged.bc 
                 -o ${OUTPUT_DIR}/${TARGET_NAME}.merged.native -fuse-ld=lld 
                 ${TRACEATLAS_PASS_BACKEND_STATIC}
         COMMAND cd ${OUTPUT_DIR} && ./${TARGET_NAME}.merged.native
+
+        # Task extraction steps
+        COMMAND ${LLVM_19_PATH}/bin/opt 
+                -load-pass-plugin=${TRACEATLAS_PATH}/llvm-19-passes/TaskExtraction.so 
+                -passes="MergeTaskExtraction" 
+                -tm ${OUTPUT_DIR}/task_merging_schedule.json 
+                ${OUTPUT_DIR}/${TARGET_NAME}.merged.bc 
+                -S -o ${OUTPUT_DIR}/${TARGET_NAME}.extraction.bc
+
+        # Extract main function
+        COMMAND ${LLVM_19_PATH}/bin/llvm-extract
+                -S
+                ${OUTPUT_DIR}/${TARGET_NAME}.extraction.bc 
+                -func=main 
+                -o ${OUTPUT_DIR}/${TARGET_NAME}-extracted-main.bc
+
+        # Delete main function from original
+        COMMAND ${LLVM_19_PATH}/bin/llvm-extract 
+                -S 
+                --delete 
+                ${OUTPUT_DIR}/${TARGET_NAME}.extraction.bc 
+                -func=main 
+                -o ${OUTPUT_DIR}/${TARGET_NAME}-deleted-main.bc
+
+        # Convert to MLIR
+        COMMAND ${LLVM_19_PATH}/bin/mlir-translate
+                -import-llvm
+                ${OUTPUT_DIR}/${TARGET_NAME}-extracted-main.bc
+                -o ${OUTPUT_DIR}/${TARGET_NAME}-extracted-main.mlir
+
+        # Taskflow insertion and optimization
+        COMMAND ${TASKFLOW_IR_PATH}/build/bin/taskflow-opt 
+                --pass-pipeline=\"builtin.module\(taskflow-insertion\{dag-file=${OUTPUT_DIR}/task_merging_schedule.json\}\)\"
+                ${OUTPUT_DIR}/${TARGET_NAME}-extracted-main.mlir
+                -o ${OUTPUT_DIR}/${TARGET_NAME}-taskflow.mlir
+
+        # Convert Taskflow IR back to LLVM IR
+        COMMAND ${TASKFLOW_IR_PATH}/build/bin/taskflow-opt
+                -taskflow-to-llvm
+                ${OUTPUT_DIR}/${TARGET_NAME}-taskflow.mlir
+                -o ${OUTPUT_DIR}/${TARGET_NAME}-llvm.mlir
+
+        # Convert MLIR to LLVM IR
+        COMMAND ${LLVM_19_PATH}/bin/mlir-translate
+                --mlir-to-llvmir
+                ${OUTPUT_DIR}/${TARGET_NAME}-llvm.mlir
+                -o ${OUTPUT_DIR}/${TARGET_NAME}-llvm.ll
+
+        # Final compilation with Taskflow
+        COMMAND ${LLVM_19_PATH}/bin/clang
+                -I ${CEDR_PATH}/libdash
+                ${OUTPUT_DIR}/${TARGET_NAME}-llvm.ll
+                ${OUTPUT_DIR}/${TARGET_NAME}-deleted-main.bc
+                ${TRACEATLAS_PASS_BACKEND_STATIC}
+                -o ${OUTPUT_DIR}/${TARGET_NAME}-taskflow
+                -L${TASKFLOW_LIB_PATH}/build
+                -ltaskflow_lib
+                -lstdc++
+                -lgsl
+                -lgslcblas
+                -lz
+        COMMAND cd ${OUTPUT_DIR} && ./${TARGET_NAME}-taskflow
         DEPENDS ${TARGET_NAME}_DAG_generation
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )

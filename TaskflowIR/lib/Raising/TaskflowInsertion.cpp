@@ -87,7 +87,7 @@ public:
                 builder.create<taskflow::ApplicationStartOp>(func.getLoc());
 
                 // Operation successfully inserted; exit the function.
-                return;
+                // return;
             }
         }
     }
