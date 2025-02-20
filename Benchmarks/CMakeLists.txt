@@ -1,0 +1,18 @@
+cmake_minimum_required(VERSION 3.13.4)
+project(benchmarks)
+
+# Set paths for different LLVM versions
+set(LLVM_9_PATH "/heorot/lchang21/llvm-release/llvm-9/llvm-9" CACHE PATH "Path to LLVM 9")
+set(LLVM_13_PATH "/heorot/lchang21/llvm-release/llvm-13/llvm" CACHE PATH "Path to LLVM 13")
+set(LLVM_19_PATH "/heorot/lchang21/llvm-release/llvm-19/llvm-19" CACHE PATH "Path to LLVM 19")
+
+# Set paths for other dependencies
+set(CEDR_PATH "/heorot/lchang21/cedr-old" CACHE PATH "Path to CEDR")
+set(TRACEATLAS_PATH "/heorot/lchang21/TraceAtlas" CACHE PATH "Path to TraceAtlas")
+
+# Build LLVM passes
+add_subdirectory(llvm-13-passes)
+add_subdirectory(llvm-9-passes)
+
+# Build applications
+add_subdirectory(pulse_doppler) 
