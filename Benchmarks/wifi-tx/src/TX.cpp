@@ -565,7 +565,7 @@ void readConfig() {
     char buf[1024];
 
     //cfp = fopen("/localhome/jmack2545/rcl/DASH-SoC/TraceAtlas/Applications/wifi/build/tx.cfg", "r");
-    cfp = fopen("/home/liangliangdev/cedr/zynq_hardware_emulator/applications/TraceAtlasApps/wifi/src/input/tx.cfg", "r");
+    cfp = fopen("./input/tx.cfg", "r");
     if(cfp == NULL) {
         char currWorkingDir[PATH_MAX];
         printf("fail to open config file: %s\n", strerror(errno));

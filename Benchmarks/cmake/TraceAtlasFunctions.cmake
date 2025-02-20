@@ -29,7 +29,14 @@ set(CEDR_INTERFACE ${CEDR_PATH}/libdash/dash.cpp ${CEDR_PATH}/libdash/kestrel.cp
 set(INCLUDES -I ${CEDR_PATH}/libdash)
 
 set(TASKFLOW_IR_PATH "${TRACEATLAS_PATH}/TaskflowIR")
-
+set(COMPILER_NAME "clang-9")
+function(set_compiler TARGET_NAME)
+    if (TARGET_NAME STREQUAL "clang++")
+        set(COMPILER_NAME "clang++-9" PARENT_SCOPE)
+    elseif (TARGET_NAME STREQUAL "clang")
+        set(COMPILER_NAME "clang-9" PARENT_SCOPE)
+    endif()
+endfunction()
 
 # Define function for DAG generation
 function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
@@ -38,7 +45,7 @@ function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
 
     add_custom_target(${TARGET_NAME}_DAG_generation
         # Initial compilation
-        COMMAND ${LLVM_9_PATH}/bin/clang-9 -Xclang -disable-O0-optnone -fPIC -DCPU_ONLY -flto 
+        COMMAND ${LLVM_9_PATH}/bin/${COMPILER_NAME} -Xclang -disable-O0-optnone -fPIC -DCPU_ONLY -flto 
                 -lgsl -lgslcblas -fuse-ld=lld -Wl,-plugin-opt=emit-llvm 
                 ${INCLUDES} ${CEDR_INTERFACE} ${SOURCE_FILE}
                 -o ${OUTPUT_DIR}/${TARGET_NAME}.initial.bc
@@ -114,7 +121,7 @@ function(add_task_merging_target TARGET_NAME)
                 -TaskMergingReorder -tm ${OUTPUT_DIR}/task_merging_schedule.json 
                 ${OUTPUT_DIR}/${TARGET_NAME}.encoded.bc 
                 -S -o ${OUTPUT_DIR}/${TARGET_NAME}.merged.bc
-        COMMAND ${LLVM_9_PATH}/bin/clang-9 -lm -lz -lpthread -I ./ 
+        COMMAND ${LLVM_9_PATH}/bin/${COMPILER_NAME} -lm -lz -lpthread -I ./ 
                 -lgsl -lgslcblas ${OUTPUT_DIR}/${TARGET_NAME}.merged.bc 
                 -o ${OUTPUT_DIR}/${TARGET_NAME}.merged.native -fuse-ld=lld 
                 ${TRACEATLAS_PASS_BACKEND_STATIC}

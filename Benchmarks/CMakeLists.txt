@@ -19,3 +19,4 @@ add_subdirectory(llvm-9-passes)
 
 # Build applications
 add_subdirectory(pulse_doppler) 
+add_subdirectory(wifi-tx)

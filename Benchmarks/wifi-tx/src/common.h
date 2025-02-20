@@ -1,8 +1,8 @@
 #ifndef _COMMON_H_
 #define _COMMON_H_
 
-#define SYM_NUM      	120
-#define USR_DAT_LEN 	500//2560//1280//   64
+#define SYM_NUM      	10
+#define USR_DAT_LEN 	64//2560//1280//   64
 #define SYM_BYTE_LEN 	8//160 //   8
 #define SYM_BIT_LEN (SYM_BYTE_LEN*8)
 enum entity_state { IDLE, BUSY };
