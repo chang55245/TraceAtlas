@@ -94,7 +94,9 @@ public:
     // Create a unique graph ID
     int graphId = 0;
 
-   
+    bool inserted_graph_end = false;
+    taskflow::TaskDefOp last_task_def_op;
+    int last_task_id = -1;
     // Walk through all LLVM function calls
     module.walk([&](LLVM::CallOp callOp) {
       // Get the callee name
@@ -123,7 +125,18 @@ public:
             /*dependencies=*/ValueRange{},
             /*node_id=*/builder.getI32IntegerAttr(taskid_int));
         
-
+        // find the position of the task in the schedule,
+        // to figure out the last successfully extracted task
+        // and insert the graph_end after the last successfully extracted task
+        for (int i = 0; i < schedule.size(); i++) {
+          if (schedule[i] == taskid_int) {
+            if (i>last_task_id) {
+              last_task_def_op = taskDefOp;
+              last_task_id = i;
+            }
+            break;
+          }
+        }
         // Move the original call into the task body
         Block *taskBody = new Block();
         taskDefOp.getBody().push_back(taskBody);
@@ -139,6 +152,7 @@ public:
         // Create graph_end after the task
         int schedule_size = schedule.size();
         if (schedule_size > 0 && schedule[schedule_size - 1] == taskid_int) {
+          inserted_graph_end = true;
           builder.setInsertionPointAfter(taskDefOp);
           builder.create<taskflow::GraphEndOp>(
               callOp.getLoc(),
@@ -151,6 +165,12 @@ public:
       }
       
     });
+    if (!inserted_graph_end) {
+      builder.setInsertionPointAfter(last_task_def_op);
+      builder.create<taskflow::GraphEndOp>(
+          last_task_def_op.getLoc(),
+          builder.getI32IntegerAttr(graphId));
+    }
 
     // Create a pass manager and run the resolve task dependencies pass
     PassManager pm(&getContext());

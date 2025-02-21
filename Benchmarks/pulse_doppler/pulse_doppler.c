@@ -53,13 +53,8 @@ void xcorr(double *x, double *y, size_t n_samp, double *corr) {
   double *corr_freq = malloc(2 * len * sizeof(double));
 
 
-  // clock_t beforefft2 = clock();
-  // printf("corr: %d \n", (int)(beforefft2-beforefft1));
-
- 
-  // gsl_fft(c, X1, len);
   // KernelEnter("FFT");
-  // printf("22");
+  printf("first fft \n");
   bool forward = true;   
   DASH_FFT_cpu(&c, &X1, &len, &forward /* is_forward_transform? */);
   // KernelExit("FFT");
@@ -67,6 +62,7 @@ void xcorr(double *x, double *y, size_t n_samp, double *corr) {
   // gsl_fft(d, X2, len);
   // KernelEnter("FFT");
   // printf("33");
+  printf("second fft \n");
   DASH_FFT_cpu(&d, &X2, &len, &forward /* is_forward_transform? */);
   // KernelExit("FFT");
 
@@ -98,6 +94,7 @@ void xcorr(double *x, double *y, size_t n_samp, double *corr) {
   KernelEnter("FFT");
   // clock_t start2 = clock();
   // clock_gettime(CLOCK_MONOTONIC_RAW, &fft_start_t);
+  printf("third fft, the kernel \n");
   DASH_FFT(corr_freq, corr, len, false /* is_forward_transform? */);
 
   // clock_gettime(CLOCK_MONOTONIC_RAW, &fft_end_t);
@@ -201,7 +198,7 @@ int main(int argc, char *argv[]) {
 
     // clock_t afterxcorr2 = clock();
     // printf("afterxcorr: %d \n", (int)(afterxcorr2-afterxcorr1));
-      printf("33");
+    printf("afterxcorr \n");
     NonKernelSplit();
   }
   
@@ -238,7 +235,7 @@ int main(int argc, char *argv[]) {
     DASH_FFT(l, q, m, true /* is_forward_transform? */);
     KernelExit("FFT");
 
-
+    printf("after fft second stage \n");
     // clock_t after2fft1 = clock();
 
     for (y = 0; y < 2 * m; y += 2) {
