@@ -7,7 +7,7 @@
 
 #include "dash.h"
 
-#define PROGPATH "/home/lchang21/cedr-josh/zynq_hardware_emulator/applications/APIApps/SAR/input/"
+#define PROGPATH "./input/"
 #define RAWDATA PROGPATH "rawdata_rda.txt"
 #define OUTPUT "SAR_RDA-output.txt"
 

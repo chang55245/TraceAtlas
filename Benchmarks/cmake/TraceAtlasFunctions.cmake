@@ -103,10 +103,10 @@ function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
                 -k ${OUTPUT_DIR}/${TARGET_NAME}.jr.json 
                 -b ${OUTPUT_DIR}/${TARGET_NAME}.encoded.bc 
                 -o ${OUTPUT_DIR}/${TARGET_NAME}.dag.json
-        COMMAND ${CMAKE_COMMAND} -E env OUTPUT_DIR=${OUTPUT_DIR}
-                python3 ${ATLAS_UTILITIES_PATH}/dag-compare.py 
-                ${OUTPUT_DIR}/dag_before_merge.json 
-                ${OUTPUT_DIR}/dag_after_merge.json
+        #COMMAND ${CMAKE_COMMAND} -E env OUTPUT_DIR=${OUTPUT_DIR}
+        #        python3 ${ATLAS_UTILITIES_PATH}/dag-compare.py 
+        #        ${OUTPUT_DIR}/dag_before_merge.json 
+        #        ${OUTPUT_DIR}/dag_after_merge.json
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 endfunction()
