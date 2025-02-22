@@ -25,7 +25,6 @@ llvm::cl::opt<string> bitcodeFile("b", llvm::cl::desc("Specify bitcode name"), l
 
 map<int64_t, set<string>> labels;
 string currentLabel = "-1";
-map<string,set<int64_t>> labelsToblock;
 int64_t currentblock;
 
 //== for DAG node map
@@ -47,11 +46,13 @@ int64_t kernelInstanceIdCounter = 0;
 set <int64_t> kernelInstanceBBs;
 
 
+// todo: for tasks that have not data dependencies with any other tasks,
+// we need to merge them into another tasks, to maintain the control dependence
 // check if the previous node is a legal non kernel
 // legal non kernel means it has to have memory activities
 // case 1 back to back labeled kernels
 // case 2 no load and store in the interval? 
-bool CheckPrevKernelNode()
+bool CheckNodeCreationIsLegal()
 {
     // no blocks
     if (kernelInstanceBBs.size() ==0)
@@ -70,70 +71,33 @@ bool CheckPrevKernelNode()
     }
     return false;
 }
-
-// for usage to split the non-kernel when a conditional branch is seen
-bool inKernel = false;
-// assume no nested kernels
 void Process(string &key, string &value)
 {
     //kernel enter concludes the previous node, kernel or non-kernel
     if (key == "KernelEnter")
     {
-        inKernel = true;
+        // kernel enter bb need to be the start bb of current node
+        if (CheckNodeCreationIsLegal()){
+        nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
+        nodeKiidMap[kernelInstanceIdCounter] = newNode;
 
-        // if it is neccessary to merge the bb before kernel into the former kernel
-        // return true if former bb has load/store, it is used to deal with hanging 
-        // nodes not connecting with others in the DAG 
-        if(CheckPrevKernelNode())
-        {
-            
-            // kernel enter bb need to be the start bb of current node
-            // kernelInstanceBBs.erase(currentblock);
-            nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
-            nodeKiidMap[kernelInstanceIdCounter] = newNode;
-
-            kernelInstanceIdCounter++;   
-            currentLabel = value;
-            kernelInstanceBBs.clear();
-            // kernelInstanceBBs.insert(currentblock);
-        }
-        else //empty bb with only bb-enter/exit 
-        {
-            for(auto i:kernelInstanceBBs)
-            {
-                nodeKiidMap[kernelInstanceIdCounter-1].bbs.insert(i);
-            }
-            currentLabel = value;
-        }  
+        kernelInstanceIdCounter++;   
+        currentLabel = value;
+        kernelInstanceBBs.clear();
+        kernelInstanceBBs.insert(currentblock);
+    }
     }
     //kernel exit concludes the previous kernel node
     else if (key == "KernelExit")
     {
     
-        labelsToblock[currentLabel].insert(currentblock);
-
-        // extra illegal bbs outside the kernel
-        for (auto i :kernelInstanceBBs)
-        {
-            labelsToblock[currentLabel].insert(i);
-        }
-
         // adding nodes for kernels
+        kernelInstanceBBs.insert(currentblock);
         nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
         nodeKiidMap[kernelInstanceIdCounter] = newNode;
         currentLabel = "-1";
         kernelInstanceBBs.clear();
         kernelInstanceIdCounter++;
-        inKernel = false;
-    }
-
-    else if (key == "BBExit")
-    {
-        int64_t block = stol(value, nullptr, 0);
-        if (currentLabel != "-1" && !currentLabel.empty())
-        {
-            labelsToblock[currentLabel].insert(block);
-        }
     }
     else if (key == "BBEnter")
     {     
@@ -142,22 +106,19 @@ void Process(string &key, string &value)
     }
     else if (key == "NonKernelSplit")
     {
-        printf("get!!!!!!!!!!!\n");
-        if(inKernel == false&&CheckPrevKernelNode())
+        if (CheckNodeCreationIsLegal())
         {
-            // kernelInstanceBBs.erase(currentblock);
+            kernelInstanceBBs.insert(currentblock);
             nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
             nodeKiidMap[kernelInstanceIdCounter] = newNode;
             kernelInstanceIdCounter++;   
             kernelInstanceBBs.clear();
-            // kernelInstanceBBs.insert(currentblock);
         }
     }
 }
 
 
-// legal bbs mean that if these bbs in nonkernel, then they can be downward merged into kernels
-// to reduce the complexity
+// legal bbs mean that the bbs have memory activities
 void GetLegalBBs()
 {
     LLVMContext context;
@@ -196,18 +157,12 @@ void GetLegalBBs()
                     legalBBs.insert(id);
                     break;
                 }
-                // malloc
-                else if (auto *inst = dyn_cast<AllocaInst>(bi))
-                {
-                    legalBBs.insert(id);
-                    break;
-                }
 
                 if (auto *CI = dyn_cast<CallInst>(bi)) {
                     Function *fun = CI->getCalledFunction();
                     /* The called function can be null in the event of an indirect call https://stackoverflow.com/a/11687221 */
                     if (fun) {
-                        if (CI->getCalledFunction()->getName() == "malloc") {
+                        if (CI->getCalledFunction()->getName() == "malloc"||CI->getCalledFunction()->getName() == "memcpy") {
                             legalBBs.insert(id);
                             break;
                         }
@@ -222,13 +177,12 @@ void GetLegalBBs()
 int main(int argc, char **argv)
 {
     cl::ParseCommandLineOptions(argc, argv);
-
     GetLegalBBs();
 
     ProcessTrace(InputFilename, Process, "Generating JR", noBar);
 
     // this is to fix the case that the last node is not counted
-    if(CheckPrevKernelNode())
+    if(CheckNodeCreationIsLegal())
     {
         nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
         nodeKiidMap[kernelInstanceIdCounter] = newNode;
@@ -237,13 +191,6 @@ int main(int argc, char **argv)
     std::ofstream file;
     nlohmann::json jOut;
  
-    int count = 0;
-    for (auto i : labelsToblock)
-    {
-        jOut["Kernels"][to_string(count)]["Blocks"] = i.second;
-        jOut["Kernels"][to_string(count)]["Label"] = i.first;
-        count++;
-    }
 
     for (auto i : nodeKiidMap)
     {

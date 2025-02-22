@@ -74,7 +74,7 @@ function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
         COMMAND ${LLVM_9_PATH}/bin/opt-9 -mem2reg -sccp 
                 ${OUTPUT_DIR}/${TARGET_NAME}.unrolled.bc 
                 -S -o ${OUTPUT_DIR}/${TARGET_NAME}.mem2reg.bc
-        COMMAND ${LLVM_9_PATH}/bin/opt-9 -simplifycfg -adce -reg2mem 
+        COMMAND ${LLVM_9_PATH}/bin/opt-9 -simplifycfg -adce -reg2mem -simplifycfg -sink
                 ${OUTPUT_DIR}/${TARGET_NAME}.mem2reg.bc 
                 -S -o ${OUTPUT_DIR}/${TARGET_NAME}.optimized.bc
 

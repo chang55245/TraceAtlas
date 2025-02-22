@@ -40,7 +40,7 @@ namespace {
 
 // merged task id --> basic block ids
 std::map<int, std::set<int>> taskMergingNodeMap;
-
+std::map<int, int> merged_node_start_bb;
 // New Module Pass for BB_ID_Dump analysis
 struct BBIDAnalysis : public AnalysisInfoMixin<BBIDAnalysis> {
     using Result = BBIDAnalysisInfo;
@@ -74,6 +74,99 @@ AnalysisKey BBIDAnalysis::Key;
 
 // Original Function Pass (simplified)
 struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
+    void whyBBNotWorking(std::vector<BasicBlock*> &BlocksToExtract) {
+        bool AllowVarArgs = true, AllowAlloca = true;
+        SetVector<BasicBlock *> BBSet(BlocksToExtract.begin(), BlocksToExtract.end());
+
+        for (BasicBlock *BB : BlocksToExtract) {
+            
+            // Check if block address is taken
+            if (BB->hasAddressTaken()) {
+                errs() << "  - Block address is taken (BlockAddress used).\n";
+                continue;
+            }
+
+            // Check if the block or its instructions reference a BlockAddress
+            for (Instruction &I : *BB) {
+                for (User *U : I.users()) {
+                    if (isa<BlockAddress>(U)) {
+                        errs() << "  - Block references a BlockAddress.\n";
+                        goto NextBlock;
+                    }
+                }
+
+                // Check for Alloca usage
+                if (isa<AllocaInst>(I) && !AllowAlloca) {
+                    errs() << "  - Contains alloca instruction, but AllowAlloca is false.\n";
+                }
+
+                // Check for invoke unwind destination validity
+                if (auto *II = dyn_cast<InvokeInst>(&I)) {
+                    if (BasicBlock *UBB = II->getUnwindDest()) {
+                        if (!BBSet.count(UBB)) {
+                            errs() << "  - Invoke instruction unwinds to a block outside extraction set.\n";
+                        }
+                    }
+                }
+
+                // Check for catchswitch instruction validity
+                if (auto *CSI = dyn_cast<CatchSwitchInst>(&I)) {
+                    if (BasicBlock *UBB = CSI->getUnwindDest()) {
+                        if (!BBSet.count(UBB)) {
+                            errs() << "  - CatchSwitch unwinds to a block outside extraction set.\n";
+                        }
+                    }
+                    for (BasicBlock *HBB : CSI->handlers()) {
+                        if (!BBSet.count(HBB)) {
+                            errs() << "  - CatchSwitch handler is outside the extraction set.\n";
+                        }
+                    }
+                }
+
+                // Check for cleanup handlers
+                if (auto *CPI = dyn_cast<CleanupPadInst>(&I)) {
+                    for (User *U : CPI->users()) {
+                        if (auto *CRI = dyn_cast<CleanupReturnInst>(U)) {
+                            if (!BBSet.count(CRI->getParent())) {
+                                errs() << "  - CleanupPadInst has an exit block outside extraction set.\n";
+                            }
+                        }
+                    }
+                }
+
+                // Check for calls to problematic intrinsics
+                if (auto *CI = dyn_cast<CallInst>(&I)) {
+                    if (const Function *F = CI->getCalledFunction()) {
+                        auto IID = F->getIntrinsicID();
+                        if (IID == Intrinsic::vastart && !AllowVarArgs) {
+                            errs() << "  - Calls vastart but AllowVarArgs is false.\n";
+                        }
+                        if (IID == Intrinsic::eh_typeid_for) {
+                            errs() << "  - Calls eh_typeid_for, which is not extractable.\n";
+                        }
+                    }
+                }
+            }
+
+            // Ensure block is not a landing pad (if it's the entry block)
+            if (BB == BlocksToExtract.front() && BB->isEHPad()) {
+                errs() << "  - The first block cannot be a landing pad.\n";
+            }
+
+            // Ensure blocks (except the first) don't have predecessors outside the region
+            for (BasicBlock *Pred : predecessors(BB)) {
+                if (!BBSet.count(Pred) && BB != BlocksToExtract.front()) {
+                    errs() << "  - Block has predecessors outside extraction region.\n";
+                    errs() << "  - Front node: " << *BlocksToExtract.front() << "\n";
+                    errs() << "  - Predecessor: " << *Pred << "\n";
+                    errs() << "  - BB: " << *BB << "\n";
+                }
+            }
+
+        NextBlock:
+            continue;
+        }
+    }
     PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
         for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E;) {
             Instruction *inst = &*I;
@@ -84,7 +177,7 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
                     if (calledFunc) {
                         auto funcName = calledFunc->getName();
                         // name start mid
-                        if (funcName == "LoadDump"|| funcName == "StoreDump"|| funcName == "MemCpyDump"|| funcName == "BB_ID_Dump"|| funcName == "ComputeDump") {
+                        if (funcName == "LoadDump"|| funcName == "StoreDump"|| funcName == "MemCpyDump"|| funcName == "ComputeDump") {
                             inst->eraseFromParent();
                         }
                     }
@@ -115,21 +208,30 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
             for (int bb : value) {
                 BasicBlock *BBPtr = BBIDMap[bb];
                 if (BBPtr->getParent()->getName() == "main") {
-                    taskBBs.push_back(BBPtr);
+                    
+                    if (merged_node_start_bb[key] == bb) {
+                        taskBBs.insert(taskBBs.begin(), BBPtr);
+                    }
+                    else {
+                        taskBBs.push_back(BBPtr);                  
+                    }
+                    
                     // errs() <<   "Task BB id: " << BB << "\n" << "BB block: " << *BBPtr << "\n";
                 }
             }
 
+            whyBBNotWorking(taskBBs);
+
             Function *Fptr = &F;
             CodeExtractor CE(taskBBs, /* DominatorTree */ nullptr,
-                   /* AggregateArgs */ true, /* BlockFrequencyInfo */ nullptr,
+                   /* AggregateArgs */ false, /* BlockFrequencyInfo */ nullptr,
                    /* BranchProbabilityInfo */ nullptr,
                    /* AssumptionCache */ nullptr,
                    /* AllowVarArgs */ true,
                    /* AllowAlloca */ true,
                    /* AllocaBlock*/ &Fptr->getEntryBlock(),
                    /* Suffix */ ".outlined",
-                   /* ArgsInZeroAddressSpace */ true);
+                   /* ArgsInZeroAddressSpace */ false);
 
             // CodeExtractor CE(taskBBs);
 
@@ -203,6 +305,10 @@ llvmGetPassPluginInfo() {
                         for (auto& [key, value] : j["merged_from_nodes"].items()) {
                             int taskId = value[0].get<int>();
                             taskMergingNodeMap[taskId] = value[1].get<std::set<int>>();
+                        }
+                        for (auto& [key, value] : j["merged_node_start_bb"].items()) {
+                            int taskId = value[0].get<int>();
+                            merged_node_start_bb[taskId] = value[1].get<int>();
                         }
 
                         MPM.addPass(MergeTaskExtractionWrapper());

@@ -131,8 +131,7 @@ bool noerrorInTrace;
 set<int> internalSet;
 // kernel instance id -> kernel id
 map<int, string> kernelIdMap;
-// kernel id -> basic block id
-map<string, set<int>> kernelMap;
+
 
 // kernel id -> control flow
 map<int, set<int>> kernelControlMap;
@@ -2093,13 +2092,6 @@ int parsingKernelInfo(string KernelFilename)
     inputJson >> j;
     inputJson.close();
 
-    for (auto &[k, l] : j["Kernels"].items())
-    {
-        string index = k;
-        nlohmann::json kernel = l["Blocks"];
-        kernelMap[index] = kernel.get<set<int>>();
-    }
-
     for (auto &[k, l] : j["Control"].items())
     {
         int index = stoul(k, nullptr, 0);
@@ -2641,17 +2633,7 @@ void generateScheduleJson(TaskMerging &merger, const string &filename) {
     map<int, set<int>> merged_from_nodes;
 
     map<int, graph_node> node_map = merger.get_merged_graph();
-
-    for (auto &[id, node] : node_map) {
-        for (auto bb : kernelControlMap[id]) {
-            merged_from_nodes[id].insert(bb);
-        }
-        for (auto merged_from : node.merged_from_nodes) {
-            for (auto bb : kernelControlMap[merged_from]) {
-                merged_from_nodes[id].insert(bb);
-            } 
-        }
-    }
+    map<int, int> merged_node_start_bb;
 
     for (auto sti : StartBBinNode)
     {
@@ -2664,6 +2646,20 @@ void generateScheduleJson(TaskMerging &merger, const string &filename) {
             NodeIO[sti.first] = {sti.second,-1};     
         }
     }
+
+    for (auto &[id, node] : node_map) {
+        for (auto bb : kernelControlMap[id]) {
+            merged_from_nodes[id].insert(bb);
+        }
+        for (auto merged_from : node.merged_from_nodes) {
+            for (auto bb : kernelControlMap[merged_from]) {
+                merged_from_nodes[id].insert(bb);
+            } 
+        }
+        merged_node_start_bb[id] = NodeIO[id].first;
+    }
+
+    
     // scheduleJson["NodeIO"] = NodeIO;
 
 
@@ -2683,7 +2679,7 @@ void generateScheduleJson(TaskMerging &merger, const string &filename) {
     // scheduleJson["kernelControlMap"] = kernelControlMap;
     scheduleJson["MergingBBMapingTransform"] = MergingBBMapingTransform;
     scheduleJson["merged_from_nodes"] = merged_from_nodes;
-    
+    scheduleJson["merged_node_start_bb"] = merged_node_start_bb;
 
     std::ofstream file(filename);
     file << std::setw(4) << scheduleJson << std::endl;
