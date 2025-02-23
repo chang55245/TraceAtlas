@@ -72,21 +72,22 @@ public:
 
 /// Convert TaskDefOp to LLVM calls.
 class TaskDefOpLowering : public OpConversionPattern<TaskDefOp> {
+
 public:
-  DenseMap<Operation*, Value> &loweredTaskResults;
-  DenseMap<Operation*, SmallVector<Value, 4>> &taskDependencies;
+  DenseMap<int, Operation*> &IDtoTaskLoweredOp;
+  DenseMap<int, SmallVector<int, 4>> &IDtoTaskDependentIDs;
 
   TaskDefOpLowering(TypeConverter &typeConverter, MLIRContext *context,
-                      DenseMap<Operation*, Value> &loweredTaskResults,
-                      DenseMap<Operation*, SmallVector<Value, 4>> &taskDependencies)
+                      DenseMap<int, Operation*> &IDtoTaskLoweredOp,
+                      DenseMap<int, SmallVector<int, 4>> &IDtoTaskDependentIDs)
       : OpConversionPattern<TaskDefOp>(typeConverter, context),
-        loweredTaskResults(loweredTaskResults),
-        taskDependencies(taskDependencies) {}
+        IDtoTaskLoweredOp(IDtoTaskLoweredOp),
+        IDtoTaskDependentIDs(IDtoTaskDependentIDs) {}
 
   LogicalResult matchAndRewrite(TaskDefOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
-
+    
     // Get the first function call from the body.
     LLVM::CallOp funcCall;
     for (Operation &bodyOp : op.getBody().front()) {
@@ -223,18 +224,6 @@ public:
         extractedArgs.push_back(castedArg);
     }
 
-    // // Create the task function body
-    // auto &taskBlock = *taskFunc.addEntryBlock(rewriter);
-    
-    // // Move the original function call to the task function
-    // rewriter.setInsertionPointToStart(&taskBlock);
-    // rewriter.create<LLVM::CallOp>(
-    //     loc,
-    //     funcCall.getResultTypes(),
-    //     funcCall.getCalleeAttr(),
-    //     taskBlock.getArguments());
-    // rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
-
     // Back in wrapper function, create call to task function
     rewriter.setInsertionPointToEnd(&entryBlock);
     rewriter.create<LLVM::CallOp>(
@@ -327,14 +316,12 @@ public:
             wrapperPtr,
             taskArgsAlloca.getResult()
         });
-
-    // Record results and update dependencies
-    loweredTaskResults[op.getOperation()] = taskHandle.getResult();
-    SmallVector<Value, 4> deps;
-    for (Value dep : adaptor.getDependencies())
-        deps.push_back(dep);
-    taskDependencies[op.getOperation()] = deps;
-
+    auto taskID = op.getNodeId();
+    IDtoTaskLoweredOp[taskID] = taskHandle.getOperation();
+    for (auto dep : adaptor.getDependentNodeIds()) {
+        auto depID = mlir::cast<IntegerAttr>(dep).getInt();
+        IDtoTaskDependentIDs[taskID].push_back(depID);
+    }
     rewriter.replaceOp(op, taskHandle.getResults());
     return success();
   }
@@ -358,16 +345,17 @@ public:
 class GraphEndOpLowering : public OpConversionPattern<GraphEndOp> {
 private:
   TypeConverter &typeConverter;
-  DenseMap<Operation*, Value> &loweredTaskResults;
-  DenseMap<Operation*, SmallVector<Value, 4>> &taskDependencies;
+  DenseMap<int, Operation*> &IDtoTaskLoweredOp;
+  DenseMap<int, SmallVector<int, 4>> &IDtoTaskDependentIDs;
 
 public:
   GraphEndOpLowering(TypeConverter &typeConverter, MLIRContext *context,
-                     DenseMap<Operation*, Value> &loweredTaskResults,
-                     DenseMap<Operation*, SmallVector<Value, 4>> &taskDependencies)
+                     DenseMap<int, Operation*> &IDtoTaskLoweredOp,
+                     DenseMap<int, SmallVector<int, 4>> &IDtoTaskDependentIDs)
       : OpConversionPattern<GraphEndOp>(typeConverter, context),
-        typeConverter(typeConverter), loweredTaskResults(loweredTaskResults),
-        taskDependencies(taskDependencies) {}
+        typeConverter(typeConverter),
+        IDtoTaskLoweredOp(IDtoTaskLoweredOp),
+        IDtoTaskDependentIDs(IDtoTaskDependentIDs) {}
 
   LogicalResult matchAndRewrite(
       GraphEndOp op, OpAdaptor adaptor,
@@ -382,27 +370,22 @@ public:
     auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
 
     // Iterate over each recorded TaskDefOp.
-    for (auto &entry : taskDependencies) {
-      Operation *origTaskOp = entry.first;
-      auto loweredTaskResult = loweredTaskResults.lookup(origTaskOp);
-      if (!loweredTaskResult)
-        continue;
+    for (auto &entry : IDtoTaskDependentIDs) {
+      auto taskID = entry.first;
       auto &deps = entry.second;
-      for (Value dep : deps) {
-        if (auto depDefOp = dep.getDefiningOp()) {
-          if (loweredTaskResults.count(depDefOp))
-            dep = loweredTaskResults.lookup(depDefOp);
+      auto taskOp = IDtoTaskLoweredOp.lookup(taskID);
+      for (auto depID : deps) {
+        auto depTaskOp = IDtoTaskLoweredOp.lookup(depID);
+        if (!depTaskOp)
+        {
+          llvm::errs() << "Failed to find dependent task operation for task " << taskID << "\n";
+          continue;
         }
-        auto depLLVMTy = typeConverter.convertType(dep.getType());
-        if (!depLLVMTy)
-          return failure();
-        auto depPtr = rewriter.create<LLVM::BitcastOp>(loc, ptrType, dep);
         rewriter.create<LLVM::CallOp>(
             loc, TypeRange{}, "taskflow_add_dependency",
-            ValueRange{depPtr, loweredTaskResult});
+            ValueRange{depTaskOp->getResult(0), taskOp->getResult(0)});
       }
     }
-
     // Execute the taskflow.
     rewriter.create<LLVM::CallOp>(
         loc, TypeRange{}, "taskflow_execute", ValueRange{tfHandle});
@@ -511,17 +494,16 @@ public:
     target.addLegalOp<LLVM::CallOp>();
     target.addLegalOp<LLVM::ReturnOp>();
     target.addLegalOp<LLVM::ConstantOp>();
-
-    DenseMap<Operation*, Value> loweredTaskResults;
-    DenseMap<Operation*, SmallVector<Value, 4>> taskDependencies;
+    DenseMap<int, Operation*> IDtoTaskLoweredOp;
+    DenseMap<int, SmallVector<int, 4>> IDtoTaskDependentIDs;
 
     // Setup patterns in the correct order.
     RewritePatternSet patterns(context);
     patterns.add<ApplicationStartOpLowering>(typeConverter, context);
-    patterns.add<TaskDefOpLowering>(typeConverter, context, loweredTaskResults, taskDependencies);
+    patterns.add<TaskDefOpLowering>(typeConverter, context, IDtoTaskLoweredOp, IDtoTaskDependentIDs);
     patterns.add<GraphStartOpLowering>(typeConverter, context);
     patterns.add<TaskYieldOpLowering>(typeConverter, context);
-    patterns.add<GraphEndOpLowering>(typeConverter, context, loweredTaskResults, taskDependencies);
+    patterns.add<GraphEndOpLowering>(typeConverter, context, IDtoTaskLoweredOp, IDtoTaskDependentIDs);
 
     if (failed(applyPartialConversion(module, target, std::move(patterns))))
       signalPassFailure();

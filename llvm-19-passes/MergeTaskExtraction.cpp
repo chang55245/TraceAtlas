@@ -177,7 +177,7 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
                     if (calledFunc) {
                         auto funcName = calledFunc->getName();
                         // name start mid
-                        if (funcName == "LoadDump"|| funcName == "StoreDump"|| funcName == "MemCpyDump"|| funcName == "ComputeDump") {
+                        if (funcName == "LoadDump"|| funcName == "StoreDump"|| funcName == "MemCpyDump"|| funcName == "ComputeDump"|| funcName == "BB_ID_Dump") {
                             inst->eraseFromParent();
                         }
                     }
@@ -222,18 +222,18 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
 
             whyBBNotWorking(taskBBs);
 
-            Function *Fptr = &F;
-            CodeExtractor CE(taskBBs, /* DominatorTree */ nullptr,
-                   /* AggregateArgs */ false, /* BlockFrequencyInfo */ nullptr,
-                   /* BranchProbabilityInfo */ nullptr,
-                   /* AssumptionCache */ nullptr,
-                   /* AllowVarArgs */ true,
-                   /* AllowAlloca */ true,
-                   /* AllocaBlock*/ &Fptr->getEntryBlock(),
-                   /* Suffix */ ".outlined",
-                   /* ArgsInZeroAddressSpace */ false);
+            // Function *Fptr = &F;
+            // CodeExtractor CE(taskBBs, /* DominatorTree */ nullptr,
+            //        /* AggregateArgs */ false, /* BlockFrequencyInfo */ nullptr,
+            //        /* BranchProbabilityInfo */ nullptr,
+            //        /* AssumptionCache */ nullptr,
+            //        /* AllowVarArgs */ true,
+            //        /* AllowAlloca */ true,
+            //        /* AllocaBlock*/ &Fptr->getEntryBlock(),
+            //        /* Suffix */ ".outlined",
+            //        /* ArgsInZeroAddressSpace */ false);
 
-            // CodeExtractor CE(taskBBs);
+            CodeExtractor CE(taskBBs);
 
              // isBlockValidForExtraction is the function that checks if the task is extractable
              // todo: for unextractable tasks, we might need to manually manage them in taskflow IR
