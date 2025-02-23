@@ -29,6 +29,7 @@ class TaskflowInsertionPass
         
 private:
     std::vector<int> schedule;
+    std::map<int, std::set<int>> dagDependencies;
 void parseDagFile(StringRef dagFile) {
   llvm::errs() << "DAG file: " << dagFile << "\n";
     std::ifstream fileStream(dagFile.str());
@@ -60,6 +61,26 @@ void parseDagFile(StringRef dagFile) {
     for (auto arrValue : *scheduleArrayValue) {
       schedule.push_back(static_cast<int>(*arrValue.getAsInteger()));
     }
+    auto *DagEdgeJson = jsonConfig.getAsObject()->get("DAGEdge");
+  if (!DagEdgeJson) {
+      getOperation()->emitError() << "DagEdgeJson is null" 
+                                << llvm::toString(jsonOrError.takeError());
+      signalPassFailure();
+      return;
+    }
+  // Now you can use jsonConfig to control your transformation.
+  llvm::json::Array *arrayValue = DagEdgeJson->getAsArray();
+  llvm::errs() << "arrayValue size: " << arrayValue->size() << "\n";
+  for (auto arrValue : *arrayValue) {
+    llvm::json::Array *arr = arrValue.getAsArray();
+    if (arr->size() != 2) {
+      getOperation()->emitError() << "Expected an array with exactly two elements";
+      signalPassFailure();
+      return;
+    }
+    dagDependencies[static_cast<int>(*(*arr)[1].getAsInteger())].insert(static_cast<int>(*(*arr)[0].getAsInteger()));
+    llvm::errs() << "dagDependencies: " << static_cast<int>(*(*arr)[1].getAsInteger()) << " " << static_cast<int>(*(*arr)[0].getAsInteger()) << "\n";
+  }
 }
 public:
   TaskflowInsertionPass() = default;  
@@ -118,11 +139,14 @@ public:
         }
 
         // Create task definition
-        
+        std::vector<int> DependentNodeIds;
+        for (auto dep : dagDependencies[taskid_int]) {
+            DependentNodeIds.push_back(dep);
+        }
         auto taskDefOp = builder.create<taskflow::TaskDefOp>(
             callOp.getLoc(),            
             /*task_handle=*/builder.getType<taskflow::TaskNodeType>(),
-            /*dependencies=*/ValueRange{},
+            /*dependent_node_ids=*/builder.getI32ArrayAttr(DependentNodeIds),
             /*node_id=*/builder.getI32IntegerAttr(taskid_int));
         
         // find the position of the task in the schedule,
@@ -185,7 +209,7 @@ public:
 class ResolveTaskDependenciesPass
     : public taskflow::impl::ResolveTaskDependenciesBase<ResolveTaskDependenciesPass> {
 private:
-  std::map<int, std::set<int>> dagDependencies;
+  
   void parseDagFile(StringRef dagFile) {
   llvm::errs() << "dependece pass DAG file: " << dagFile << "\n";
     std::ifstream fileStream(dagFile.str());
@@ -206,28 +230,7 @@ private:
       return;
     }
   llvm::json::Value jsonConfig = std::move(*jsonOrError);
-  auto *DagEdgeJson = jsonConfig.getAsObject()->get("DAGEdge");
-  if (!DagEdgeJson) {
-      getOperation()->emitError() << "DagEdgeJson is null" 
-                                << llvm::toString(jsonOrError.takeError());
-      signalPassFailure();
-      return;
-    }
-  // Now you can use jsonConfig to control your transformation.
-  llvm::json::Array *arrayValue = DagEdgeJson->getAsArray();
-  llvm::errs() << "arrayValue size: " << arrayValue->size() << "\n";
-  for (auto arrValue : *arrayValue) {
-    llvm::json::Array *arr = arrValue.getAsArray();
-    if (arr->size() != 2) {
-      getOperation()->emitError() << "Expected an array with exactly two elements";
-      signalPassFailure();
-      return;
-    }
-    llvm::errs() << "arr[0]: " << *(*arr)[0].getAsInteger() << "\n";
-    llvm::errs() << "arr[1]: " << *(*arr)[1].getAsInteger() << "\n";
-    dagDependencies[static_cast<int>(*(*arr)[1].getAsInteger())].insert(static_cast<int>(*(*arr)[0].getAsInteger()));
-
-  }
+  
 }
 public:  
   ResolveTaskDependenciesPass(StringRef dagFile) : taskflow::impl::ResolveTaskDependenciesBase<ResolveTaskDependenciesPass>() {
@@ -238,52 +241,6 @@ public:
     OpBuilder builder(&getContext());
     // Read the DAG file
     StringRef tdagFile = this->dagFile; 
-    parseDagFile(tdagFile);
-    std::map<int, Value> taskDefOpMap;
-    
-    // First pass: collect all task handles
-    module.walk([&](taskflow::TaskDefOp taskDefOp) {
-      int taskid = taskDefOp.getNodeId();
-      taskDefOpMap[taskid] = taskDefOp.getResult();  // Use getResult() instead of getTaskHandle()
-    });
-    
-    // Second pass: update dependencies
-    module.walk([&](taskflow::TaskDefOp taskDefOp) {
-      int taskid = taskDefOp.getNodeId();
-      if (dagDependencies.find(taskid) != dagDependencies.end()) {
-        std::vector<Value> dependencies;
-        for (auto dep : dagDependencies[taskid]) {
-          if (taskDefOpMap.find(dep) != taskDefOpMap.end()) {
-            dependencies.push_back(taskDefOpMap[dep]);
-          } else {
-            llvm::errs() << "Warning: Dependency task " << dep 
-                        << " not found for task " << taskid << "\n";
-          }
-        }
-        
-        if (!dependencies.empty()) {
-          builder.setInsertionPoint(taskDefOp);
-          auto newTaskDef = builder.create<taskflow::TaskDefOp>(
-              taskDefOp.getLoc(),
-              taskDefOp.getTaskHandle().getType(),
-              dependencies,
-              taskDefOp.getNodeIdAttr());
-          
-          // Move the body from old to new op
-          if (!taskDefOp.getBody().empty()) {
-            Block &oldBody = taskDefOp.getBody().front();
-            Block *newBody = new Block;
-            newTaskDef.getBody().push_back(newBody);
-            newBody->getOperations().splice(newBody->begin(), 
-                                          oldBody.getOperations());
-          }
-          
-          // Replace uses of the result value instead of the operation
-          taskDefOp.getResult().replaceAllUsesWith(newTaskDef.getResult());
-          taskDefOp.erase();
-        }
-      }
-    });
   }
 };
 }// namespace

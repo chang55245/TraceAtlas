@@ -49,22 +49,31 @@ def TaskDefOp : Taskflow_Op<"task_def"> {
   let regions = (region SizedRegion<1>:$body);
   
   // Optional precedence constraints
-  let arguments = (ins Variadic<TaskNodeType>:$dependencies,
+  let arguments = (ins 
+    I32ArrayAttr:$dependent_node_ids,
     I32Attr:$node_id
   );
   
   // Returns a task handle
   let results = (outs TaskNodeType:$task_handle);
-  
+
+  let builders = [
+    OpBuilder<(ins "OpBuilder &":$builder, "OperationState &":$result,
+               "ArrayRef<int32_t>":$dependent_node_ids, "int32_t":$node_id), [{
+      result.addAttribute("node_id", builder.getI32IntegerAttr(node_id));
+      result.addAttribute("predecessors", builder.getI32ArrayAttr(dependent_node_ids));
+    }]>
+  ];
+
   // Assembly format
-  let assemblyFormat = " `{` `predecessors` `=` `[` $dependencies `]` `,` `node_id` `=` $node_id `}` attr-dict `:` $body";
+  let assemblyFormat = " `{` `predecessors` `=` `[` $dependent_node_ids `]` `,` `node_id` `=` $node_id `}` attr-dict `:` $body";
   // // Declare the custom method
   let extraClassDeclaration = [{
-    void setDependencies(std::vector<Value> newDependencies);
+    void setDependentNodeIds(std::vector<Value> newDependentNodeIds);
   }];
   let extraClassDefinition = [{
-    void TaskDefOp::setDependencies(std::vector<Value> newDependencies) {
-      getOperation()->setOperands(newDependencies);
+    void TaskDefOp::setDependentNodeIds(std::vector<Value> newDependentNodeIds) {
+      getOperation()->setOperands(newDependentNodeIds);
     }
   }];
 }
