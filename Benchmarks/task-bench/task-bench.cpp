@@ -172,11 +172,12 @@ void SerialApp::execute_timestep(size_t idx, long t)
   payload.graph = g;
   
   for (int x = offset; x <= offset+width-1; x++) {
+    NonKernelSplit();
     std::vector<std::pair<long, long> > deps = g.dependencies(dset, x);   
     
     payload.x = x;
     payload.y = t;
-    NonKernelSplit();
+    
     if (deps.size() == 0) {
       // No dependencies, execute task1
       task1(&matrix[idx].data[t % nb_fields * matrix[idx].N + x], payload);
