@@ -38,6 +38,12 @@ function(set_compiler TARGET_NAME)
     endif()
 endfunction()
 
+set(Extra_STATIC_LIBS "")
+
+function(add_extra_static_libs TARGET_NAME)
+    set(Extra_STATIC_LIBS "${TARGET_NAME}" PARENT_SCOPE)
+endfunction()
+
 # Define function for DAG generation
 function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
     set(OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/${TARGET_NAME}")
@@ -63,6 +69,7 @@ function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
                 ${OUTPUT_DIR}/${TARGET_NAME}.kernel_located.bc 
                 -lm -lz -lpthread -lgsl -lgslcblas 
                 ${TRACEATLAS_PASS_BACKEND_STATIC} 
+                ${Extra_STATIC_LIBS}
                 -o ${OUTPUT_DIR}/${TARGET_NAME}.first_tracer
         COMMAND cd ${OUTPUT_DIR} && ./${TARGET_NAME}.first_tracer
 
@@ -89,6 +96,7 @@ function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
                 ${OUTPUT_DIR}/${TARGET_NAME}.encoded.bc 
                 -lm -lz -lpthread -lgsl -lgslcblas 
                 ${TRACEATLAS_PASS_BACKEND_STATIC} 
+                ${Extra_STATIC_LIBS}
                 -o ${OUTPUT_DIR}/${TARGET_NAME}.second_tracer
         COMMAND cd ${OUTPUT_DIR} && ./${TARGET_NAME}.second_tracer
 
@@ -125,6 +133,7 @@ function(add_task_merging_target TARGET_NAME)
                 -lgsl -lgslcblas ${OUTPUT_DIR}/${TARGET_NAME}.merged.bc 
                 -o ${OUTPUT_DIR}/${TARGET_NAME}.merged.native -fuse-ld=lld 
                 ${TRACEATLAS_PASS_BACKEND_STATIC}
+                ${Extra_STATIC_LIBS}
         COMMAND cd ${OUTPUT_DIR} && ./${TARGET_NAME}.merged.native
 
         # Task extraction steps
@@ -181,6 +190,7 @@ function(add_task_merging_target TARGET_NAME)
                 ${OUTPUT_DIR}/${TARGET_NAME}-llvm.ll
                 ${OUTPUT_DIR}/${TARGET_NAME}-deleted-main.bc
                 ${TRACEATLAS_PASS_BACKEND_STATIC}
+                ${Extra_STATIC_LIBS}
                 -o ${OUTPUT_DIR}/${TARGET_NAME}-taskflow
                 -L${TASKFLOW_LIB_PATH}/build
                 -ltaskflow_lib
