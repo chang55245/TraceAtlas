@@ -176,7 +176,7 @@ void SerialApp::execute_timestep(size_t idx, long t)
     
     payload.x = x;
     payload.y = t;
-    KernelEnter("FFT");
+    NonKernelSplit();
     if (deps.size() == 0) {
       // No dependencies, execute task1
       task1(&matrix[idx].data[t % nb_fields * matrix[idx].N + x], payload);
@@ -194,7 +194,7 @@ void SerialApp::execute_timestep(size_t idx, long t)
         task2(out, inputs, payload);
       }
     } 
-     KernelExit("FFT");
+    NonKernelSplit();
   }
 }
 

@@ -58,7 +58,7 @@ bool DynmFunctionInlining::runOnModule(Module &M)
                     if (auto *CI = dyn_cast<CallInst>(&ii))
                     {
                         Function *fun = CI->getCalledFunction();
-                        if (fun && (fun->getName() == "DASH_FFT" || fun->getName() == "DASH_GEMM"))
+                        if (fun && (fun->getName() == "DASH_FFT" || fun->getName() == "DASH_GEMM" || fun->getName() == "NonKernelSplit"))
                         {
                             if (F.getName() != "main" && inlinedFuncs.find(F.getName()) == inlinedFuncs.end())
                             {
