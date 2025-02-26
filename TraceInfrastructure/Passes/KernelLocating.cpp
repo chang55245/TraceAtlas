@@ -61,20 +61,20 @@ namespace DashTracer::Passes
                 loopIterationPtr = initBuilder.CreateCall(LoopTraceInitialization);
                 loopIterationPtr->setName("loopIterationPtr");
                 
-                // Add debug output
-                Function *printfFunc = cast<Function>(F.getParent()->getOrInsertFunction(
-                    "printf", 
-                    FunctionType::get(
-                        Type::getInt32Ty(F.getContext()),
-                        {Type::getInt8PtrTy(F.getContext())},
-                        true
-                    )
-                ).getCallee());
+                // // Add debug output
+                // Function *printfFunc = cast<Function>(F.getParent()->getOrInsertFunction(
+                //     "printf", 
+                //     FunctionType::get(
+                //         Type::getInt32Ty(F.getContext()),
+                //         {Type::getInt8PtrTy(F.getContext())},
+                //         true
+                //     )
+                // ).getCallee());
                 
-                std::vector<Value *> printfArgs;
-                printfArgs.push_back(initBuilder.CreateGlobalStringPtr("LoopTraceInitialization in LLVM IR: ptr = %p\n"));
-                printfArgs.push_back(loopIterationPtr);
-                initBuilder.CreateCall(printfFunc, printfArgs);
+                // std::vector<Value *> printfArgs;
+                // printfArgs.push_back(initBuilder.CreateGlobalStringPtr("LoopTraceInitialization in LLVM IR: ptr = %p\n"));
+                // printfArgs.push_back(loopIterationPtr);
+                // initBuilder.CreateCall(printfFunc, printfArgs);
             }
             else if (auto retInst = dyn_cast<ReturnInst>(BB->getTerminator()))
             {

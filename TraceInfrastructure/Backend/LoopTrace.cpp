@@ -76,6 +76,7 @@ extern "C"
         
         try {
             map<uint64_t, uint64_t>* loopIteration = static_cast<map<uint64_t, uint64_t>*>(loopIterationVoid);
+            map<uint64_t, uint64_t> loopIterationCopy = *loopIteration;
             fprintf(stderr, "LoopTraceDestroy: Processing map at %p\n", (void*)loopIteration);
             
             // Write to file using simple fprintf
@@ -86,22 +87,12 @@ extern "C"
             
             fprintf(stderr, "Writing to file: %s\n", LoopTraceEnvFile);
             
-            FILE* fp = fopen(LoopTraceEnvFile, "w");
-            if (fp != nullptr) {
-                fprintf(fp, "{\n  \"loopIteration\": {\n");
-                
-                // Manually write each entry
-                bool first = true;
-                for (const auto& pair : *loopIteration) {
-                    if (!first) {
-                        fprintf(fp, ",\n");
-                    }
-                    fprintf(fp, "    \"%lu\": %lu", pair.first, pair.second);
-                    first = false;
-                }
-                
-                fprintf(fp, "\n  }\n}\n");
-                fclose(fp);
+            std::ofstream file(LoopTraceEnvFile);
+            if (file.is_open()) {
+                nlohmann::json scheduleJson;
+                scheduleJson["loopIteration"] = loopIterationCopy;
+                file << scheduleJson.dump(4) << std::endl;
+                file.close();
                 fprintf(stderr, "File written successfully\n");
             } else {
                 fprintf(stderr, "Failed to open file for writing\n");
