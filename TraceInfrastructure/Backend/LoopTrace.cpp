@@ -12,98 +12,48 @@
 
 using namespace std;
 // Backend generate a map loopIteration<int,int>  [loopID, iterationCount]
-
+map<int, int> loopIteration;
 
 
 extern "C"
 {
-    void LoopTrace(uint64_t loopID, void* loopIterationVoid)
+    void LoopTrace(int loopID)
     {
-        fprintf(stderr, "LoopTrace called with loopID=%lu, ptr=%p\n", loopID, loopIterationVoid);
-        
-        if (loopIterationVoid == nullptr) {
-            fprintf(stderr, "Error: loopIterationVoid is null in LoopTrace\n");
-            return; // Early return to avoid segfault
+        if (loopIteration.find(loopID) != loopIteration.end())
+        {
+            loopIteration[loopID]++;
         }
-        
-        fprintf(stderr, "About to cast loopIterationVoid to map\n");
-        map<uint64_t, uint64_t>* loopIteration = static_cast<map<uint64_t, uint64_t>*>(loopIterationVoid);
-        fprintf(stderr, "Cast successful, map address: %p\n", (void*)loopIteration);
-        
-        // Add a try-catch block to catch any potential issues
-        try {
-            fprintf(stderr, "Checking if loopID %lu exists in map\n", loopID);
-            
-            // Use a safer approach to update the map
-            auto it = loopIteration->find(loopID);
-            if (it != loopIteration->end()) {
-                fprintf(stderr, "loopID %lu exists, incrementing from %lu\n", loopID, it->second);
-                it->second++;
-                fprintf(stderr, "New value: %lu\n", it->second);
-            } else {
-                fprintf(stderr, "loopID %lu does not exist, creating new entry\n", loopID);
-                loopIteration->insert(std::make_pair(loopID, 1));
-                fprintf(stderr, "Insertion complete\n");
-            }
-            
-            fprintf(stderr, "LoopTrace completed successfully for loopID=%lu\n", loopID);
-        } catch (const std::exception& e) {
-            fprintf(stderr, "Exception in LoopTrace: %s\n", e.what());
-        } catch (...) {
-            fprintf(stderr, "Unknown exception in LoopTrace\n");
+        else
+        {
+            loopIteration.insert(make_pair(loopID, 1));
         }
     }
-    
-    void* LoopTraceInitialization()
+    void LoopTraceInitialization()
     {
-        try {
-            map<uint64_t, uint64_t> *loopIteration = new map<uint64_t, uint64_t>;
-            loopIteration->clear();
-            fprintf(stderr, "LoopTraceInitialization: Created map at %p\n", (void*)loopIteration);
-            return static_cast<void*>(loopIteration);
-        } catch (const std::exception& e) {
-            fprintf(stderr, "Exception in LoopTraceInitialization: %s\n", e.what());
-            return nullptr;
-        }
+        loopIteration.clear();
     }
-    
-    void LoopTraceDestroy(void* loopIterationVoid)
+    void LoopTraceDestroy()
     {
-        if (loopIterationVoid == nullptr) {
-            fprintf(stderr, "Error: loopIterationVoid is null in LoopTraceDestroy\n");
+        nlohmann::json jOut;
+        
+        for (const auto& [key, value] : loopIteration) {
+            jOut["loopIteration"].push_back({key, value});
+        }
+
+
+        const char* LoopTraceEnvFile = getenv("LoopTrace_FILE");
+        std::string filename;
+        if (LoopTraceEnvFile == nullptr) {
+            filename = "LoopTraceFile.json";
+        } else {
+            filename = LoopTraceEnvFile;
+        }
+
+        std::ofstream file(filename);
+        if (!file.is_open()) {
+            std::cerr << "Error: Failed to open file " << filename << std::endl;
             return;
         }
-        
-        try {
-            map<uint64_t, uint64_t>* loopIteration = static_cast<map<uint64_t, uint64_t>*>(loopIterationVoid);
-            map<uint64_t, uint64_t> loopIterationCopy = *loopIteration;
-            fprintf(stderr, "LoopTraceDestroy: Processing map at %p\n", (void*)loopIteration);
-            
-            // Write to file using simple fprintf
-            const char *LoopTraceEnvFile = getenv("LoopTrace_FILE");
-            if (LoopTraceEnvFile == nullptr) {
-                LoopTraceEnvFile = "LoopTraceFile.json";
-            }
-            
-            fprintf(stderr, "Writing to file: %s\n", LoopTraceEnvFile);
-            
-            std::ofstream file(LoopTraceEnvFile);
-            if (file.is_open()) {
-                nlohmann::json scheduleJson;
-                scheduleJson["loopIteration"] = loopIterationCopy;
-                file << scheduleJson.dump(4) << std::endl;
-                file.close();
-                fprintf(stderr, "File written successfully\n");
-            } else {
-                fprintf(stderr, "Failed to open file for writing\n");
-            }
-            
-            delete loopIteration;
-            fprintf(stderr, "Map deleted successfully\n");
-        } catch (const std::exception& e) {
-            fprintf(stderr, "Exception in LoopTraceDestroy: %s\n", e.what());
-        } catch (...) {
-            fprintf(stderr, "Unknown exception in LoopTraceDestroy\n");
-        }
+        file << jOut.dump() << std::endl;
     }
 }

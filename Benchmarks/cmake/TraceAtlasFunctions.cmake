@@ -50,8 +50,8 @@ function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
     file(MAKE_DIRECTORY ${OUTPUT_DIR})
 
     add_custom_target(${TARGET_NAME}_DAG_generation
-        # Initial compilation
-        COMMAND ${LLVM_9_PATH}/bin/${COMPILER_NAME} -fno-exceptions -g -Xclang -disable-O0-optnone -fPIC -DCPU_ONLY -flto 
+        # Initial compilation -fsanitize=address
+        COMMAND ${LLVM_9_PATH}/bin/${COMPILER_NAME}  -fno-exceptions -g -Xclang -disable-O0-optnone -fPIC -DCPU_ONLY -flto 
                 -lgsl -lgslcblas -fuse-ld=lld -Wl,-plugin-opt=emit-llvm 
                 ${INCLUDES} ${CEDR_INTERFACE} ${SOURCE_FILE}
                 -o ${OUTPUT_DIR}/${TARGET_NAME}.initial.bc
@@ -62,7 +62,7 @@ function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
                 -S -o ${OUTPUT_DIR}/${TARGET_NAME}.inlined.bc
         COMMAND ${LLVM_9_PATH}/bin/opt-9 -load ${TRACEATLAS_PASS_SHARED} 
                 -KernelLocating ${OUTPUT_DIR}/${TARGET_NAME}.inlined.bc 
-                -S -o ${OUTPUT_DIR}/${TARGET_NAME}.kernel_located.bc
+                 -o ${OUTPUT_DIR}/${TARGET_NAME}.kernel_located.bc
         
         # Generate and run first tracer
         COMMAND ${LLVM_9_PATH}/bin/clang++-9 ${INCLUDES} -fuse-ld=lld 

@@ -7,9 +7,9 @@
 extern "C"
 {
 #endif
-    void LoopTrace(uint64_t loopID, void* loopIterationVoid);
-    void* LoopTraceInitialization();
-    void LoopTraceDestroy(void* loopIterationVoid);
+    void LoopTrace(int loopID);
+    void LoopTraceInitialization();
+    void LoopTraceDestroy();
 #ifdef __cplusplus
 }
 #endif
