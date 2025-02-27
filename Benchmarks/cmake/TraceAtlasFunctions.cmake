@@ -61,7 +61,7 @@ function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
                 -DynmFunctionInlining ${OUTPUT_DIR}/${TARGET_NAME}.initial.bc 
                 -S -o ${OUTPUT_DIR}/${TARGET_NAME}.inlined.bc
         COMMAND ${LLVM_9_PATH}/bin/opt-9 -load ${TRACEATLAS_PASS_SHARED} 
-                -KernelLocating ${OUTPUT_DIR}/${TARGET_NAME}.inlined.bc 
+                -KernelLocating ${OUTPUT_DIR}/${TARGET_NAME}.inlined.bc -S 
                  -o ${OUTPUT_DIR}/${TARGET_NAME}.kernel_located.bc
         
         # Generate and run first tracer
