@@ -85,15 +85,15 @@ namespace DashTracer::Passes
         void DynmLoopUnrollPass::initializeUnrollOptions() {
             ULO.Count = 5;
             ULO.TripCount = ULO.Count;
-            ULO.Force = false;
+            ULO.Force = true;
             ULO.AllowRuntime = false;
-            ULO.AllowExpensiveTripCount = false;
-            ULO.PreserveCondBr = false;
+            ULO.AllowExpensiveTripCount = true;
+            ULO.PreserveCondBr = true;
             ULO.PreserveOnlyFirst = false;
             ULO.TripMultiple = 0;
-            ULO.PeelCount = ULO.Count;
+            ULO.PeelCount = 0;
             ULO.UnrollRemainder = true;
-            ULO.ForgetAllSCEV = true;
+            ULO.ForgetAllSCEV = false;
         }
 
         void DynmLoopUnrollPass::initializeAnalysis(Function &F) {
@@ -116,15 +116,48 @@ namespace DashTracer::Passes
         }
 
         bool DynmLoopUnrollPass::verifyLoopStructure(Loop* L) {
-            if (!L->isLoopSimplifyForm() || !L->isLCSSAForm(*DT)) {
+            if (!L) {
+                errs() << "Warning: Loop is null in verifyLoopStructure\n";
                 return false;
             }
 
-            for (Loop* SubL : L->getSubLoops()) {
-                if (!verifyLoopStructure(SubL)) {
-                    return false;
+            errs() << "Verifying loop: " << L->getName() << "\n";
+
+            if (!L->getHeader()) {
+                errs() << "Warning: Loop header is null for loop: " << L->getName() << "\n";
+                errs() << "Loop Blocks: \n";
+                for (auto* BB : L->blocks()) {
+                    errs() << BB->getName() << "\n";
                 }
+                return false;
             }
+
+            if (!L->getLoopPreheader()) {
+                errs() << "Warning: Loop preheader is null for loop: " << L->getName() << "\n";
+                errs() << "Loop Blocks: \n";
+                for (auto* BB : L->blocks()) {
+                    errs() << BB->getName() << "\n";
+                }
+                return false;
+            }
+
+            if (!L->getLoopLatch()) {
+                errs() << "Warning: Loop latch is null for loop: " << L->getName() << "\n";
+                return false;
+            }
+
+            SmallVector<BasicBlock*, 4> ExitBlocks;
+            L->getExitBlocks(ExitBlocks);
+            if (ExitBlocks.empty()) {
+                errs() << "Warning: Loop exit blocks are empty for loop: " << L->getName() << "\n";
+                return false;
+            }
+
+            if (!L->isLoopSimplifyForm()) {
+                errs() << "Warning: Loop is not in simplify form: " << L->getName() << "\n";
+                return true;
+            }
+
             return true;
         }
 
@@ -152,75 +185,125 @@ namespace DashTracer::Passes
 
         // Modify loop bound for unrolling
         bool DynmLoopUnrollPass::modifyLoopBound(Loop* L, uint64_t count) {
-            BasicBlock* Header = L->getHeader();
-            
-            for (auto& I : *Header) {
-                if (auto *CI = dyn_cast<CmpInst>(&I)) {
-                    if (CI == Header->getTerminator()->getOperand(0)) {
-                        // Store original condition
-                        originalConditions[L] = CI->clone();
+            BasicBlock *Header = L->getHeader();
+            Instruction *Term = Header->getTerminator();
+            Value *IndVar;
+            for (BasicBlock::iterator BIi = Header->begin(), BEi = Header->end(); BIi != BEi; ++BIi)
+            {
+                if (auto *CIi = dyn_cast<CmpInst>(BIi)) {
+                    auto cmpVar = CIi->getOperand(0);
+                    errs()<<"Found cmpVar: "<<*cmpVar<<"\n";
+                    errs()<<"Found CI: "<<*CIi<<"\n";
+                    errs()<<"Found terminaler: "<<*(Term)<<"\n";
+                    if (CIi == Term->getOperand(0)) {
                         
-                        Value* IndVar = CI->getOperand(0);
-                        Value* NewTripCount = ConstantInt::get(IndVar->getType(), count);
+
+                        IndVar = cmpVar;
                         
+                        Value *NewTripCount = ConstantInt::get(IndVar->getType(), ULO.Count);
+
                         IRBuilder<> Builder(Header);
-                        Builder.SetInsertPoint(CI);
-                        Value* NewCond = Builder.CreateICmpSLT(IndVar, NewTripCount);
+
+                        Builder.SetInsertPoint(CIi);
                         
-                        BranchInst* Term = cast<BranchInst>(Header->getTerminator());
-                        BranchInst* NewTerm = BranchInst::Create(
-                            Term->getSuccessor(0),
-                            Term->getSuccessor(1),
-                            NewCond
-                        );
+                        Value *NewCond = Builder.CreateICmpSLT(IndVar, NewTripCount);
+
+                        
+                        
+                        BranchInst *NewTerm = BranchInst::Create(Term->getSuccessor(0),
+                                                            Term->getSuccessor(1), NewCond);
                         ReplaceInstWithInst(Term, NewTerm);
-                        
-                        // Keep original condition but make it inactive
-                        CI->insertAfter(cast<Instruction>(NewCond));
-                        CI->setOperand(0, UndefValue::get(CI->getType()));
+                                        
+                        CIi->eraseFromParent();
+                        // errs()<<"Found NewCond: "<<*NewCond<<"\n";
+                        // errs()<<"Found NewTerm: "<<*NewTerm<<"\n";             
                         return true;
                     }
                 }
-            }
-            return false;
+            } 
+           return false;
         }
 
         // Process a single loop
         bool DynmLoopUnrollPass::processLoop(Loop* L, uint64_t loopId) {
-            if (!L || !L->getHeader()) return false;
-
-            // Safety checks
-            if (!verifyLoopStructure(L)) {
+            if (!L || !L->getHeader()) {
+                errs() << "Invalid loop or header for loopId: " << loopId << "\n";
                 return false;
             }
 
-            ULO.Count = loopIteration[loopId].count;
+            Function &F = *L->getHeader()->getParent();
+
+            // First, check if the loop is safe to clone
+            if (!L->isSafeToClone()) {
+                errs() << "Loop " << loopId << " is not safe to clone, skipping\n";
+                return false;
+            }
+
+            errs() << "Processing loop " << loopId << " with iteration count: "
+                   << loopIteration[loopId].count << "\n";
+
+            // Initialize unroll options
+            ULO.Count = static_cast<unsigned int>(loopIteration[loopId].count);
             ULO.TripCount = ULO.Count;
+            ULO.Force = false;  // Changed to false to respect safety checks
+            ULO.AllowRuntime = false;
+            ULO.AllowExpensiveTripCount = false;  // Changed to false
+            ULO.PreserveCondBr = true;
+            ULO.PreserveOnlyFirst = false;
+            ULO.UnrollRemainder = false;  // Changed to false
+            ULO.ForgetAllSCEV = false;    // Changed to false
+
+            // Make sure the loop is in canonical form
+            if (!L->isLoopSimplifyForm()) {
+                errs() << "Loop " << loopId << " is not in simplify form, attempting to canonicalize\n";
+            }
+
+            // Print detailed loop info
+            errs() << "Loop structure before modification:\n";
+            errs() << "  Header: " << (L->getHeader() ? L->getHeader()->getName() : "null") << "\n";
+            errs() << "  Preheader: " << (L->getLoopPreheader() ? L->getLoopPreheader()->getName() : "null") << "\n";
+            errs() << "  Latch: " << (L->getLoopLatch() ? L->getLoopLatch()->getName() : "null") << "\n";
+            
+            // Update DT before modification
+            if (DT) {
+                DT->recalculate(F);
+            }
 
             if (!modifyLoopBound(L, ULO.Count)) {
+                errs() << "Failed to modify loop bound for loopId: " << loopId << "\n";
                 return false;
             }
 
-            bool PreserveLCSSA = true;
-            Loop* ParentLoop = L->getParentLoop();
-            
-            // Perform the actual unrolling
-            LoopUnrollResult Result = UnrollLoop(L, ULO, LI, SE, DT, AC, ORE, PreserveLCSSA);
+            // Verify the loop is still valid after modification
+            if (!L->getHeader() || !L->getLoopPreheader() || !L->getLoopLatch()) {
+                errs() << "Loop structure corrupted after bound modification\n";
+                return false;
+            }
+
+            // Update analyses
+            if (DT) {
+                DT->recalculate(F);
+            }
+            if (SE) {
+                SE->forgetLoop(L);
+            }
+
+            // Double check it's still safe to clone
+            if (!L->isSafeToClone()) {
+                errs() << "Loop became unsafe to clone after modification\n";
+                return false;
+            }
+
+            // Perform the actual unrolling with more conservative options
+            errs() << "Attempting to unroll loop " << loopId << "\n";
+            LoopUnrollResult Result = UnrollLoop(L, ULO, LI, SE, DT, AC, ORE, /*PreserveLCSSA=*/true);
+
             if (Result == LoopUnrollResult::Unmodified) {
-                // Restore original condition if unrolling failed
-                if (originalConditions.count(L)) {
-                    // Restoration logic would go here
-                    originalConditions.erase(L);
-                }
+                errs() << "Loop unrolling failed for loopId: " << loopId << "\n";
                 return false;
             }
 
-            // Verify loop structure after unrolling
-            if (!verifyLoopStructure(L)) {
-                // Could add restoration logic here if needed
-                return false;
-            }
-
+            errs() << "Successfully unrolled loop " << loopId << "\n";
             removeLoopTrace(L);
             return true;
         }
@@ -258,7 +341,7 @@ namespace DashTracer::Passes
         }
 
 
-        bool DynmLoopUnrollPass::doInitialization(Module& M) {
+        bool DynmLoopUnrollPass::doInitialization(Module& /*M*/) {
             nlohmann::json j;
             std::ifstream inputStream(LoopTraceFile);
             inputStream >> j;
@@ -277,33 +360,53 @@ namespace DashTracer::Passes
         bool DynmLoopUnrollPass::runOnFunction(Function &F) {
             if (F.empty()) return false;
 
+            errs() << "Starting DynmLoopUnroll on function: " << F.getName() << "\n";
+
             initializeUnrollOptions();
             initializeAnalysis(F);
 
             bool modified = false;
             auto loopMap = findLoopsWithTraces(F);
 
+            errs() << "Found " << loopMap.size() << " loops with traces\n";
+
             // Process loops in post-order
             std::vector<std::pair<Loop*, uint64_t>> loopsToProcess;
             for (Loop* L : *LI) {
-                // Only process top-level loops here
-                if (!L->getParentLoop()) {
-                    collectLoopsPostOrder(L, loopMap, loopsToProcess);
+                collectLoopsPostOrder(L, loopMap, loopsToProcess);
+            }
+
+            errs() << "Processing " << loopsToProcess.size() << " loops in total\n";
+
+            // First process inner loops (non-zero parentId)
+            for (const auto& [loop, loopId] : loopsToProcess) {
+                if (loopIteration.find(loopId) != loopIteration.end() && 
+                    loopIteration[loopId].parentId != 0) {
+                    errs() << "\nProcessing inner loop " << loopId 
+                           << " (parentId: " << loopIteration[loopId].parentId << ")\n";
+                    bool success = processLoop(loop, loopId);
+                    modified |= success;
+                    errs() << "Inner loop " << loopId 
+                           << (success ? " successfully processed" : " processing failed") 
+                           << "\n";
                 }
             }
 
-            // Process loops in the correct order
+            // Then process outer loops (parentId == 0)
             for (const auto& [loop, loopId] : loopsToProcess) {
-                if (loopIteration.find(loopId) != loopIteration.end()) {
-                    // For single-level loops, just process directly
-                    if (loop->getSubLoops().empty()) {
-                        modified |= processLoop(loop, loopId);
-                    } else {
-                        // For nested loops, use the nested processing logic
-                        modified |= processNestedLoops(loop, loopId, loopMap);
-                    }
+                if (loopIteration.find(loopId) != loopIteration.end() && 
+                    loopIteration[loopId].parentId == 0) {
+                    errs() << "\nProcessing outer/single-level loop " << loopId << "\n";
+                    bool success = processLoop(loop, loopId);
+                    modified |= success;
+                    errs() << "Outer/single-level loop " << loopId 
+                           << (success ? " successfully processed" : " processing failed") 
+                           << "\n";
                 }
             }
+
+            errs() << "Finished processing function " << F.getName() 
+                   << ": " << (modified ? "modified" : "unmodified") << "\n";
 
             cleanupTraceCalls(F);
             cleanupAnalysis();

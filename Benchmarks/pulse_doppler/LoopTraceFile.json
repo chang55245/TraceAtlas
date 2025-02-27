@@ -1,0 +1,14 @@
+{
+    "loopIteration": [
+        {
+            "loopId": 2,
+            "count": 8,
+            "parentId": 0
+        },
+        {
+            "loopId": 1,
+            "count": 8,
+            "parentId": 0
+        }
+    ]
+}
