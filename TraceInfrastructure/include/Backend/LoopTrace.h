@@ -9,7 +9,7 @@ extern "C"
 #endif
     void LoopTrace(int loopID);
     void LoopTraceInitialization();
-    void LoopTraceDestroy();
+    void LoopTraceDestroy(int* hierarchyInfo, int hierarchySize);
 #ifdef __cplusplus
 }
 #endif

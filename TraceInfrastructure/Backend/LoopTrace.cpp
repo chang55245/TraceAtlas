@@ -7,10 +7,11 @@
 #include <fstream>
 #include <iostream>
 
-// Use C-style map implementation to avoid STL initialization issues
+// Structure to represent loop hierarchy
 struct LoopCount {
     int loopId;
     int count;
+    int parentId;  // Will be set from hierarchy info
     struct LoopCount* next;
 };
 
@@ -33,13 +34,13 @@ extern "C" {
         LoopCount* new_count = new LoopCount();
         new_count->loopId = loopID;
         new_count->count = 1;
+        new_count->parentId = 0;  // Will be set from hierarchy info later
         new_count->next = loop_counts;
         loop_counts = new_count;
     }
 
     void LoopTraceInitialization()
     {
-        // Just ensure the list is empty
         while (loop_counts != nullptr) {
             LoopCount* temp = loop_counts;
             loop_counts = loop_counts->next;
@@ -47,10 +48,25 @@ extern "C" {
         }
     }
 
-    void LoopTraceDestroy()
+    void LoopTraceDestroy(int* hierarchyInfo, int hierarchySize)
     {
         try {
-            // Get filename
+            // Update parent IDs from hierarchy info
+            for (int i = 0; i < hierarchySize; i += 2) {
+                int loopId = hierarchyInfo[i];
+                int parentId = hierarchyInfo[i + 1];
+                
+                // Find and update the corresponding loop count
+                LoopCount* current = loop_counts;
+                while (current != nullptr) {
+                    if (current->loopId == loopId) {
+                        current->parentId = parentId;
+                        break;
+                    }
+                    current = current->next;
+                }
+            }
+
             const char* LoopTraceEnvFile = getenv("LoopTrace_FILE");
             std::string filename = LoopTraceEnvFile ? LoopTraceEnvFile : "LoopTraceFile.json";
 
@@ -60,18 +76,18 @@ extern "C" {
                 return;
             }
 
-            // Write JSON manually
+            // Write JSON
             file << "{\n    \"loopIteration\": [\n";
             
-            // Write loop counts
             bool first = true;
             LoopCount* current = loop_counts;
-            // {"loopIteration":[[1,10]]}
             while (current != nullptr) {
-                if (!first) {
-                    file << ",\n";
-                }
-                file << "            [" << current->loopId << ", " << current->count << "]";
+                if (!first) file << ",\n";
+                file << "        {\n";
+                file << "            \"loopId\": " << current->loopId << ",\n";
+                file << "            \"count\": " << current->count << ",\n";
+                file << "            \"parentId\": " << current->parentId << "\n";
+                file << "        }";
                 first = false;
                 current = current->next;
             }
