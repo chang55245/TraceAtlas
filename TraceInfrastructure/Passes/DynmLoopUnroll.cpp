@@ -1,4 +1,3 @@
-#include "Passes/DynmLoopUnroll.h"
 #include "Passes/CommandArgs.h"
 #include "Passes/Annotate.h"
 #include "AtlasUtil/Annotate.h"
@@ -38,7 +37,50 @@ using namespace std;
 
 namespace DashTracer::Passes
 {
+        struct LoopProfileInfo {
+        uint64_t count;
+        uint64_t parentId;
+    };
 
+    class DynmLoopUnrollPass : public FunctionPass {
+    private:
+        std::map<uint64_t, LoopProfileInfo> loopIteration;
+        UnrollLoopOptions ULO;
+        
+        // Analysis info
+        DominatorTree* DT;
+        LoopInfo* LI;
+        AssumptionCache* AC;
+        ScalarEvolution* SE;
+        OptimizationRemarkEmitter* ORE;
+        TargetLibraryInfo* TLI;
+
+        // Store original conditions for potential restoration
+        std::map<Loop*, Value*> originalConditions;
+
+        void initializeUnrollOptions();
+        void initializeAnalysis(Function &F);
+        void cleanupAnalysis();
+        std::map<Loop*, uint64_t> findLoopsWithTraces(Function &F);
+        bool modifyLoopBound(Loop* L, uint64_t count);
+        bool processLoop(Loop* L, uint64_t loopId);
+        void collectLoopsPostOrder(Loop* L, 
+                                 const std::map<Loop*, uint64_t>& loopMap,
+                                 std::vector<std::pair<Loop*, uint64_t>>& loopsToProcess);
+        void removeLoopTrace(Loop* L);
+        void cleanupTraceCalls(Function& F);
+        bool processNestedLoops(Loop* L, uint64_t loopId, map<Loop*, uint64_t>& loopMap);
+        bool verifyLoopStructure(Loop* L);
+
+
+    public:
+        static char ID;
+        DynmLoopUnrollPass() : FunctionPass(ID) {}
+        bool runOnFunction(Function &F) override;
+        void getAnalysisUsage(AnalysisUsage &AU) const override;
+        bool doInitialization(Module &M) override;
+    };
+// namespace DashTracer::Passes
 
         void DynmLoopUnrollPass::initializeUnrollOptions() {
             ULO.Count = 5;
@@ -73,6 +115,19 @@ namespace DashTracer::Passes
             delete ORE;
         }
 
+        bool DynmLoopUnrollPass::verifyLoopStructure(Loop* L) {
+            if (!L->isLoopSimplifyForm() || !L->isLCSSAForm(*DT)) {
+                return false;
+            }
+
+            for (Loop* SubL : L->getSubLoops()) {
+                if (!verifyLoopStructure(SubL)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         // Find all loops and their LoopTrace calls
         map<Loop*, uint64_t> DynmLoopUnrollPass::findLoopsWithTraces(Function &F) {
             map<Loop*, uint64_t> loopMap;
@@ -98,9 +153,13 @@ namespace DashTracer::Passes
         // Modify loop bound for unrolling
         bool DynmLoopUnrollPass::modifyLoopBound(Loop* L, uint64_t count) {
             BasicBlock* Header = L->getHeader();
+            
             for (auto& I : *Header) {
                 if (auto *CI = dyn_cast<CmpInst>(&I)) {
                     if (CI == Header->getTerminator()->getOperand(0)) {
+                        // Store original condition
+                        originalConditions[L] = CI->clone();
+                        
                         Value* IndVar = CI->getOperand(0);
                         Value* NewTripCount = ConstantInt::get(IndVar->getType(), count);
                         
@@ -115,7 +174,10 @@ namespace DashTracer::Passes
                             NewCond
                         );
                         ReplaceInstWithInst(Term, NewTerm);
-                        CI->eraseFromParent();
+                        
+                        // Keep original condition but make it inactive
+                        CI->insertAfter(cast<Instruction>(NewCond));
+                        CI->setOperand(0, UndefValue::get(CI->getType()));
                         return true;
                     }
                 }
@@ -125,35 +187,41 @@ namespace DashTracer::Passes
 
         // Process a single loop
         bool DynmLoopUnrollPass::processLoop(Loop* L, uint64_t loopId) {
-            if (loopIteration.find(loopId) == loopIteration.end()) {
+            if (!L || !L->getHeader()) return false;
+
+            // Safety checks
+            if (!verifyLoopStructure(L)) {
                 return false;
             }
 
             ULO.Count = loopIteration[loopId].count;
-            ULO.TripCount = ULO.Count + 1;
+            ULO.TripCount = ULO.Count;
 
             if (!modifyLoopBound(L, ULO.Count)) {
                 return false;
             }
 
-            bool PreserveLCSSA = L->isRecursivelyLCSSAForm(*DT, *LI);
-            UnrollLoop(L, ULO, LI, SE, DT, AC, ORE, PreserveLCSSA, nullptr);
-            simplifyLoopAfterUnroll(L, true, LI, SE, DT, AC);
-
-            // Remove LoopTrace calls for this loop
-            for (auto& BB : L->getBlocks()) {
-                for (auto I = BB->begin(); I != BB->end();) {
-                    if (auto* CI = dyn_cast<CallInst>(&*I)) {
-                        if (CI->getCalledFunction() &&
-                            CI->getCalledFunction()->getName() == "LoopTrace") {
-                            I = CI->eraseFromParent();
-                            continue;
-                        }
-                    }
-                    ++I;
+            bool PreserveLCSSA = true;
+            Loop* ParentLoop = L->getParentLoop();
+            
+            // Perform the actual unrolling
+            LoopUnrollResult Result = UnrollLoop(L, ULO, LI, SE, DT, AC, ORE, PreserveLCSSA);
+            if (Result == LoopUnrollResult::Unmodified) {
+                // Restore original condition if unrolling failed
+                if (originalConditions.count(L)) {
+                    // Restoration logic would go here
+                    originalConditions.erase(L);
                 }
+                return false;
             }
 
+            // Verify loop structure after unrolling
+            if (!verifyLoopStructure(L)) {
+                // Could add restoration logic here if needed
+                return false;
+            }
+
+            removeLoopTrace(L);
             return true;
         }
 
@@ -161,18 +229,31 @@ namespace DashTracer::Passes
         bool DynmLoopUnrollPass::processNestedLoops(Loop* L, uint64_t loopId, map<Loop*, uint64_t>& loopMap) {
             bool modified = false;
 
-            // Process child loops first
+            // Build complete hierarchy map
+            std::map<Loop*, std::vector<Loop*>> hierarchy;
             for (Loop* SubL : L->getSubLoops()) {
                 if (loopMap.count(SubL)) {
                     uint64_t subLoopId = loopMap[SubL];
                     if (loopIteration[subLoopId].parentId == loopId) {
-                        modified |= processNestedLoops(SubL, subLoopId, loopMap);
+                        hierarchy[L].push_back(SubL);
                     }
                 }
             }
 
-            // Then process this loop
-            modified |= processLoop(L, loopId);
+            // Process loops in hierarchical order
+            for (const auto& [parent, children] : hierarchy) {
+                for (Loop* child : children) {
+                    uint64_t childId = loopMap[child];
+                    modified |= processLoop(child, childId);
+                    
+                    // Verify hierarchy is preserved
+                    if (!child->getParentLoop() || child->getParentLoop() != parent) {
+                        return false;
+                    }
+                }
+                modified |= processLoop(parent, loopMap[parent]);
+            }
+
             return modified;
         }
 
@@ -202,17 +283,57 @@ namespace DashTracer::Passes
             bool modified = false;
             auto loopMap = findLoopsWithTraces(F);
 
-            // Start with top-level loops
+            // Process loops in post-order
+            std::vector<std::pair<Loop*, uint64_t>> loopsToProcess;
             for (Loop* L : *LI) {
-                if (loopMap.count(L)) {
-                    uint64_t loopId = loopMap[L];
-                    if (loopIteration[loopId].parentId == 0) {
-                        modified |= processNestedLoops(L, loopId, loopMap);
-                    }
+                collectLoopsPostOrder(L, loopMap, loopsToProcess);
+            }
+
+            // Process loops in the correct order
+            for (const auto& [loop, loopId] : loopsToProcess) {
+                if (loopIteration.find(loopId) != loopIteration.end()) {
+                    modified |= processLoop(loop, loopId);
                 }
             }
 
-            // Clean up any remaining LoopTrace-related calls
+            cleanupTraceCalls(F);
+            cleanupAnalysis();
+            return modified;
+        }
+
+        void DynmLoopUnrollPass::collectLoopsPostOrder(
+            Loop* L, 
+            const std::map<Loop*, uint64_t>& loopMap,
+            std::vector<std::pair<Loop*, uint64_t>>& loopsToProcess) 
+        {
+            for (Loop* SubL : L->getSubLoops()) {
+                collectLoopsPostOrder(SubL, loopMap, loopsToProcess);
+            }
+
+            if (loopMap.count(L)) {
+                uint64_t loopId = loopMap.at(L);
+                loopsToProcess.push_back({L, loopId});
+            }
+        }
+
+        void DynmLoopUnrollPass::removeLoopTrace(Loop* L) {
+            for (BasicBlock* BB : L->blocks()) {
+                for (auto I = BB->begin(); I != BB->end();) {
+                    if (auto* CI = dyn_cast<CallInst>(&*I)) {
+                        if (CI->getCalledFunction() &&
+                            CI->getCalledFunction()->getName() == "LoopTrace") {
+                            auto Next = std::next(I);
+                            CI->eraseFromParent();
+                            I = Next;
+                            continue;
+                        }
+                    }
+                    ++I;
+                }
+            }
+        }
+
+        void DynmLoopUnrollPass::cleanupTraceCalls(Function& F) {
             for (auto& BB : F) {
                 for (auto I = BB.begin(); I != BB.end();) {
                     if (auto* CI = dyn_cast<CallInst>(&*I)) {
@@ -220,8 +341,9 @@ namespace DashTracer::Passes
                             StringRef Name = CI->getCalledFunction()->getName();
                             if (Name == "LoopTraceInitialization" || 
                                 Name == "LoopTraceDestroy") {
-                                I = CI->eraseFromParent();
-                                modified = true;
+                                auto Next = std::next(I);
+                                CI->eraseFromParent();
+                                I = Next;
                                 continue;
                             }
                         }
@@ -229,9 +351,6 @@ namespace DashTracer::Passes
                     ++I;
                 }
             }
-
-            cleanupAnalysis();
-            return modified;
         }
 
         void DynmLoopUnrollPass::getAnalysisUsage(AnalysisUsage &AU) const {
