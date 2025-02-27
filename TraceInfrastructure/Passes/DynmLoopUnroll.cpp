@@ -286,13 +286,22 @@ namespace DashTracer::Passes
             // Process loops in post-order
             std::vector<std::pair<Loop*, uint64_t>> loopsToProcess;
             for (Loop* L : *LI) {
-                collectLoopsPostOrder(L, loopMap, loopsToProcess);
+                // Only process top-level loops here
+                if (!L->getParentLoop()) {
+                    collectLoopsPostOrder(L, loopMap, loopsToProcess);
+                }
             }
 
             // Process loops in the correct order
             for (const auto& [loop, loopId] : loopsToProcess) {
                 if (loopIteration.find(loopId) != loopIteration.end()) {
-                    modified |= processLoop(loop, loopId);
+                    // For single-level loops, just process directly
+                    if (loop->getSubLoops().empty()) {
+                        modified |= processLoop(loop, loopId);
+                    } else {
+                        // For nested loops, use the nested processing logic
+                        modified |= processNestedLoops(loop, loopId, loopMap);
+                    }
                 }
             }
 
