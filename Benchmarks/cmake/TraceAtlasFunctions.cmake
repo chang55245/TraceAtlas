@@ -129,7 +129,7 @@ function(add_task_merging_target TARGET_NAME)
                 -TaskMergingReorder -tm ${OUTPUT_DIR}/task_merging_schedule.json 
                 ${OUTPUT_DIR}/${TARGET_NAME}.encoded.bc 
                 -S -o ${OUTPUT_DIR}/${TARGET_NAME}.merged.bc
-        COMMAND ${LLVM_9_PATH}/bin/${COMPILER_NAME} -g -lm -lz -lpthread -I ./ 
+        COMMAND ${LLVM_9_PATH}/bin/clang++-9 -g -lm -lz -lpthread -I ./ 
                 -lgsl -lgslcblas ${OUTPUT_DIR}/${TARGET_NAME}.merged.bc 
                 -o ${OUTPUT_DIR}/${TARGET_NAME}.merged.native -fuse-ld=lld 
                 ${TRACEATLAS_PASS_BACKEND_STATIC}
