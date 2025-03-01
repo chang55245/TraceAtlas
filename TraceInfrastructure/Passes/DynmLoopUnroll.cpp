@@ -35,6 +35,9 @@ using namespace std;
 
 namespace DashTracer::Passes
 {
+
+
+    
      struct LoopProfileInfo {
         uint64_t count;
         uint64_t parentId;
@@ -61,17 +64,17 @@ namespace DashTracer::Passes
         UnrollLoopOptions ULO;
 
         ULO.Count = 5;
-        ULO.TripCount = ULO.Count;
-        ULO.Force = false;
-        ULO.AllowRuntime = false;
-        ULO.AllowExpensiveTripCount = false;
+        ULO.TripCount = ULO.Count+1;
+        ULO.Force = true;
+        ULO.AllowRuntime = true;
+        ULO.AllowExpensiveTripCount = true;
         ULO.PreserveCondBr = false;
         ULO.PreserveOnlyFirst = false;
         ULO.TripMultiple = 0;
         ULO.PeelCount = ULO.Count;
         ULO.UnrollRemainder = true;
         ULO.ForgetAllSCEV = true;
-
+        int64_t LoopID = 0;
         if (LI.empty())
         {
             return false;
@@ -95,6 +98,7 @@ namespace DashTracer::Passes
                             auto *loopTest = LI.getLoopFor(&bb);
                             if (loopTest != nullptr)
                             {
+                                bool haveInnerLoopTrace = false;
                                 // continue if the loop's subloop have loopTrace
                                 for (auto subloop: loopTest->getSubLoops()) {
                                     for (auto BB: subloop->getBlocks()) {
@@ -104,13 +108,24 @@ namespace DashTracer::Passes
                                                     continue;
                                                 }
                                                 if (ChildCall->getCalledFunction()->getName() == "LoopTrace") {
-                                                    goto endloop;
+                                                    haveInnerLoopTrace = true;
+                                                    break;
                                                 }
                                             }
                                         }
+                                        if (haveInnerLoopTrace) {
+                                            break;
+                                        }
+                                    }
+                                    if (haveInnerLoopTrace) {
+                                        break;
                                     }
                                 }
-                                            
+                                if (haveInnerLoopTrace) {
+                                    continue;
+                                }
+                                
+                                
 
                                 auto arg = CI->arg_begin();
                                 const Use *use = arg;
@@ -122,6 +137,7 @@ namespace DashTracer::Passes
                                 }
 
                                 ULO.Count = loopIteration[cons->getSExtValue()].count;
+                                LoopID = cons->getSExtValue();
                                 ULO.TripCount = ULO.Count+1;
                                 // delete loopTrace
                                 CI->eraseFromParent();
@@ -134,6 +150,7 @@ namespace DashTracer::Passes
                                
                                 BasicBlock *Header = loopTest->getHeader();
                                 Instruction *Term = Header->getTerminator();
+
                                 
                                 for (BasicBlock::iterator BIi = Header->begin(), BEi = Header->end(); BIi != BEi; ++BIi)
                                 {
@@ -170,10 +187,18 @@ namespace DashTracer::Passes
                                 }           
                                 
 
-                                LI.verify(DT);                                
-                                UnrollLoop(loopTest, ULO, &LI, &SE, &DT, &AC, &ORE, PreserveLCSSA, nullptr);
+                                LI.verify(DT);
+                                LoopUnrollResult Result = UnrollLoop(loopTest, ULO, &LI, &SE, &DT, &AC, &ORE, PreserveLCSSA, nullptr);
+                                
+                                if (Result == LoopUnrollResult::Unmodified) {
+                                    errs()<<"Loop unrolling failed for loopId: "<<LoopID<<"\n";
+                                }else{
+                                    errs()<<"Unrolled successfully loop: "<<LoopID<<"\n";
+                                }
+                                
                                 simplifyLoopAfterUnroll(loopTest, true,&LI, &SE, &DT, &AC);
                                 unrolled = true;
+                                
                                 goto endloop;
                                 // clean the binary, delete the everything irrelavate
                             }
