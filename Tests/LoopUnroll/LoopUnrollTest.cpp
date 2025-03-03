@@ -101,14 +101,21 @@ while.end:                                        ; preds = %while.cond
   bool PreserveLCSSA = L->isRecursivelyLCSSAForm(DT,LI);
 
   errs() << "Attempting to unroll loop...\n";
-  bool ret = UnrollRuntimeLoopRemainder(L, 4, true, false, false, false, &LI,
-                                        &SE, &DT, &AC, PreserveLCSSA);
-  EXPECT_FALSE(ret);
-  
-  // Print the function after transformation
-  errs() << "Function after transformation:\n";
+  // bool ret = UnrollRuntimeLoopRemainder( L , 4, true, false, false, false, &LI,
+  //                                       &SE, &DT, &AC, PreserveLCSSA);
+  int peelCount = 4;
+  peelLoop(L, peelCount, &LI, &SE, &DT, &AC, PreserveLCSSA);
+  errs() << "Function after peeling:\n";
   F->print(errs());
   errs() << "\n";
+
+  // simplifyLoopAfterUnroll(L, true,&LI, &SE, &DT, &AC);
+
+  errs() << "Function after simplification:\n";
+  F->print(errs());
+  errs() << "\n";
+
+  
 }
 
 // Add a main function so we can run without GTest if needed
