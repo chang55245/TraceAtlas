@@ -25,6 +25,8 @@
 #define GTEST_HAS_EXCEPTIONS 0
 #include "gtest/gtest.h"
 #include <memory>
+#include <set>
+#include <functional>
 
 using namespace llvm;
 
@@ -46,6 +48,31 @@ static std::unique_ptr<Module> parseIR(LLVMContext &C, const char *IR) {
   }
   
   return Mod;
+}
+
+// Add this helper function before the test
+Value *findLoadFromAlloca(Value *V, std::set<Value*> &Visited) {
+  // Prevent infinite recursion
+  if (Visited.count(V))
+    return nullptr;
+  Visited.insert(V);
+
+  // If this is a load instruction, check if it's loading from an alloca
+  if (LoadInst *Load = dyn_cast<LoadInst>(V)) {
+    if (AllocaInst *Alloca = dyn_cast<AllocaInst>(Load->getPointerOperand())) {
+      return Load;
+    }
+  }
+
+  // Recursively check all operands
+  if (Instruction *I = dyn_cast<Instruction>(V)) {
+    for (Use &U : I->operands()) {
+      if (Value *Result = findLoadFromAlloca(U.get(), Visited))
+        return Result;
+    }
+  }
+
+  return nullptr;
 }
 
 // Main test for loop unrolling
@@ -139,18 +166,26 @@ while.end:
     Value *Op0 = Cmp->getOperand(0);
     Value *Op1 = Cmp->getOperand(1);
 
-    // Look for a load instruction that might be loading our induction variable
-    if (LoadInst *Load = dyn_cast<LoadInst>(Op0)) {
-      if (AllocaInst *Alloca = dyn_cast<AllocaInst>(Load->getPointerOperand())) {
-        InductionAlloca = Alloca;
+    std::set<Value*> Visited;
+    // Try to find a load from alloca in the first operand
+    if (Value *Load = findLoadFromAlloca(Op0, Visited)) {
+      InductionVar = Load;
+      BoundValue = Op1;
+      InductionAlloca = cast<AllocaInst>(cast<LoadInst>(Load)->getPointerOperand());
+    } else {
+      // Reset visited set for second operand
+      Visited.clear();
+      // Try the second operand
+      if (Value *Load = findLoadFromAlloca(Op1, Visited)) {
         InductionVar = Load;
-        BoundValue = Op1;
+        BoundValue = Op0;
+        InductionAlloca = cast<AllocaInst>(cast<LoadInst>(Load)->getPointerOperand());
       }
     }
   }
 
   if (!InductionVar) {
-    errs() << "Could not find induction variable\n";
+    errs() << "Could not find induction variable load instruction\n";
     return;
   }
 
@@ -159,34 +194,59 @@ while.end:
     // Create a builder to insert instructions at the end of the preheader
     IRBuilder<> Builder(Preheader->getTerminator());
     
-    // Get the initial value - in this case it's stored in the alloca
-    // Look for the store instruction in the entry block
+    // Get the initial value by searching through all blocks that dominate the loop header
     Value *InitialValue = nullptr;
-    for (auto &I : F->getEntryBlock()) {
-      if (StoreInst *Store = dyn_cast<StoreInst>(&I)) {
-        if (Store->getPointerOperand() == InductionAlloca) {
-          InitialValue = Store->getValueOperand();
-          break;
+    std::set<BasicBlock*> Visited;
+    std::function<bool(BasicBlock*)> FindInitialStore = [&](BasicBlock *BB) -> bool {
+      // Skip if we've already visited this block
+      if (!Visited.insert(BB).second)
+        return false;
+
+      // Search for store instruction in this block
+      for (auto &I : *BB) {
+        if (StoreInst *Store = dyn_cast<StoreInst>(&I)) {
+          if (Store->getPointerOperand() == InductionAlloca) {
+            InitialValue = Store->getValueOperand();
+            return true;
+          }
         }
       }
-    }
 
-    if (!InitialValue) {
-      errs() << "Could not find initial value store\n";
+      // Recursively search through predecessors
+      for (BasicBlock *Pred : predecessors(BB)) {
+        // Only search through blocks that dominate the loop header
+        if (DT.dominates(Pred, Header)) {
+          if (FindInitialStore(Pred))
+            return true;
+        }
+      }
+      return false;
+    };
+
+    // Start search from the loop header
+    if (!FindInitialStore(Header)) {
+      errs() << "Could not find initial value store in any dominating block\n";
       return;
     }
     
-    // Create a constant for the peel count
-    Constant *PeelCountValue = ConstantInt::get(
-        BoundValue->getType(), peelCount, false);
+    // Get the type from Cmp's first operand
+    Type *BoundType = Cmp->getOperand(0)->getType();
+    
+    // Create a constant for the peel count with the correct type
+    Constant *PeelCountValue = ConstantInt::get(BoundType, peelCount, false);
     
     errs() << "Setting loop boundary to initial value plus peel count: " << peelCount << "\n";
     
+    // Convert initial value to the correct type if needed
+    Value *InitialValueCasted = Builder.CreateIntCast(InitialValue, BoundType, 
+                                                     /*isSigned=*/false, "initial.casted");
+    
     // Add the peel count to the initial value
-    Value *NewBound = Builder.CreateAdd(InitialValue, PeelCountValue, "new_bound");
+    Value *NewBound = Builder.CreateAdd(InitialValueCasted, PeelCountValue, "new_bound");
     
     // Create a new comparison specifically for the loop condition
     ICmpInst *NewCmp = cast<ICmpInst>(Cmp->clone());
+    
     if (Cmp->getOperand(0) == BoundValue) {
       NewCmp->setOperand(0, NewBound);
     } else if (Cmp->getOperand(1) == BoundValue) {

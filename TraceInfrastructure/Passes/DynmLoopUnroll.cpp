@@ -29,12 +29,36 @@
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <functional>
 
 using namespace llvm;
 using namespace std;
 
 namespace DashTracer::Passes
 {
+    Value *findLoadFromAlloca(Value *V, std::set<Value*> &Visited) {
+  // Prevent infinite recursion
+  if (Visited.count(V))
+    return nullptr;
+  Visited.insert(V);
+
+  // If this is a load instruction, check if it's loading from an alloca
+  if (LoadInst *Load = dyn_cast<LoadInst>(V)) {
+    if (AllocaInst *Alloca = dyn_cast<AllocaInst>(Load->getPointerOperand())) {
+      return Load;
+    }
+  }
+
+  // Recursively check all operands
+  if (Instruction *I = dyn_cast<Instruction>(V)) {
+    for (Use &U : I->operands()) {
+      if (Value *Result = findLoadFromAlloca(U.get(), Visited))
+        return Result;
+    }
+  }
+
+  return nullptr;
+}
 
     void debugLoopUnrolling(Loop *L, UnrollLoopOptions ULO, LoopInfo &LI,
                         ScalarEvolution *SE, DominatorTree *DT,
@@ -244,25 +268,82 @@ namespace DashTracer::Passes
                                 CI->eraseFromParent();
 
                                 bool PreserveLCSSA = loopTest->isRecursivelyLCSSAForm(DT, LI);
-                                // errs()<<*loopTest;
 
-                                Value *IndVar;
-                                
-                               
-                                BasicBlock *Header = loopTest->getHeader();
-                                
+                                // modify the loop bound
+                                AllocaInst *InductionAlloca = nullptr;
+                                Value *InductionVar = nullptr;
+                                Value *BoundValue = nullptr;
+                                BasicBlock *Header = loopTest->getHeader();                              
                                 BasicBlock *Preheader = loopTest->getLoopPreheader();
                                 BranchInst *HeaderBr = dyn_cast<BranchInst>(Header->getTerminator());
                                 ICmpInst *Cmp = dyn_cast<ICmpInst>(HeaderBr->getCondition());
-                                Value *BoundValue = Cmp->getOperand(1);
+                                // get the init value of the loop
+                                if (Cmp) {
+                                    Value *Op0 = Cmp->getOperand(0);
+                                    Value *Op1 = Cmp->getOperand(1);
+                                    std::set<Value*> Visited;
+
+                                    if (Value *Load = findLoadFromAlloca(Op0, Visited)) {
+                                        InductionVar = Load;
+                                        BoundValue = Op1;
+                                        InductionAlloca = cast<AllocaInst>(cast<LoadInst>(Load)->getPointerOperand());
+                                    } else {
+                                        errs() << "Could not find induction variable\n";
+                                    }
+                                }
+
+                                    // Get the initial value - in this case it's stored in the alloca
+                                // Look for the store instruction in the entry block
+                                Value *InitialValue = nullptr;
+                                std::set<BasicBlock*> Visited;
+                                std::function<bool(BasicBlock*)> FindInitialStore = [&](BasicBlock *BB) -> bool {
+                                    // Skip if we've already visited this block
+                                    if (!Visited.insert(BB).second)
+                                        return false;
+
+                                    // Search for store instruction in this block
+                                    for (auto &I : *BB) {
+                                        if (StoreInst *Store = dyn_cast<StoreInst>(&I)) {
+                                        if (Store->getPointerOperand() == InductionAlloca) {
+                                            InitialValue = Store->getValueOperand();
+                                            return true;
+                                        }
+                                        }
+                                    }
+
+                                    // Recursively search through predecessors
+                                    for (BasicBlock *Pred : predecessors(BB)) {
+                                        // Only search through blocks that dominate the loop header
+                                        if (DT.dominates(Pred, Header)) {
+                                        if (FindInitialStore(Pred))
+                                            return true;
+                                        }
+                                    }
+                                    return false;
+                                };
+
+                                if (!FindInitialStore(Header)) {
+                                    errs() << "Could not find initial value store in any dominating block\n";
+                                }
+                                
+                                
+                                // Value *BoundValue = Cmp->getOperand(1);
                                 IRBuilder<> Builder(Preheader->getTerminator());
+                                Type *BoundType = Cmp->getOperand(0)->getType();
                                 Constant *PeelCountValue = ConstantInt::get(
-                                    BoundValue->getType(), ULO.Count, false);  
-                                 ICmpInst *NewCmp = cast<ICmpInst>(Cmp->clone());
-                                 NewCmp->setOperand(1, PeelCountValue);
-                                 NewCmp->insertBefore(HeaderBr); 
-                                 HeaderBr->setCondition(NewCmp); 
-                                 Cmp->eraseFromParent();                          
+                                    BoundType, ULO.Count, false);
+                                Value *InitialValueCasted = Builder.CreateIntCast(InitialValue, BoundType, 
+                                                     /*isSigned=*/false, "initial.casted");
+                                Value *NewBound = Builder.CreateAdd(InitialValueCasted, PeelCountValue, "new_bound");
+                                errs() << "NewBound: " << *NewBound << "\n";
+                                errs() << "InitialValue: " << *InitialValue << "\n";
+                                errs() << "Cmp: " << *Cmp << "\n";
+                                ICmpInst *NewCmp = cast<ICmpInst>(Cmp->clone());
+                             
+                                NewCmp->setOperand(1, NewBound);
+                                NewCmp->insertBefore(HeaderBr); 
+                                HeaderBr->setCondition(NewCmp); 
+                                Cmp->eraseFromParent();                          
                                 
                                 ULO.PeelCount = ULO.Count;
                                 bool Result = peelLoop(loopTest, ULO.PeelCount, &LI, &SE, &DT, &AC, PreserveLCSSA);
