@@ -36,8 +36,109 @@ using namespace std;
 namespace DashTracer::Passes
 {
 
+    void debugLoopUnrolling(Loop *L, UnrollLoopOptions ULO, LoopInfo &LI,
+                        ScalarEvolution *SE, DominatorTree *DT,
+                        AssumptionCache *AC, bool PreserveLCSSA) {
+  // Check if the loop has a preheader.
+  BasicBlock *Preheader = L->getLoopPreheader();
+  if (!Preheader) {
+    llvm::dbgs() << "Unroll failure: Loop preheader insertion failed.\n";
+    return;
+  }
 
-    
+  // Check if the loop has a latch (exit block).
+  BasicBlock *LatchBlock = L->getLoopLatch();
+  if (!LatchBlock) {
+    llvm::dbgs() << "Unroll failure: Loop exit-block (latch) insertion failed.\n";
+    return;
+  }
+
+  // Check that the loop is safe to clone.
+  if (!L->isSafeToClone()) {
+    llvm::dbgs() << "Unroll failure: Loop body cannot be cloned (e.g. contains indirectbr).\n";
+    return;
+  }
+
+  // Retrieve the loop header and its terminator.
+  BasicBlock *Header = L->getHeader();
+  BranchInst *HeaderBI = dyn_cast<BranchInst>(Header->getTerminator());
+  // Get the latch branch.
+  BranchInst *LatchBI = dyn_cast<BranchInst>(LatchBlock->getTerminator());
+  if (!LatchBI ||
+      (LatchBI->isUnconditional() && (!HeaderBI || HeaderBI->isUnconditional() ||
+                                      L->getExitingBlock() != Header))) {
+    llvm::dbgs() << "Unroll failure: Loop is not terminated by a conditional branch "
+                    "in the latch or header.\n";
+
+    if (L->getExitingBlock() != Header) {
+        errs()<<" L->getExitingBlock() != Header\n";
+    }
+    if (!LatchBI) {
+        errs()<<" !LatchBI\n";
+    }
+    if (LatchBI->isUnconditional()) {
+        errs()<<" LatchBI->isUnconditional()\n";
+    }
+
+    if (!HeaderBI) {
+        errs()<<" !HeaderBI\n";
+    }
+    if (HeaderBI->isUnconditional()) {
+        errs()<<" HeaderBI->isUnconditional()\n";
+    }
+
+
+  }
+
+  // For loops with a conditional latch, verify that one successor is inside the loop
+  // and the other is outside.
+  if (LatchBI && LatchBI->isConditional()) {
+    auto CheckLatchSuccessors = [LatchBI, Header, L](unsigned S1, unsigned S2) -> bool {
+      return (LatchBI->getSuccessor(S1) == Header) && !L->contains(LatchBI->getSuccessor(S2));
+    };
+    if (!CheckLatchSuccessors(0, 1) && !CheckLatchSuccessors(1, 0)) {
+      llvm::dbgs() << "Unroll failure: Conditional latch does not exit the loop properly.\n";
+      return;
+    }
+  }
+
+  // If the header has a conditional branch (and the latch is not conditional), check its successors.
+  if (LatchBI && !LatchBI->isConditional() && HeaderBI && HeaderBI->isConditional()) {
+    auto CheckHeaderSuccessors = [HeaderBI, L](unsigned S1, unsigned S2) -> bool {
+      return L->contains(HeaderBI->getSuccessor(S1)) && !L->contains(HeaderBI->getSuccessor(S2));
+    };
+    if (!CheckHeaderSuccessors(0, 1) && !CheckHeaderSuccessors(1, 0)) {
+      llvm::dbgs() << "Unroll failure: Conditional header does not exit the loop properly.\n";
+      return;
+    }
+  }
+
+  // Check if the loop header's address is taken.
+  if (Header->hasAddressTaken()) {
+    llvm::dbgs() << "Unroll failure: Loop header's address is taken.\n";
+    return;
+  }
+
+  // Check if there is anything meaningful to unroll.
+  if (ULO.TripCount == 0 && ULO.Count < 2 && ULO.PeelCount == 0) {
+    llvm::dbgs() << "Unroll failure: Nothing to unroll (TripCount is 0 and unroll count is less than 2).\n";
+    return;
+  }
+
+  // For runtime trip count loops, verify that the unroll count divides the trip multiple.
+  bool RuntimeTripCount = (ULO.TripCount == 0 && ULO.Count > 0 && ULO.AllowRuntime);
+  if (RuntimeTripCount && (ULO.TripMultiple % ULO.Count != 0)) {
+    llvm::dbgs() << "Unroll failure: For runtime trip count loops, TripMultiple (" 
+                 << ULO.TripMultiple << ") is not divisible by the unroll count (" 
+                 << ULO.Count << ").\n";
+    return;
+  }
+
+  llvm::dbgs() << "Loop appears to satisfy basic unrolling conditions.\n";
+  // You can add additional checks or print more state information here as needed.
+}
+
+
      struct LoopProfileInfo {
         uint64_t count;
         uint64_t parentId;
@@ -64,20 +165,20 @@ namespace DashTracer::Passes
         UnrollLoopOptions ULO;
 
         ULO.Count = 5;
-        ULO.TripCount = ULO.Count+1;
-        ULO.Force = true;
-        ULO.AllowRuntime = true;
-        ULO.AllowExpensiveTripCount = true;
+        ULO.TripCount = ULO.Count;
+        ULO.Force = false;
+        ULO.AllowRuntime = false;
+        ULO.AllowExpensiveTripCount = false;
         ULO.PreserveCondBr = false;
         ULO.PreserveOnlyFirst = false;
         ULO.TripMultiple = 0;
-        ULO.PeelCount = ULO.Count;
+        ULO.PeelCount = 0;
         ULO.UnrollRemainder = true;
         ULO.ForgetAllSCEV = true;
         int64_t LoopID = 0;
         if (LI.empty())
         {
-            return false;
+            return false; 
         }
 
         while (true)
@@ -151,6 +252,9 @@ namespace DashTracer::Passes
                                 BasicBlock *Header = loopTest->getHeader();
                                 Instruction *Term = Header->getTerminator();
 
+                                PHINode *InductionVar = nullptr;
+                                Value *BoundValue = nullptr;
+
                                 
                                 for (BasicBlock::iterator BIi = Header->begin(), BEi = Header->end(); BIi != BEi; ++BIi)
                                 {
@@ -186,16 +290,20 @@ namespace DashTracer::Passes
                                     }
                                 }           
                                 
-
-                                LI.verify(DT);
-                                LoopUnrollResult Result = UnrollLoop(loopTest, ULO, &LI, &SE, &DT, &AC, &ORE, PreserveLCSSA, nullptr);
                                 
-                                if (Result == LoopUnrollResult::Unmodified) {
+                                
+                                // Recalculate the necessary analyses
+                                // DT.recalculate(F);
+                                // debugLoopUnrolling(loopTest, ULO, LI, &SE, &DT, &AC, PreserveLCSSA);
+                                // LoopUnrollResult Result = UnrollLoop(loopTest, ULO, &LI, &SE, &DT, &AC, &ORE, PreserveLCSSA, nullptr);
+                                
+                                ULO.PeelCount = ULO.Count;
+                                bool Result = peelLoop(loopTest, ULO.PeelCount, &LI, &SE, &DT, &AC, PreserveLCSSA);
+                                if (Result == false) {
                                     errs()<<"Loop unrolling failed for loopId: "<<LoopID<<"\n";
                                 }else{
                                     errs()<<"Unrolled successfully loop: "<<LoopID<<"\n";
                                 }
-                                
                                 simplifyLoopAfterUnroll(loopTest, true,&LI, &SE, &DT, &AC);
                                 unrolled = true;
                                 
