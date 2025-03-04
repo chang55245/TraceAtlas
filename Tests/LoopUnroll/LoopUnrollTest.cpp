@@ -55,30 +55,33 @@ TEST(LoopUnrollRuntime, Latch) {
 
   std::unique_ptr<Module> M = parseIR(
     C,
-    R"(define i32 @test(i32* %a, i32* %b, i32* %c, i64 %n) {
+    R"(define i32 @test(i32* %a, i32* %b, i32* %c, i64 %n, i64 %start) {
 entry:
+  %i = alloca i64
+  store i64 %start, i64* %i
   br label %while.cond
 
-while.cond:                                       ; preds = %while.body, %entry
-  %i.0 = phi i64 [ 0, %entry ], [ %inc, %while.body ]
-  %cmp = icmp slt i64 %i.0, %n
+while.cond:
+  %i.val = load i64, i64* %i
+  %cmp = icmp slt i64 %i.val, %n
   br i1 %cmp, label %while.body, label %while.end
 
-while.body:                                       ; preds = %while.cond
-  %arrayidx = getelementptr inbounds i32, i32* %b, i64 %i.0
+while.body:
+  %arrayidx = getelementptr inbounds i32, i32* %b, i64 %i.val
   %0 = load i32, i32* %arrayidx
-  %arrayidx1 = getelementptr inbounds i32, i32* %c, i64 %i.0
+  %arrayidx1 = getelementptr inbounds i32, i32* %c, i64 %i.val
   %1 = load i32, i32* %arrayidx1
   %mul = mul nsw i32 %0, %1
-  %arrayidx2 = getelementptr inbounds i32, i32* %a, i64 %i.0
+  %arrayidx2 = getelementptr inbounds i32, i32* %a, i64 %i.val
   store i32 %mul, i32* %arrayidx2
-  %inc = add nsw i64 %i.0, 1
+  %i.next = add nsw i64 %i.val, 1
+  store i64 %i.next, i64* %i
   br label %while.cond
 
-while.end:                                        ; preds = %while.cond
+while.end:
   ret i32 0
 })"
-    );
+  );
 
   ASSERT_TRUE(M) << "Failed to parse IR";
   
@@ -127,56 +130,67 @@ while.end:                                        ; preds = %while.cond
   }
   
   // Get the induction variable and bound
-  PHINode *InductionVar = nullptr;
+  Value *InductionVar = nullptr;
   Value *BoundValue = nullptr;
+  AllocaInst *InductionAlloca = nullptr;
   
-  // Find the induction variable (phi node in the header)
-  for (auto &I : *Header) {
-    if (PHINode *PN = dyn_cast<PHINode>(&I)) {
-      // This is likely our induction variable
-      InductionVar = PN;
-      break;
+  // First try to find the induction variable from the comparison
+  if (Cmp) {
+    Value *Op0 = Cmp->getOperand(0);
+    Value *Op1 = Cmp->getOperand(1);
+
+    // Look for a load instruction that might be loading our induction variable
+    if (LoadInst *Load = dyn_cast<LoadInst>(Op0)) {
+      if (AllocaInst *Alloca = dyn_cast<AllocaInst>(Load->getPointerOperand())) {
+        InductionAlloca = Alloca;
+        InductionVar = Load;
+        BoundValue = Op1;
+      }
     }
   }
-  
+
   if (!InductionVar) {
     errs() << "Could not find induction variable\n";
     return;
   }
-  
-  // Identify the bound value from the comparison
-  if (Cmp->getOperand(0) == InductionVar) {
-    BoundValue = Cmp->getOperand(1);
-    errs() << "Bound value 1: " << *BoundValue << "\n";
-  } else if (Cmp->getOperand(1) == InductionVar) {
-    BoundValue = Cmp->getOperand(0);
-    errs() << "Bound value 0: " << *BoundValue << "\n";
-  } else {
-    errs() << "Loop comparison does not use induction variable directly\n";
-    // Continue anyway
-  }
-  
-  // If we found the bound, we can try to set it to peel count
+
+  // If we found the bound, we can try to set it to initial value + peel count
   if (BoundValue) {
     // Create a builder to insert instructions at the end of the preheader
     IRBuilder<> Builder(Preheader->getTerminator());
+    
+    // Get the initial value - in this case it's stored in the alloca
+    // Look for the store instruction in the entry block
+    Value *InitialValue = nullptr;
+    for (auto &I : F->getEntryBlock()) {
+      if (StoreInst *Store = dyn_cast<StoreInst>(&I)) {
+        if (Store->getPointerOperand() == InductionAlloca) {
+          InitialValue = Store->getValueOperand();
+          break;
+        }
+      }
+    }
+
+    if (!InitialValue) {
+      errs() << "Could not find initial value store\n";
+      return;
+    }
     
     // Create a constant for the peel count
     Constant *PeelCountValue = ConstantInt::get(
         BoundValue->getType(), peelCount, false);
     
-    errs() << "Setting loop boundary to peel count: " << peelCount << "\n";
+    errs() << "Setting loop boundary to initial value plus peel count: " << peelCount << "\n";
     
-    // We can either:
-    // 1. Replace all uses of the bound with our new peel count (this might affect other code)
-    // 2. Create a new comparison specifically for the loop condition
+    // Add the peel count to the initial value
+    Value *NewBound = Builder.CreateAdd(InitialValue, PeelCountValue, "new_bound");
     
-    // Option 2 is safer - create a new comparison
+    // Create a new comparison specifically for the loop condition
     ICmpInst *NewCmp = cast<ICmpInst>(Cmp->clone());
     if (Cmp->getOperand(0) == BoundValue) {
-      NewCmp->setOperand(0, PeelCountValue);
+      NewCmp->setOperand(0, NewBound);
     } else if (Cmp->getOperand(1) == BoundValue) {
-      NewCmp->setOperand(1, PeelCountValue);
+      NewCmp->setOperand(1, NewBound);
     }
     
     // Insert the new comparison instruction before the branch
@@ -186,7 +200,7 @@ while.end:                                        ; preds = %while.cond
     HeaderBr->setCondition(NewCmp);
     Cmp->eraseFromParent();
     
-    errs() << "Modified loop boundary to use peel count\n";
+    errs() << "Modified loop boundary to use initial value plus peel count\n";
   }
   errs() << "Function before peeling:\n";
   F->print(errs());
