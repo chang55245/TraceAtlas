@@ -67,6 +67,26 @@ extern "C" {
                 }
             }
 
+            // Recalculate counts by dividing by parent counts
+            LoopCount* current = loop_counts;
+            while (current != nullptr) {
+                if (current->parentId != 0) {  // If has parent
+                    // Find parent's count
+                    LoopCount* parent = loop_counts;
+                    while (parent != nullptr) {
+                        if (parent->loopId == current->parentId) {
+                            // Avoid division by zero
+                            if (parent->count > 0) {
+                                current->count = current->count / parent->count;
+                            }
+                            break;
+                        }
+                        parent = parent->next;
+                    }
+                }
+                current = current->next;
+            }
+
             const char* LoopTraceEnvFile = getenv("LoopTrace_FILE");
             std::string filename = LoopTraceEnvFile ? LoopTraceEnvFile : "LoopTraceFile.json";
 
@@ -80,7 +100,7 @@ extern "C" {
             file << "{\n    \"loopIteration\": [\n";
             
             bool first = true;
-            LoopCount* current = loop_counts;
+            current = loop_counts;
             while (current != nullptr) {
                 if (!first) file << ",\n";
                 file << "        {\n";

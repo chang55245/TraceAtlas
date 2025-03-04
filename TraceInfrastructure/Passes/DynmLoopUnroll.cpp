@@ -354,6 +354,8 @@ namespace DashTracer::Passes
                                 }
                                 simplifyLoopAfterUnroll(loopTest, true,&LI, &SE, &DT, &AC);
                                 unrolled = true;
+
+                                SE.forgetLoop(loopTest);
                                 
                                 goto endloop;
                                 // clean the binary, delete the everything irrelavate

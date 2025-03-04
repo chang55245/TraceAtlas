@@ -37,6 +37,22 @@ namespace DashTracer::Passes
     set<Loop*> seenLoops;
     std::map<Loop*, int> loopToId;
 
+    BasicBlock* getLoopBody(Loop* loop) {
+        BasicBlock *Header = loop->getHeader(); // The loop header
+        SmallVector<BasicBlock *, 8> LatchBlocks;
+        loop->getLoopLatches(LatchBlocks); // Retrieve latch blocks
+
+        BasicBlock *FirstBodyBlock = nullptr;
+
+        for (BasicBlock *BB : loop->getBlocks()) {
+            if (BB != Header && !llvm::is_contained(LatchBlocks, BB)) {
+                FirstBodyBlock = BB;
+                break;
+            }
+        }
+        return FirstBodyBlock;
+    }
+
     // Helper function to get all parent loops
     std::vector<Loop*> getParentLoops(Loop* innerLoop) {
         std::vector<Loop*> parents;
@@ -115,7 +131,7 @@ namespace DashTracer::Passes
                                     );
                                     args.push_back(StageValue);
                                     
-                                    IRBuilder<> Builder(parentLoop->getHeader()->getFirstNonPHI());
+                                    IRBuilder<> Builder(&getLoopBody(parentLoop)->front());
                                     Builder.CreateCall(LoopTrace, args);
                                 }
                                 lastParent = parentLoop;
@@ -139,7 +155,8 @@ namespace DashTracer::Passes
                                     loopID
                                 );
                                 args.push_back(StageValue);
-                                IRBuilder<> Builder(CI);
+                                // Place LoopTrace at the start of the loop body
+                                IRBuilder<> Builder(&getLoopBody(innerLoop)->front());
                                 Builder.CreateCall(LoopTrace, args);
                             }
                         }
