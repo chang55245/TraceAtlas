@@ -250,52 +250,19 @@ namespace DashTracer::Passes
                                 
                                
                                 BasicBlock *Header = loopTest->getHeader();
-                                Instruction *Term = Header->getTerminator();
-
-                                PHINode *InductionVar = nullptr;
-                                Value *BoundValue = nullptr;
-
                                 
-                                for (BasicBlock::iterator BIi = Header->begin(), BEi = Header->end(); BIi != BEi; ++BIi)
-                                {
-                                    if (auto *CIi = dyn_cast<CmpInst>(BIi)) {
-                                        auto cmpVar = CIi->getOperand(0);
-                                        errs()<<"Found cmpVar: "<<*cmpVar<<"\n";
-                                        errs()<<"Found CI: "<<*CIi<<"\n";
-                                        errs()<<"Found terminaler: "<<*(Term)<<"\n";
-                                        if (CIi == Term->getOperand(0)) {
-                                            
-
-                                            IndVar = cmpVar;
-                                            
-                                            Value *NewTripCount = ConstantInt::get(IndVar->getType(), ULO.Count);
-
-                                            IRBuilder<> Builder(Header);
-
-                                            Builder.SetInsertPoint(CIi);
-                                            
-                                            Value *NewCond = Builder.CreateICmpSLT(IndVar, NewTripCount);
-
-                                            
-                                            
-                                            BranchInst *NewTerm = BranchInst::Create(Term->getSuccessor(0),
-                                                                                Term->getSuccessor(1), NewCond);
-                                            ReplaceInstWithInst(Term, NewTerm);
-                                                         
-                                            CIi->eraseFromParent();
-                                            // errs()<<"Found NewCond: "<<*NewCond<<"\n";
-                                            // errs()<<"Found NewTerm: "<<*NewTerm<<"\n";             
-                                            break;
-                                        }
-                                    }
-                                }           
-                                
-                                
-                                
-                                // Recalculate the necessary analyses
-                                // DT.recalculate(F);
-                                // debugLoopUnrolling(loopTest, ULO, LI, &SE, &DT, &AC, PreserveLCSSA);
-                                // LoopUnrollResult Result = UnrollLoop(loopTest, ULO, &LI, &SE, &DT, &AC, &ORE, PreserveLCSSA, nullptr);
+                                BasicBlock *Preheader = loopTest->getLoopPreheader();
+                                BranchInst *HeaderBr = dyn_cast<BranchInst>(Header->getTerminator());
+                                ICmpInst *Cmp = dyn_cast<ICmpInst>(HeaderBr->getCondition());
+                                Value *BoundValue = Cmp->getOperand(1);
+                                IRBuilder<> Builder(Preheader->getTerminator());
+                                Constant *PeelCountValue = ConstantInt::get(
+                                    BoundValue->getType(), ULO.Count, false);  
+                                 ICmpInst *NewCmp = cast<ICmpInst>(Cmp->clone());
+                                 NewCmp->setOperand(1, PeelCountValue);
+                                 NewCmp->insertBefore(HeaderBr); 
+                                 HeaderBr->setCondition(NewCmp); 
+                                 Cmp->eraseFromParent();                          
                                 
                                 ULO.PeelCount = ULO.Count;
                                 bool Result = peelLoop(loopTest, ULO.PeelCount, &LI, &SE, &DT, &AC, PreserveLCSSA);
