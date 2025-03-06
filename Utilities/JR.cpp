@@ -91,8 +91,6 @@ void Process(string &key, string &value)
     else if (key == "KernelExit")
     {
     
-        // adding nodes for kernels
-        kernelInstanceBBs.insert(currentblock);
         nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
         nodeKiidMap[kernelInstanceIdCounter] = newNode;
         currentLabel = "-1";
@@ -108,7 +106,6 @@ void Process(string &key, string &value)
     {
         if (CheckNodeCreationIsLegal())
         {
-            kernelInstanceBBs.insert(currentblock);
             nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
             nodeKiidMap[kernelInstanceIdCounter] = newNode;
             kernelInstanceIdCounter++;   

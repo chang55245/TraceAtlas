@@ -2359,7 +2359,7 @@ private:
         // the last node is the end node
         auto& last_node = node_map[graph_size - 1];
         for (auto &node : node_map) {
-            if (node.second.stage == 1) {
+            if (node.second.stage == 0 && node.first != 0) {
                 node.second.prev_nodes.insert(first_node.id);
                 first_node.next_nodes.insert(node.first);
             }
@@ -2460,7 +2460,7 @@ public:
         bool result = false;
         map<int, graph_node> merged_map = node_map;
         bool found_merge = true;
-        const int64_t SMALL_COMPLEXITY_THRESHOLD = 100000; // Threshold for small complexity nodes
+        const int64_t SMALL_COMPLEXITY_THRESHOLD = 100; // Threshold for small complexity nodes
         int start_node = 0;
         int end_node = graph_size - 1;
 
