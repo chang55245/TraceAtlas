@@ -216,12 +216,8 @@ public:
         auto loadedArg = rewriter.create<LLVM::LoadOp>(
             loc, LLVM::LLVMPointerType::get(rewriter.getContext()), argPtrPtr);
         llvm::errs() << "Created load for argument:\n" << loadedArg << "\n";
-
-        auto castedArg = rewriter.create<LLVM::BitcastOp>(
-            loc, argType, loadedArg);
-        llvm::errs() << "Created bitcast for argument:\n" << castedArg << "\n";
             
-        extractedArgs.push_back(castedArg);
+        extractedArgs.push_back(loadedArg);
     }
 
     // Back in wrapper function, create call to task function
@@ -255,16 +251,16 @@ public:
             rewriter.getI32Type(),
             rewriter.getI32IntegerAttr(i));
             
-        auto argPtr = rewriter.create<LLVM::BitcastOp>(
-            loc,
-            LLVM::LLVMPointerType::get(rewriter.getContext()),
-            funcCall.getOperand(i));
+        // auto argPtr = rewriter.create<LLVM::BitcastOp>(
+        //     loc,
+        //     LLVM::LLVMPointerType::get(rewriter.getContext()),
+        //     funcCall.getOperand(i));
             
         rewriter.create<LLVM::CallOp>(
             loc,
             TypeRange{},
             "set_task_arg_ptr",
-            ValueRange{taskArgsAlloca.getResult(), idx, argPtr});
+            ValueRange{taskArgsAlloca.getResult(), idx, funcCall.getOperand(i)});
     }
 
     // Create task name global string
