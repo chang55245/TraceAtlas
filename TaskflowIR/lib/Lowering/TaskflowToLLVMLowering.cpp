@@ -155,23 +155,19 @@ public:
     // Create wrapper function with unique name
     auto wrapperFunc = rewriter.create<LLVM::LLVMFuncOp>(
         loc, wrapperFuncName, wrapperFuncType, LLVM::Linkage::Internal);
-    llvm::errs() << "Created wrapper function:\n" << wrapperFunc << "\n";
 
     // Create the entry block with the TaskArgs* argument
     auto &entryBlock = *wrapperFunc.addEntryBlock(rewriter);
     Value taskArg = entryBlock.getArgument(0);
-    llvm::errs() << "Entry block created with argument:\n" << taskArg << "\n";
 
     rewriter.setInsertionPointToStart(&entryBlock);
 
     // Extract arguments from TaskArgs structure
     auto zeroIdx = rewriter.create<LLVM::ConstantOp>(
         loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(0));
-    llvm::errs() << "Created zero index:\n" << zeroIdx << "\n";
 
     auto oneIdx = rewriter.create<LLVM::ConstantOp>(
         loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(1));
-    llvm::errs() << "Created one index:\n" << oneIdx << "\n";
 
     // Get args array pointer
     auto argsArrayPtr = rewriter.create<LLVM::GEPOp>(
@@ -180,22 +176,17 @@ public:
         taskArgsStructTy,
         taskArg,
         ValueRange{zeroIdx, zeroIdx});
-    llvm::errs() << "Created GEP for args array:\n" << argsArrayPtr << "\n";
 
     auto argsArray = rewriter.create<LLVM::LoadOp>(
         loc, taskArgPtrTy, argsArrayPtr);
-    llvm::errs() << "Created load for args array:\n" << argsArray << "\n";
 
     // Extract arguments and create function call
     SmallVector<Value, 4> extractedArgs;
     for (size_t i = 0; i < funcCall.getNumOperands(); ++i) {
-        llvm::errs() << "Processing argument " << i << "\n";
         auto argType = funcCall.getOperand(i).getType();
-        llvm::errs() << "Argument type: " << argType << "\n";
         
         auto idx = rewriter.create<LLVM::ConstantOp>(
             loc, rewriter.getI64Type(), rewriter.getI32IntegerAttr(i));
-        llvm::errs() << "Created index constant:\n" << idx << "\n";
             
         auto argPtr = rewriter.create<LLVM::GEPOp>(
             loc,
@@ -203,7 +194,6 @@ public:
             taskArgStructTy,
             argsArray,
             ValueRange{idx});
-        llvm::errs() << "Created GEP for argument:\n" << argPtr << "\n";
 
         auto argPtrPtr = rewriter.create<LLVM::GEPOp>(
             loc,
@@ -211,17 +201,59 @@ public:
             taskArgStructTy,
             argPtr,
             ValueRange{zeroIdx, zeroIdx});
-        llvm::errs() << "Created GEP for argument pointer:\n" << argPtrPtr << "\n";
-            
+
+        // Load the pointer
         auto loadedArg = rewriter.create<LLVM::LoadOp>(
             loc, LLVM::LLVMPointerType::get(rewriter.getContext()), argPtrPtr);
-        llvm::errs() << "Created load for argument:\n" << loadedArg << "\n";
-            
-        extractedArgs.push_back(loadedArg);
+          
+
+        // Create null pointer constant
+        auto nullPtr = rewriter.create<LLVM::ZeroOp>(
+            loc, LLVM::LLVMPointerType::get(rewriter.getContext()));
+        
+        // Compare with null
+        auto isNull = rewriter.create<LLVM::ICmpOp>(
+            loc, LLVM::ICmpPredicate::eq, loadedArg, nullPtr);
+        
+
+        // Split the current block at the current insertion point
+        auto currentBlock = rewriter.getBlock();
+        
+
+        // Save the insertion point before the split
+        auto insertionPoint = rewriter.getInsertionPoint();
+        auto continueBlock = rewriter.splitBlock(currentBlock, insertionPoint);
+        
+
+        // Create initialization block
+        auto initBlock = rewriter.createBlock(currentBlock->getParent(), 
+                                             Region::iterator(continueBlock));
+        
+        // Add branch from current block to either init or continue based on null check
+        rewriter.setInsertionPointToEnd(currentBlock);
+        auto branchOp = rewriter.create<LLVM::CondBrOp>(loc, isNull, initBlock, continueBlock);
+        
+
+        // In init block: Initialize with a default value if null
+        rewriter.setInsertionPointToStart(initBlock);
+        auto storeOp = rewriter.create<LLVM::StoreOp>(loc, nullPtr, argPtrPtr);
+        
+        auto brOp = rewriter.create<LLVM::BrOp>(loc, continueBlock);
+       
+
+        // In continue block: Use the (potentially initialized) pointer
+        rewriter.setInsertionPointToStart(continueBlock);
+        // Reload the pointer after potential initialization
+        auto finalArg = rewriter.create<LLVM::LoadOp>(
+            loc, LLVM::LLVMPointerType::get(rewriter.getContext()), argPtrPtr);
+        
+        extractedArgs.push_back(finalArg);
+
+        
     }
 
     // Back in wrapper function, create call to task function
-    rewriter.setInsertionPointToEnd(&entryBlock);
+    // rewriter.setInsertionPointToEnd(&entryBlock);
     rewriter.create<LLVM::CallOp>(
         loc,
         TypeRange{},
