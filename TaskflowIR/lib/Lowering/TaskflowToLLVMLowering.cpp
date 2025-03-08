@@ -182,8 +182,15 @@ public:
 
     // Extract arguments and create function call
     SmallVector<Value, 4> extractedArgs;
+    std::vector<std::pair<Value, Value>> alloca_new_argPtrPtr;
     for (size_t i = 0; i < funcCall.getNumOperands(); ++i) {
-        auto argType = funcCall.getOperand(i).getType();
+        // Value one = rewriter.create<LLVM::ConstantOp>(
+        //     loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
+        // auto alloca_new = rewriter.create<LLVM::AllocaOp>(
+        //     loc,
+        //     funcCall.getOperand(i).getType(),
+        //     funcCall.getOperand(i).getType(),
+        //     one);
         
         auto idx = rewriter.create<LLVM::ConstantOp>(
             loc, rewriter.getI64Type(), rewriter.getI32IntegerAttr(i));
@@ -205,60 +212,33 @@ public:
         // Load the pointer
         auto loadedArg = rewriter.create<LLVM::LoadOp>(
             loc, LLVM::LLVMPointerType::get(rewriter.getContext()), argPtrPtr);
-          
 
-        // Create null pointer constant
-        auto nullPtr = rewriter.create<LLVM::ZeroOp>(
-            loc, LLVM::LLVMPointerType::get(rewriter.getContext()));
-        
-        // Compare with null
-        auto isNull = rewriter.create<LLVM::ICmpOp>(
-            loc, LLVM::ICmpPredicate::eq, loadedArg, nullPtr);
-        
+        // rewriter.create<LLVM::StoreOp>(
+        //     loc,
+        //     loadedArg,
+        //     alloca_new);   
+        extractedArgs.push_back(loadedArg);
 
-        // Split the current block at the current insertion point
-        auto currentBlock = rewriter.getBlock();
-        
+        // alloca_new_argPtrPtr.push_back(std::make_pair(alloca_new, argPtrPtr));
 
-        // Save the insertion point before the split
-        auto insertionPoint = rewriter.getInsertionPoint();
-        auto continueBlock = rewriter.splitBlock(currentBlock, insertionPoint);
-        
-
-        // Create initialization block
-        auto initBlock = rewriter.createBlock(currentBlock->getParent(), 
-                                             Region::iterator(continueBlock));
-        
-        // Add branch from current block to either init or continue based on null check
-        rewriter.setInsertionPointToEnd(currentBlock);
-        auto branchOp = rewriter.create<LLVM::CondBrOp>(loc, isNull, initBlock, continueBlock);
-        
-
-        // In init block: Initialize with a default value if null
-        rewriter.setInsertionPointToStart(initBlock);
-        auto storeOp = rewriter.create<LLVM::StoreOp>(loc, nullPtr, argPtrPtr);
-        
-        auto brOp = rewriter.create<LLVM::BrOp>(loc, continueBlock);
-       
-
-        // In continue block: Use the (potentially initialized) pointer
-        rewriter.setInsertionPointToStart(continueBlock);
-        // Reload the pointer after potential initialization
-        auto finalArg = rewriter.create<LLVM::LoadOp>(
-            loc, LLVM::LLVMPointerType::get(rewriter.getContext()), argPtrPtr);
-        
-        extractedArgs.push_back(finalArg);
-
-        
     }
 
     // Back in wrapper function, create call to task function
-    // rewriter.setInsertionPointToEnd(&entryBlock);
+
+    
     rewriter.create<LLVM::CallOp>(
         loc,
         TypeRange{},
         FlatSymbolRefAttr::get(rewriter.getContext(), taskFuncName),
         extractedArgs);
+
+    // for (auto &pair : alloca_new_argPtrPtr) {
+    //     rewriter.create<LLVM::StoreOp>(
+    //         loc,
+    //         pair.first,
+    //         pair.second);   
+    // }
+    
     rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
 
     // Restore original insertion point for the rest of the lowering
@@ -282,12 +262,7 @@ public:
             loc, 
             rewriter.getI32Type(),
             rewriter.getI32IntegerAttr(i));
-            
-        // auto argPtr = rewriter.create<LLVM::BitcastOp>(
-        //     loc,
-        //     LLVM::LLVMPointerType::get(rewriter.getContext()),
-        //     funcCall.getOperand(i));
-            
+                       
         rewriter.create<LLVM::CallOp>(
             loc,
             TypeRange{},
