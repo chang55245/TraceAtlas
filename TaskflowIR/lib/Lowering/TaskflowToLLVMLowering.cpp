@@ -213,11 +213,13 @@ public:
         auto loadedArg = rewriter.create<LLVM::LoadOp>(
             loc, LLVM::LLVMPointerType::get(rewriter.getContext()), argPtrPtr);
 
+        auto loadedArgPtr = rewriter.create<LLVM::LoadOp>(
+            loc, LLVM::LLVMPointerType::get(rewriter.getContext()), loadedArg);
         // rewriter.create<LLVM::StoreOp>(
         //     loc,
         //     loadedArg,
         //     alloca_new);   
-        extractedArgs.push_back(loadedArg);
+        extractedArgs.push_back(loadedArgPtr);
 
         // alloca_new_argPtrPtr.push_back(std::make_pair(alloca_new, argPtrPtr));
 
@@ -258,16 +260,43 @@ public:
 
     // Initialize the arguments array
     for (size_t i = 0; i < funcCall.getNumOperands(); ++i) {
-        auto idx = rewriter.create<LLVM::ConstantOp>(
-            loc, 
-            rewriter.getI32Type(),
-            rewriter.getI32IntegerAttr(i));
-                       
-        rewriter.create<LLVM::CallOp>(
+      Value loadedArgPtr = nullptr;
+
+      // Get the defining operation and check if it's a load operation
+      if (auto definingOp = funcCall.getOperand(i).getDefiningOp()) {
+        if (auto loadOp = dyn_cast<LLVM::LoadOp>(definingOp)) {
+          loadedArgPtr = loadOp.getOperand();
+        }
+      }
+
+      if (!loadedArgPtr) {
+        // alloca
+        Value one = rewriter.create<LLVM::ConstantOp>(
+            loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
+        auto alloca_new = rewriter.create<LLVM::AllocaOp>(
             loc,
-            TypeRange{},
-            "set_task_arg_ptr",
-            ValueRange{taskArgsAlloca.getResult(), idx, funcCall.getOperand(i)});
+            funcCall.getOperand(i).getType(),
+            funcCall.getOperand(i).getType(),
+            one);
+       
+        // store
+        rewriter.create<LLVM::StoreOp>(
+            loc,
+            funcCall.getOperand(i),
+            alloca_new);
+        loadedArgPtr = alloca_new;
+      }
+
+      auto idx = rewriter.create<LLVM::ConstantOp>(
+          loc, 
+          rewriter.getI32Type(),
+          rewriter.getI32IntegerAttr(i));
+                       
+      rewriter.create<LLVM::CallOp>(
+          loc,
+          TypeRange{},
+          "set_task_arg_ptr",
+          ValueRange{taskArgsAlloca.getResult(), idx, loadedArgPtr});
     }
 
     // Create task name global string

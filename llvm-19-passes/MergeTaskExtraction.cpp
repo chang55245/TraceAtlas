@@ -202,9 +202,6 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
         
 
         for (auto& [key, value] : taskMergingNodeMap) {
-            if (key == 0) {
-                continue;
-            }
             std::vector<BasicBlock*> taskBBs;
 
            
