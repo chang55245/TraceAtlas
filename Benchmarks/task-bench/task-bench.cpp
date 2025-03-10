@@ -182,10 +182,10 @@ void SerialApp::execute_main_loop()
 
 void SerialApp::execute_timestep(size_t idx, long t)
 {
-  if (idx >= graphs.size()) {
-    fprintf(stderr, "Error: Invalid graph index %zu (max: %zu)\n", idx, graphs.size()-1);
-    return;
-  }
+  // if (idx >= graphs.size()) {
+  //   fprintf(stderr, "Error: Invalid graph index %zu (max: %zu)\n", idx, graphs.size()-1);
+  //   return;
+  // }
 
   const TaskGraph &g = graphs[idx];
   long offset = g.offset_at_timestep(t);
@@ -193,25 +193,29 @@ void SerialApp::execute_timestep(size_t idx, long t)
   long dset = g.dependence_set_at_timestep(t);
   int nb_fields = g.nb_fields;
   
-  if (matrix == NULL || matrix[idx].data == NULL) {
-    fprintf(stderr, "Error: NULL matrix data for graph %zu\n", idx);
-    return;
-  }
+  // if (matrix == NULL || matrix[idx].data == NULL) {
+  //   fprintf(stderr, "Error: NULL matrix data for graph %zu\n", idx);
+  //   return;
+  // }
   
-  if (nb_fields <= 0) {
-    fprintf(stderr, "Error: Invalid number of fields %d for graph %zu\n", nb_fields, idx);
-    return;
-  }
+  // if (nb_fields <= 0) {
+  //   fprintf(stderr, "Error: Invalid number of fields %d for graph %zu\n", nb_fields, idx);
+  //   return;
+  // }
   
   payload_t payload;
   payload.graph = g;
   
-  for (int x = offset; x <= offset+width-1; x++) {
-    if (x < 0 || x >= matrix[idx].N) {
-      fprintf(stderr, "Error: x index %d out of bounds [0, %d) at timestep %ld\n", 
-              x, matrix[idx].N, t);
-      continue;
-    }
+  // for (int x = offset; x <= offset+width-1; x++)
+  int bound = width-1;
+  for (int i = 0; i < bound; i++)
+  {
+    int x = i+offset;
+    // if (x < 0 || x >= matrix[idx].N) {
+    //   fprintf(stderr, "Error: x index %d out of bounds [0, %d) at timestep %ld\n", 
+    //           x, matrix[idx].N, t);
+    //   continue;
+    // }
     
     NonKernelSplit();
     std::vector<std::pair<long, long> > deps = g.dependencies(dset, x);   
@@ -222,11 +226,11 @@ void SerialApp::execute_timestep(size_t idx, long t)
     int row_idx = t % nb_fields;
     long array_idx = row_idx * matrix[idx].N + x;
     
-    if (array_idx < 0 || array_idx >= matrix[idx].M * matrix[idx].N) {
-      fprintf(stderr, "Error: Array index %ld out of bounds [0, %d) at position (%d, %ld)\n", 
-              array_idx, matrix[idx].M * matrix[idx].N, x, t);
-      continue;
-    }
+    // if (array_idx < 0 || array_idx >= matrix[idx].M * matrix[idx].N) {
+    //   fprintf(stderr, "Error: Array index %ld out of bounds [0, %d) at position (%d, %ld)\n", 
+    //           array_idx, matrix[idx].M * matrix[idx].N, x, t);
+    //   continue;
+    // }
     
     if (deps.size() == 0) {
       // No dependencies, execute task1
@@ -243,20 +247,20 @@ void SerialApp::execute_timestep(size_t idx, long t)
         for (size_t i = 0; i < deps.size(); i++) {
           long dep_x = deps[i].first;
           
-          if (dep_x < 0 || dep_x >= matrix[idx].N) {
-            fprintf(stderr, "Error: Dependency x index %ld out of bounds [0, %d) at position (%d, %ld)\n", 
-                    dep_x, matrix[idx].N, x, t);
-            continue;
-          }
+          // if (dep_x < 0 || dep_x >= matrix[idx].N) {
+          //   fprintf(stderr, "Error: Dependency x index %ld out of bounds [0, %d) at position (%d, %ld)\n", 
+          //           dep_x, matrix[idx].N, x, t);
+          //   continue;
+          // }
           
           int prev_row_idx = (t-1) % nb_fields;
           long dep_array_idx = prev_row_idx * matrix[idx].N + dep_x;
           
-          if (dep_array_idx < 0 || dep_array_idx >= matrix[idx].M * matrix[idx].N) {
-            fprintf(stderr, "Error: Dependency array index %ld out of bounds [0, %d) at position (%d, %ld)\n", 
-                    dep_array_idx, matrix[idx].M * matrix[idx].N, x, t);
-            continue;
-          }
+          // if (dep_array_idx < 0 || dep_array_idx >= matrix[idx].M * matrix[idx].N) {
+          //   fprintf(stderr, "Error: Dependency array index %ld out of bounds [0, %d) at position (%d, %ld)\n", 
+          //           dep_array_idx, matrix[idx].M * matrix[idx].N, x, t);
+          //   continue;
+          // }
           
           inputs.push_back(&matrix[idx].data[dep_array_idx]);
         }
