@@ -211,13 +211,14 @@ void SerialApp::execute_timestep(size_t idx, long t)
   for (int i = 0; i < bound; i++)
   {
     int x = i+offset;
+    printf("x: %d, t: %ld, idx: %d\n", x, t, idx);
     // if (x < 0 || x >= matrix[idx].N) {
     //   fprintf(stderr, "Error: x index %d out of bounds [0, %d) at timestep %ld\n", 
     //           x, matrix[idx].N, t);
     //   continue;
     // }
     
-    NonKernelSplit();
+    
     std::vector<std::pair<long, long> > deps = g.dependencies(dset, x);   
     
     payload.x = x;
@@ -231,6 +232,8 @@ void SerialApp::execute_timestep(size_t idx, long t)
     //           array_idx, matrix[idx].M * matrix[idx].N, x, t);
     //   continue;
     // }
+    NonKernelSplit();
+    // task1(&matrix[idx].data[array_idx], payload);
     
     if (deps.size() == 0) {
       // No dependencies, execute task1
@@ -269,6 +272,7 @@ void SerialApp::execute_timestep(size_t idx, long t)
       }
     } 
     NonKernelSplit();
+    
   }
 }
 
@@ -287,6 +291,18 @@ int main(int argc, char ** argv)
 {
   SerialApp app(argc, argv);
   app.execute_main_loop();
+
+  // int a[10][10][10];
+  // for (int i = 0; i < 2; i++) {
+  //   for (int j = 0; j < 2; j++) {
+  //     for (int k = 0; k < 2; k++) {
+  //       NonKernelSplit();
+  //       a[i][j][k] = i+j+k;
+  //       printf("%d %d %d %d\n", i, j, k, a[i][j][k]);
+  //       NonKernelSplit();
+  //     }
+  //   }
+  // }
   return 0;
 }
 }

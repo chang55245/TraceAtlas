@@ -136,12 +136,20 @@ function(add_task_merging_target TARGET_NAME)
                 ${Extra_STATIC_LIBS}
         COMMAND cd ${OUTPUT_DIR} && ./${TARGET_NAME}.merged.native
 
+        COMMAND ${LLVM_9_PATH}/bin/llvm-as 
+                ${OUTPUT_DIR}/${TARGET_NAME}.merged.bc 
+                -o ${OUTPUT_DIR}/${TARGET_NAME}.asm.bc
+        
+        COMMAND ${LLVM_19_PATH}/bin/llvm-dis 
+                ${OUTPUT_DIR}/${TARGET_NAME}.asm.bc 
+                -o ${OUTPUT_DIR}/${TARGET_NAME}.merged.new.bc
+
         # Task extraction steps
         COMMAND ${LLVM_19_PATH}/bin/opt 
                 -load-pass-plugin=${TRACEATLAS_PATH}/llvm-19-passes/TaskExtraction.so 
                 -passes="MergeTaskExtraction" 
                 -tm ${OUTPUT_DIR}/task_merging_schedule.json 
-                ${OUTPUT_DIR}/${TARGET_NAME}.merged.bc 
+                ${OUTPUT_DIR}/${TARGET_NAME}.merged.new.bc 
                 -S -o ${OUTPUT_DIR}/${TARGET_NAME}.extraction.bc
 
         # Extract main function

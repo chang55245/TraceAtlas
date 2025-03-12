@@ -184,13 +184,6 @@ public:
     SmallVector<Value, 4> extractedArgs;
     std::vector<std::pair<Value, Value>> alloca_new_argPtrPtr;
     for (size_t i = 0; i < funcCall.getNumOperands(); ++i) {
-        // Value one = rewriter.create<LLVM::ConstantOp>(
-        //     loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
-        // auto alloca_new = rewriter.create<LLVM::AllocaOp>(
-        //     loc,
-        //     funcCall.getOperand(i).getType(),
-        //     funcCall.getOperand(i).getType(),
-        //     one);
         
         auto idx = rewriter.create<LLVM::ConstantOp>(
             loc, rewriter.getI64Type(), rewriter.getI32IntegerAttr(i));
@@ -214,11 +207,7 @@ public:
             loc, LLVM::LLVMPointerType::get(rewriter.getContext()), argPtrPtr);
 
         auto loadedArgPtr = rewriter.create<LLVM::LoadOp>(
-            loc, LLVM::LLVMPointerType::get(rewriter.getContext()), loadedArg);
-        // rewriter.create<LLVM::StoreOp>(
-        //     loc,
-        //     loadedArg,
-        //     alloca_new);   
+            loc, funcCall.getOperand(i).getType(), loadedArg);
         extractedArgs.push_back(loadedArgPtr);
 
         // alloca_new_argPtrPtr.push_back(std::make_pair(alloca_new, argPtrPtr));
@@ -275,7 +264,7 @@ public:
             loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
         auto alloca_new = rewriter.create<LLVM::AllocaOp>(
             loc,
-            funcCall.getOperand(i).getType(),
+            ptrType,
             funcCall.getOperand(i).getType(),
             one);
        
