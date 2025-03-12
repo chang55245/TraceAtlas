@@ -66,32 +66,32 @@ def visualize_dag(nodes, ax):
     ax.spines['bottom'].set_visible(True)
     ax.spines['left'].set_visible(True)
 
-def compare_dags(dag1_path, dag2_path):
+def compare_dags(dag1_path):
     # Read both DAGs
     dag1 = read_dag_from_json(dag1_path)
-    dag2 = read_dag_from_json(dag2_path)
+    # dag2 = read_dag_from_json(dag2_path)
     
     # Create a single figure with subplots
-    fig, axs = plt.subplots(1, 2, figsize=(14, 10))
+    fig, axs = plt.subplots(1, 1, figsize=(14, 10))
 
     # Visualize DAG 1
-    visualize_dag(dag1, axs[0])
-    axs[0].set_title(f"DAG 1: {dag1_path}")
+    visualize_dag(dag1, axs)
+    axs.set_title(f"DAG 1: {dag1_path}")
 
     # Visualize DAG 2
-    visualize_dag(dag2, axs[1])
-    axs[1].set_title(f"DAG 2: {dag2_path}")
+    # visualize_dag(dag2, axs[1])
+    # axs[1].set_title(f"DAG 2: {dag2_path}")
 
     # Add rectangular frames around each subplot
-    for ax in axs:
-        # Make sure spines are visible and styled
-        for spine in ax.spines.values():
-            spine.set_visible(True)
-            spine.set_edgecolor('black')
-            spine.set_linewidth(2)
+    # for ax in axs:
+    #     # Make sure spines are visible and styled
+    #     for spine in ax.spines.values():
+    #         spine.set_visible(True)
+    #     spine.set_edgecolor('black')
+    #     spine.set_linewidth(2)
         
-        # Set axis on
-        ax.set_axis_on()
+    # Set axis on
+    axs.set_axis_on()
 
     # Adjust layout to add space between subplots
     plt.subplots_adjust(wspace=0.4)  # Adjust the width space between subplots
@@ -107,12 +107,8 @@ def compare_dags(dag1_path, dag2_path):
     plt.savefig(output_path)
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) != 3:
-        print("Usage: python3 dag-compare.py <dag1.json> <dag2.json>")
-        sys.exit(1)
-    
-    compare_dags(sys.argv[1], sys.argv[2])
+    import sys    
+    compare_dags(sys.argv[1])
 
 # # Example DAG input
 # nodes = {
