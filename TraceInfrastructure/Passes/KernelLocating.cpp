@@ -156,7 +156,7 @@ namespace DashTracer::Passes
                                 );
                                 args.push_back(StageValue);
                                 // Place LoopTrace at the start of the loop body
-                                IRBuilder<> Builder(&getLoopBody(innerLoop)->front());
+                                IRBuilder<> Builder(CI);
                                 Builder.CreateCall(LoopTrace, args);
                             }
                         }
@@ -169,6 +169,9 @@ namespace DashTracer::Passes
         // Find return instruction
         for (auto BB = F.begin(); BB != F.end(); BB++)
         {
+            if (BB->getTerminator() == nullptr) {
+                continue;
+            }
             if (auto retInst = dyn_cast<ReturnInst>(BB->getTerminator()))
             {
                 // Create array of loop hierarchy info
@@ -207,7 +210,6 @@ namespace DashTracer::Passes
                 break;
             }
         }
-
         return true;
     }
 
