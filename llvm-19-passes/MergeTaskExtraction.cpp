@@ -157,14 +157,28 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
             for (BasicBlock *Pred : predecessors(BB)) {
                 if (!BBSet.count(Pred) && BB != BlocksToExtract.front()) {
                     errs() << "  - Block has predecessors outside extraction region.\n";
-                    errs() << "  - Front node: " << *BlocksToExtract.front() << "\n";
-                    errs() << "  - Predecessor: " << *Pred << "\n";
-                    errs() << "  - BB: " << *BB << "\n";
                 }
             }
 
         NextBlock:
             continue;
+        }
+
+        bool update = true;
+        while (update) {
+            update = false;
+
+            for (BasicBlock *BB : BlocksToExtract) {
+                for (BasicBlock *Pred : predecessors(BB)) {
+                if (!BBSet.count(Pred) && BB != BlocksToExtract.front()) {
+                        errs() << "update bb extraction set.\n";
+                        BlocksToExtract.push_back(Pred);
+                        BBSet.insert(Pred);
+                        update = true;
+                        break;
+                    }
+                }
+            }
         }
     }
     PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
@@ -238,11 +252,11 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
              // isBlockValidForExtraction is the function that checks if the task is extractable
              // todo: for unextractable tasks, we might need to manually manage them in taskflow IR
             if (!CE.isEligible()) {
-                errs() << "Task BB id: " << key << " not Extractable: " << CE.isEligible() << "\n";
+                errs() << "Task id: " << key << " not Extractable: " << CE.isEligible() << "\n";
                 continue;
             }
 
-            errs() << "Extracting task BBs: " << taskBBs.size() << " Extractable: " << CE.isEligible() << "\n";
+            errs() << "Extracting task: " << key << " Extractable: " << CE.isEligible() << "\n";
             CodeExtractorAnalysisCache CEAC(F);
             Function *newFunc = CE.extractCodeRegion(CEAC);
             errs() << "Extracted function: " << newFunc << "\n";
