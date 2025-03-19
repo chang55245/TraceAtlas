@@ -80,7 +80,8 @@ namespace DashTracer::Passes
                         // errs()<<"load:"<<*store<<"\n";
                         auto *tyaddr = store->getValueOperand()->getType();
                         // Type *tyaddrContain = tyaddr->getContainedType(0);
-                        uint64_t sizeSig = BB->getModule()->getDataLayout().getTypeAllocSize(tyaddr);                        
+                        uint64_t sizeSig = BB->getModule()->getDataLayout().getTypeAllocSize(tyaddr);
+                        // errs()<< "type:" << *tyaddr << "size:" << sizeSig << "\n";                      
                         ConstantInt *sizeSigVal = ConstantInt::get(llvm::Type::getInt64Ty(BB->getContext()), sizeSig);
                         values.push_back(sizeSigVal);
                         builder.CreateCall(StoreDump, values);

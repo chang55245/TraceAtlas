@@ -172,6 +172,7 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
                 for (BasicBlock *Pred : predecessors(BB)) {
                 if (!BBSet.count(Pred) && BB != BlocksToExtract.front()) {
                         errs() << "update bb extraction set.\n";
+                        errs() << "Pred: " << Pred << "\n";
                         BlocksToExtract.push_back(Pred);
                         BBSet.insert(Pred);
                         update = true;

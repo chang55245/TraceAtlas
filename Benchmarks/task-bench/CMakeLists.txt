@@ -11,5 +11,4 @@ set(SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/core.cc ${CMAKE_CURRENT_SOURCE_DIR}/core
 #add_dag_generation_target(${PROJECT_NAME} "${PROJECT_NAME}.cpp")
 add_dag_generation_target(${PROJECT_NAME} "${SOURCES}")
 add_task_merging_target(${PROJECT_NAME})
-
-
+add_pthread_target(${PROJECT_NAME})

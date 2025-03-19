@@ -22,6 +22,7 @@ endif()
 set(ATLAS_TOOLS_PATH "${TRACEATLAS_PATH}/build/bin")
 set(ATLAS_PASSES_PATH "${TRACEATLAS_PATH}/build/lib")
 set(LLVM9_PASSES_PATH "${CMAKE_BINARY_DIR}/llvm-9-passes")
+set(LLVM13_PASSES_PATH "${CMAKE_BINARY_DIR}/llvm-13-passes")
 set(TRACEATLAS_PASS_SHARED "${ATLAS_PASSES_PATH}/AtlasPasses.so")
 set(TRACEATLAS_PASS_BACKEND_STATIC "${ATLAS_PASSES_PATH}/libAtlasBackend.a")
 set(ATLAS_UTILITIES_PATH "${TRACEATLAS_PATH}/Utilities")
@@ -211,4 +212,32 @@ function(add_task_merging_target TARGET_NAME)
         DEPENDS ${TARGET_NAME}_DAG_generation
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
-endfunction() 
+endfunction()
+
+
+
+function(add_pthread_target TARGET_NAME)
+    set(OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/${TARGET_NAME}")
+
+    add_custom_target(${TARGET_NAME}_pthread
+
+        COMMAND ${LLVM_9_PATH}/bin/opt-9 -load ${TRACEATLAS_PASS_SHARED} -TestTrans -dg ${OUTPUT_DIR}/${TARGET_NAME}.dag.json ${OUTPUT_DIR}/${TARGET_NAME}.encoded.bc -S -o ${OUTPUT_DIR}/${TARGET_NAME}-transbb.bc
+
+        COMMAND ${LLVM_9_PATH}/bin/opt-9 -load ${TRACEATLAS_PASS_SHARED} -NonKernelOutliner -jr ${OUTPUT_DIR}/${TARGET_NAME}.jr.json -dg ${OUTPUT_DIR}/${TARGET_NAME}.dag.json ${OUTPUT_DIR}/${TARGET_NAME}-transbb.bc -S -o ${OUTPUT_DIR}/${TARGET_NAME}-nkot.bc
+
+
+        COMMAND ${LLVM_9_PATH}/bin/clang++-9 -g -O1 -S  -flto -emit-llvm ${CEDR_PATH}/libdash/dummy_no_enqueue.cpp -o ${OUTPUT_DIR}/${TARGET_NAME}-dummy.bc
+
+        COMMAND ${LLVM_9_PATH}/bin/llvm-link ${OUTPUT_DIR}/${TARGET_NAME}-nkot.bc ${OUTPUT_DIR}/${TARGET_NAME}-dummy.bc -S -o ${OUTPUT_DIR}/${TARGET_NAME}-linkdm.bc
+
+        COMMAND ${LLVM_9_PATH}/bin/opt-9 -load ${TRACEATLAS_PASS_SHARED} -SwapNonkernel -dg ${OUTPUT_DIR}/${TARGET_NAME}.dag.json ${OUTPUT_DIR}/${TARGET_NAME}-linkdm.bc -S -o ${OUTPUT_DIR}/${TARGET_NAME}-swapnk.bc
+
+        COMMAND ${LLVM_13_PATH}/bin/opt -enable-new-pm=0 -load ${LLVM13_PASSES_PATH}/llvm13_passes.so -dg ${OUTPUT_DIR}/${TARGET_NAME}.dag.json -jr ${OUTPUT_DIR}/${TARGET_NAME}.jr.json  -erase ${OUTPUT_DIR}/${TARGET_NAME}-swapnk.bc -S -o ${OUTPUT_DIR}/${TARGET_NAME}-erase.bc
+
+        COMMAND ${LLVM_13_PATH}/bin/clang++ -fopenmp=libiomp5 -lm -lz -lpthread -lgsl -lgslcblas ${OUTPUT_DIR}/${TARGET_NAME}-erase.bc -o ${OUTPUT_DIR}/${TARGET_NAME}-pthread.native -fuse-ld=lld ${TRACEATLAS_PASS_BACKEND_STATIC}
+        COMMAND LD_PRELOAD=${LLVM_13_PATH}/lib/libomp.so ./${OUTPUT_DIR}/${TARGET_NAME}-pthread.native
+
+        DEPENDS ${TARGET_NAME}_DAG_generation
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+endfunction()
