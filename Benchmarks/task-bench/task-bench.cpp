@@ -169,9 +169,16 @@ void SerialApp::execute_main_loop()
   
   Timer::time_start();
   
+  // for (unsigned i = 0; i < graphs.size(); i++) {
+  //   const TaskGraph &g = graphs[i];
+  //   for (int y = 0; y < g.timesteps; y++) {
+  //     execute_timestep(i, y);
+  //   }
+  // }
+
   for (unsigned i = 0; i < graphs.size(); i++) {
     const TaskGraph &g = graphs[i];
-    for (int y = 0; y < g.timesteps; y++) {
+    for (int y = 0; y < 3; y++) {
       execute_timestep(i, y);
     }
   }
@@ -207,11 +214,11 @@ void SerialApp::execute_timestep(size_t idx, long t)
   payload.graph = g;
   
   // for (int x = offset; x <= offset+width-1; x++)
-  int bound = width-1;
+  int bound = width;
   for (int i = 0; i < bound; i++)
   {
     int x = i+offset;
-    printf("x: %d, t: %ld, idx: %d\n", x, t, idx);
+    
     // if (x < 0 || x >= matrix[idx].N) {
     //   fprintf(stderr, "Error: x index %d out of bounds [0, %d) at timestep %ld\n", 
     //           x, matrix[idx].N, t);
@@ -233,6 +240,8 @@ void SerialApp::execute_timestep(size_t idx, long t)
     //   continue;
     // }
     NonKernelSplit();
+    
+    printf("x: %d, t: %ld, idx: %d\n", x, t, idx);
     // task1(&matrix[idx].data[array_idx], payload);
     
     if (deps.size() == 0) {
@@ -289,6 +298,21 @@ void SerialApp::debug_printf(int verbose_level, const char *format, ...)
 
 int main(int argc, char ** argv)
 {
+  //-steps 10 -width 10 -type fft -kernel compute_bound -iter 1024 -worker 1
+  argc = 8;
+  argv[0] = "-steps";
+  argv[1] = "1";
+  argv[2] = "-width";
+  argv[3] = "2";
+  argv[4] = "-type";
+  argv[5] = "no_comm";
+  argv[6] = "-kernel";
+  argv[7] = "compute_bound";
+  argv[8] = "-iter";
+  argv[9] = "1024";
+  argv[10] = "-worker";
+  argv[11] = "1";
+
   SerialApp app(argc, argv);
   app.execute_main_loop();
 

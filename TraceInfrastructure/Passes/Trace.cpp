@@ -81,7 +81,7 @@ namespace DashTracer::Passes
                         auto *tyaddr = store->getValueOperand()->getType();
                         // Type *tyaddrContain = tyaddr->getContainedType(0);
                         uint64_t sizeSig = BB->getModule()->getDataLayout().getTypeAllocSize(tyaddr);                        
-                        ConstantInt *sizeSigVal = ConstantInt::get(llvm::Type::getInt8Ty(BB->getContext()), sizeSig);
+                        ConstantInt *sizeSigVal = ConstantInt::get(llvm::Type::getInt64Ty(BB->getContext()), sizeSig);
                         values.push_back(sizeSigVal);
                         builder.CreateCall(StoreDump, values);
                     }
@@ -126,7 +126,53 @@ namespace DashTracer::Passes
                     // <<"op2:"<<*op2<<"\n";          
                    
                 }
+                if (MemMoveInst *MCI = dyn_cast<MemMoveInst>(CI))
+                {
+                    std::vector<Value *> values;
+                    // destination
+                    Value *op0 = MCI->getOperand(0);
+                    //source
+                    Value *op1 = MCI->getOperand(1);
+                    // len
+                    Value *op2 = MCI->getOperand(2); 
 
+                    IRBuilder<> builder(MCI);
+                    
+                    auto castCode = CastInst::getCastOpcode(op0, true, PointerType::get(Type::getInt8PtrTy(BB->getContext()), 0), true);
+                    Value *op0cast = builder.CreateCast(castCode, op0, Type::getInt8PtrTy(BB->getContext()));
+                    values.push_back(op0cast);
+                    
+                    castCode = CastInst::getCastOpcode(op1, true, PointerType::get(Type::getInt8PtrTy(BB->getContext()), 0), true);
+                    Value *op1cast = builder.CreateCast(castCode, op1, Type::getInt8PtrTy(BB->getContext()));
+                    values.push_back(op1cast);
+
+                    castCode = CastInst::getCastOpcode(op2, true, PointerType::get(Type::getInt8PtrTy(BB->getContext()), 0), true);
+                    Value *op2cast = builder.CreateCast(castCode, op2, Type::getInt8PtrTy(BB->getContext()));
+                    values.push_back(op2cast);
+                    
+                    
+                    auto ref = ArrayRef<Value *>(values);
+                    builder.CreateCall(MemCpyDump, ref);  
+                }
+
+                if (MemSetInst *MSI = dyn_cast<MemSetInst>(CI))
+                {
+                    std::vector<Value *> values;
+                    // destination
+                    Value *op0 = MSI->getOperand(0);
+                    Value *op2 = MSI->getOperand(2);
+                   
+
+                    IRBuilder<> builder(MSI);
+
+                    auto castCode = CastInst::getCastOpcode(op0, true, PointerType::get(Type::getInt8PtrTy(BB->getContext()), 0), true);
+                    Value *op0cast = builder.CreateCast(castCode, op0, Type::getInt8PtrTy(BB->getContext()));
+                    values.push_back(op0cast);
+                    values.push_back(op2);
+
+                    builder.CreateCall(StoreDump, values);                    
+                    
+                }
             }
             Instruction *preTerm = BB->getTerminator();
             IRBuilder endBuilder(preTerm);
@@ -139,7 +185,7 @@ namespace DashTracer::Passes
     {
         BB_ID = cast<Function>(M.getOrInsertFunction("BB_ID_Dump", Type::getVoidTy(M.getContext()), Type::getInt64Ty(M.getContext()), Type::getInt1Ty(M.getContext())).getCallee());
         LoadDump = cast<Function>(M.getOrInsertFunction("LoadDump", Type::getVoidTy(M.getContext()), Type::getIntNPtrTy(M.getContext(), 8), Type::getInt8Ty(M.getContext())).getCallee());
-        StoreDump = cast<Function>(M.getOrInsertFunction("StoreDump", Type::getVoidTy(M.getContext()), Type::getIntNPtrTy(M.getContext(), 8), Type::getInt8Ty(M.getContext())).getCallee());
+        StoreDump = cast<Function>(M.getOrInsertFunction("StoreDump", Type::getVoidTy(M.getContext()), Type::getIntNPtrTy(M.getContext(), 8), Type::getInt64Ty(M.getContext())).getCallee());
         //input types?
         MemCpyDump = cast<Function>(M.getOrInsertFunction("MemCpyDump", Type::getVoidTy(M.getContext()), Type::getIntNPtrTy(M.getContext(), 8),Type::getIntNPtrTy(M.getContext(), 8),Type::getIntNPtrTy(M.getContext(), 8)).getCallee());
         // CondBranch = cast<Function>(M.getOrInsertFunction("CondBranch", Type::getVoidTy(M.getContext())).getCallee());

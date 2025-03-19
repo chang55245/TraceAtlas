@@ -456,7 +456,7 @@ void DumpLoadValue(void *MemValue, int size)
     sprintf(fin, "\n");
     WriteStream(fin);
 }
-void StoreDump(void *address,int size)
+void StoreDump(void *address,int64_t size)
 {
     char fin[128];
      if (size == 0) {

@@ -46,7 +46,7 @@ void CloseFile();
 
 void LoadDump(void *address,int size);
 void DumpLoadValue(void *MemValue, int size);
-void StoreDump(void *address,int size);
+void StoreDump(void *address,int64_t size);
 
 void MemCpyDump(void *src,void *dest,void *len);
 void DumpStoreValue(void *MemValue, int size);
