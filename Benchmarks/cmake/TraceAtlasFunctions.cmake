@@ -52,7 +52,7 @@ function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
 
     add_custom_target(${TARGET_NAME}_DAG_generation
         # Initial compilation -fsanitize=address
-        COMMAND ${LLVM_9_PATH}/bin/${COMPILER_NAME} -fno-builtin -fno-exceptions -g -Xclang -disable-O0-optnone -fPIC -DCPU_ONLY -flto 
+        COMMAND ${LLVM_9_PATH}/bin/${COMPILER_NAME} -fno-exceptions -g -Xclang -disable-O0-optnone -fPIC -DCPU_ONLY -flto 
                 -lgsl -lgslcblas -fuse-ld=lld -Wl,-plugin-opt=emit-llvm 
                 ${INCLUDES} ${CEDR_INTERFACE} ${SOURCE_FILE}
                 -o ${OUTPUT_DIR}/${TARGET_NAME}.initial.bc
