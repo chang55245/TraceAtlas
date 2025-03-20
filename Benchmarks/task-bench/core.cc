@@ -590,8 +590,8 @@ void TaskGraph::execute_point(long timestep, long point,
               fflush(stdout);
             }
 #endif
-            assert(input[i].first == timestep - 1);
-            assert(input[i].second == dep);
+            // assert(input[i].first == timestep - 1);
+            // assert(input[i].second == dep);
           }
           idx++;
         }

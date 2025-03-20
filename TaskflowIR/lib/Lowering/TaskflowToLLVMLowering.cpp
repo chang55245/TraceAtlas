@@ -205,10 +205,26 @@ public:
         // Load the pointer
         auto loadedArg = rewriter.create<LLVM::LoadOp>(
             loc, LLVM::LLVMPointerType::get(rewriter.getContext()), argPtrPtr);
-
-        auto loadedArgPtr = rewriter.create<LLVM::LoadOp>(
+        
+        
+        bool load_value_replace = false;
+        if (auto definingOp = funcCall.getOperand(i).getDefiningOp()) {
+          if (auto loadOp = dyn_cast<LLVM::LoadOp>(definingOp)) {
+            if (!mlir::isa<LLVM::LLVMPointerType>(loadOp.getType())) {
+              auto loadedArgPtr = rewriter.create<LLVM::LoadOp>(
+            loc, LLVM::LLVMPointerType::get(rewriter.getContext()), loadedArg);
+              auto loadedArgPtrtype = rewriter.create<LLVM::LoadOp>(
+                loc, funcCall.getOperand(i).getType(), loadedArgPtr);
+              extractedArgs.push_back(loadedArgPtrtype);     
+              load_value_replace = true;
+            }
+          }
+        }
+        if (!load_value_replace) {
+          auto loadedArgPtr = rewriter.create<LLVM::LoadOp>(
             loc, funcCall.getOperand(i).getType(), loadedArg);
-        extractedArgs.push_back(loadedArgPtr);
+          extractedArgs.push_back(loadedArgPtr);
+        }
 
         // alloca_new_argPtrPtr.push_back(std::make_pair(alloca_new, argPtrPtr));
 
@@ -254,7 +270,24 @@ public:
       // Get the defining operation and check if it's a load operation
       if (auto definingOp = funcCall.getOperand(i).getDefiningOp()) {
         if (auto loadOp = dyn_cast<LLVM::LoadOp>(definingOp)) {
-          loadedArgPtr = loadOp.getOperand();
+          if (mlir::isa<LLVM::LLVMPointerType>(loadOp.getType())) {
+            loadedArgPtr = loadOp.getOperand();
+          }
+          else {
+            // alloca
+            Value one = rewriter.create<LLVM::ConstantOp>(
+                loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
+            auto alloca_new = rewriter.create<LLVM::AllocaOp>(
+                loc,
+                ptrType,
+                ptrType,
+                one);
+            rewriter.create<LLVM::StoreOp>(
+                loc,
+                loadOp.getOperand(),
+                alloca_new);
+            loadedArgPtr = alloca_new;
+          }
         }
       }
 

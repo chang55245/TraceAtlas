@@ -169,19 +169,14 @@ void SerialApp::execute_main_loop()
   
   Timer::time_start();
   
-  // for (unsigned i = 0; i < graphs.size(); i++) {
-  //   const TaskGraph &g = graphs[i];
-  //   for (int y = 0; y < g.timesteps; y++) {
-  //     execute_timestep(i, y);
-  //   }
-  // }
-
   for (unsigned i = 0; i < graphs.size(); i++) {
     const TaskGraph &g = graphs[i];
-    for (int y = 0; y < 3; y++) {
+    for (int y = 0; y < g.timesteps; y++) {
       execute_timestep(i, y);
     }
   }
+
+
   
   double elapsed = Timer::time_end();
   report_timing(elapsed);
