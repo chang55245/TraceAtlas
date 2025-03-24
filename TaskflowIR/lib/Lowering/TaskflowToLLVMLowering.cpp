@@ -250,17 +250,7 @@ public:
 
         Value one = rewriter.create<LLVM::ConstantOp>(
             loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
-        auto alloca_new = rewriter.create<LLVM::AllocaOp>(
-            loc,
-            ptrType,
-            funcCall.getOperand(i).getType(),
-            one);
-       
-        // store
-        rewriter.create<LLVM::StoreOp>(
-            loc,
-            funcCall.getOperand(i),
-            alloca_new);
+        
 
       auto module = op->getParentOfType<ModuleOp>();
         DataLayout layout(module);
@@ -268,22 +258,35 @@ public:
         
 
       Value sizeConstant;
+      Type elemType;
       auto operand = funcCall.getOperand(i);
       if (auto defOp = operand.getDefiningOp()) {
         if (auto allocaOp = llvm::dyn_cast<mlir::LLVM::AllocaOp>(defOp)) {
-          auto type = allocaOp.getElemType();
-          uint64_t sizeInBits = layout.getTypeSizeInBits(type);
+          elemType = allocaOp.getElemType();
+          uint64_t sizeInBits = layout.getTypeSizeInBits(elemType);
         uint64_t size = llvm::divideCeil(sizeInBits, 8);
         
         sizeConstant = rewriter.create<LLVM::ConstantOp>(
             loc, rewriter.getI64Type(), 
-            rewriter.getI64IntegerAttr(8));
+            rewriter.getI64IntegerAttr(size));
         }
       }
       auto idx = rewriter.create<LLVM::ConstantOp>(
           loc, 
           rewriter.getI32Type(),
           rewriter.getI32IntegerAttr(i));
+      
+      auto alloca_new = rewriter.create<LLVM::AllocaOp>(
+            loc,
+            ptrType,
+            elemType,
+            one);
+       
+        // store
+        rewriter.create<LLVM::StoreOp>(
+            loc,
+            funcCall.getOperand(i),
+            alloca_new);
                        
       rewriter.create<LLVM::CallOp>(
           loc,
