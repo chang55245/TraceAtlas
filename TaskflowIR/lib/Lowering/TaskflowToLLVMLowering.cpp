@@ -338,7 +338,9 @@ public:
         rewriter.setInsertionPointToStart(moduleOp.getBody());
         
         std::string uniqueName = "func_name_" + std::to_string(op.getNodeId());
-        auto funcNameStr = StringAttr::get(rewriter.getContext(), taskFuncName);
+        std::string taskFuncNameWithNull = taskFuncName + '\0';
+        mlir::StringRef strRefWithNull(taskFuncNameWithNull.data(), taskFuncNameWithNull.size());
+        auto funcNameStr = StringAttr::get(rewriter.getContext(), strRefWithNull);
         
         auto arrayType = LLVM::LLVMArrayType::get(
             IntegerType::get(rewriter.getContext(), 8), 
