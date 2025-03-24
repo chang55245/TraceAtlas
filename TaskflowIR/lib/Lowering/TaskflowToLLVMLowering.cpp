@@ -182,12 +182,7 @@ public:
 
     // Extract arguments and create function call
     SmallVector<Value, 4> extractedArgs;
-    struct AllocaNewArgPtrPtr {
-        Value orgPtr;
-        Value cpyPtr;
-        Value sizeConstant;
-    };
-    std::vector<AllocaNewArgPtrPtr> alloca_new_argPtrPtr;
+
     for (size_t i = 0; i < funcCall.getNumOperands(); ++i) {
         
         auto idx = rewriter.create<LLVM::ConstantOp>(
@@ -207,27 +202,6 @@ public:
             argPtr,
             ValueRange{zeroIdx, oneIdx});
 
-        auto argOrgPtr = rewriter.create<LLVM::GEPOp>(
-            loc,
-            LLVM::LLVMPointerType::get(rewriter.getContext()),
-            taskArgStructTy,
-            argPtr,
-            ValueRange{zeroIdx, zeroIdx});
-
-        auto module = op->getParentOfType<ModuleOp>();
-        DataLayout layout(module);
-        uint64_t sizeInBits = layout.getTypeSizeInBits(funcCall.getOperand(i).getType());
-        uint64_t size = llvm::divideCeil(sizeInBits, 8);
-        
-        auto sizeConstant = rewriter.create<LLVM::ConstantOp>(
-            loc, rewriter.getI64Type(), 
-            rewriter.getI64IntegerAttr(size));
-        
-        
-        
-        alloca_new_argPtrPtr.push_back(AllocaNewArgPtrPtr{argOrgPtr, argPtrPtr, sizeConstant});
-
-
         // Load the pointer
         auto loadedArg = rewriter.create<LLVM::LoadOp>(
             loc, LLVM::LLVMPointerType::get(rewriter.getContext()), argPtrPtr);
@@ -235,8 +209,6 @@ public:
         auto loadedArgPtr = rewriter.create<LLVM::LoadOp>(
             loc, funcCall.getOperand(i).getType(), loadedArg);
         extractedArgs.push_back(loadedArgPtr);
-
-        // alloca_new_argPtrPtr.push_back(std::make_pair(alloca_new, argPtrPtr));
 
     }
 
@@ -249,19 +221,12 @@ public:
         FlatSymbolRefAttr::get(rewriter.getContext(), taskFuncName),
         extractedArgs);
 
-    for (auto &pair : alloca_new_argPtrPtr) {
-      auto loadcpyArg = rewriter.create<LLVM::LoadOp>(
-            loc, LLVM::LLVMPointerType::get(rewriter.getContext()), pair.cpyPtr);
-      auto loadorgArg = rewriter.create<LLVM::LoadOp>(
-            loc, LLVM::LLVMPointerType::get(rewriter.getContext()), pair.orgPtr);
+    rewriter.create<LLVM::CallOp>(
+        loc,
+        TypeRange{},
+        FlatSymbolRefAttr::get(rewriter.getContext(), "taskflow_copy_back"),
+        taskArg);
 
-        rewriter.create<LLVM::MemcpyOp>(
-            loc,
-            loadorgArg,
-            loadcpyArg,
-            pair.sizeConstant,
-            false);   
-    }
     
     rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
 
@@ -296,29 +261,25 @@ public:
             loc,
             funcCall.getOperand(i),
             alloca_new);
+
+      auto module = op->getParentOfType<ModuleOp>();
+        DataLayout layout(module);
         
-      
-        // auto alloca_new_copy = rewriter.create<LLVM::AllocaOp>(
-        //     loc,
-        //     ptrType,
-        //     funcCall.getOperand(i).getType(),
-        //     one);
+        
 
-        // auto module = op->getParentOfType<ModuleOp>();
-        // DataLayout layout(module);
-        // uint64_t sizeInBits = layout.getTypeSizeInBits(funcCall.getOperand(i).getType());
-        // uint64_t size = llvm::divideCeil(sizeInBits, 8);
-
-        // auto sizeConstant = rewriter.create<LLVM::ConstantOp>(
-        //     loc, rewriter.getI64Type(), 
-        //     rewriter.getI64IntegerAttr(size));
-        // rewriter.create<LLVM::MemcpyOp>(
-        //     loc,
-        //     alloca_new_copy,
-        //     alloca_new,
-        //     sizeConstant,
-        //     false);
-
+      Value sizeConstant;
+      auto operand = funcCall.getOperand(i);
+      if (auto defOp = operand.getDefiningOp()) {
+        if (auto allocaOp = llvm::dyn_cast<mlir::LLVM::AllocaOp>(defOp)) {
+          auto type = allocaOp.getElemType();
+          uint64_t sizeInBits = layout.getTypeSizeInBits(type);
+        uint64_t size = llvm::divideCeil(sizeInBits, 8);
+        
+        sizeConstant = rewriter.create<LLVM::ConstantOp>(
+            loc, rewriter.getI64Type(), 
+            rewriter.getI64IntegerAttr(8));
+        }
+      }
       auto idx = rewriter.create<LLVM::ConstantOp>(
           loc, 
           rewriter.getI32Type(),
@@ -328,7 +289,7 @@ public:
           loc,
           TypeRange{},
           "set_task_arg_ptr",
-          ValueRange{taskArgsAlloca.getResult(), idx, alloca_new});
+          ValueRange{taskArgsAlloca.getResult(), idx, alloca_new, sizeConstant});
     }
 
     // Create task name global string
@@ -501,10 +462,11 @@ public:
     // Create function types.
     auto createFuncTy = LLVM::LLVMFunctionType::get(PtrTy, {}, false);
     auto createTaskFuncTy = LLVM::LLVMFunctionType::get(PtrTy, {PtrTy, PtrTy, PtrTy, PtrTy}, false);
+    auto copyBackFuncTy = LLVM::LLVMFunctionType::get(voidTy, {PtrTy}, false);
     auto addDependencyFuncTy = LLVM::LLVMFunctionType::get(voidTy, {PtrTy, PtrTy}, false);
     auto executeFuncTy = LLVM::LLVMFunctionType::get(voidTy, {PtrTy}, false);
     auto createTaskArgsFuncTy = LLVM::LLVMFunctionType::get(PtrTy, {i64Ty}, false);
-    auto setTaskArgPtrFuncTy = LLVM::LLVMFunctionType::get(voidTy, {PtrTy, i32Ty, PtrTy}, false);
+    auto setTaskArgPtrFuncTy = LLVM::LLVMFunctionType::get(voidTy, {PtrTy, i32Ty, PtrTy, i64Ty}, false);
 
     // Declare taskflow runtime functions.
     builder.create<LLVM::LLVMFuncOp>(
@@ -517,6 +479,12 @@ public:
         module.getLoc(), 
         "taskflow_create_task",
         createTaskFuncTy,
+        LLVM::Linkage::External);
+      
+    builder.create<LLVM::LLVMFuncOp>(
+        module.getLoc(), 
+        "taskflow_copy_back",
+        copyBackFuncTy,
         LLVM::Linkage::External);
 
     builder.create<LLVM::LLVMFuncOp>(
