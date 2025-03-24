@@ -238,17 +238,17 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
             whyBBNotWorking(taskBBs);
 
             // Function *Fptr = &F;
-            CodeExtractor CE(taskBBs, /* DominatorTree */ nullptr,
-                   /* AggregateArgs */ false, /* BlockFrequencyInfo */ nullptr,
-                   /* BranchProbabilityInfo */ nullptr,
-                   /* AssumptionCache */ nullptr,
-                   /* AllowVarArgs */ false,
-                   /* AllowAlloca */ false,
-                   /* AllocaBlock*/ nullptr,
-                   /* Suffix */ "",
-                   /* ArgsInZeroAddressSpace */ false);
+            // CodeExtractor CE(taskBBs, /* DominatorTree */ nullptr,
+            //        /* AggregateArgs */ false, /* BlockFrequencyInfo */ nullptr,
+            //        /* BranchProbabilityInfo */ nullptr,
+            //        /* AssumptionCache */ nullptr,
+            //        /* AllowVarArgs */ false,
+            //        /* AllowAlloca */ false,
+            //        /* AllocaBlock*/ nullptr,
+            //        /* Suffix */ "",
+            //        /* ArgsInZeroAddressSpace */ false);
 
-            // CodeExtractor CE(taskBBs);
+            CodeExtractor CE(taskBBs);
 
              // isBlockValidForExtraction is the function that checks if the task is extractable
              // todo: for unextractable tasks, we might need to manually manage them in taskflow IR
