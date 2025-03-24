@@ -40,6 +40,7 @@ namespace {
 
 // merged task id --> basic block ids
 std::map<int, std::set<int>> taskMergingNodeMap;
+std::map<int, std::set<BasicBlock*>> taskMergingBB;
 std::map<int, int> merged_node_start_bb;
 // New Module Pass for BB_ID_Dump analysis
 struct BBIDAnalysis : public AnalysisInfoMixin<BBIDAnalysis> {
@@ -173,6 +174,13 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
                 if (!BBSet.count(Pred) && BB != BlocksToExtract.front()) {
                         errs() << "update bb extraction set.\n";
                         errs() << "Pred: " << Pred << "\n";
+                        for (auto& [key, value] : taskMergingBB) {
+                            if (value.count(Pred)) {
+                                errs() << "Pred is in taskMergingBB\n";
+                                errs() << "key: " << key << "\n";
+                            }
+                        }
+                        
                         BlocksToExtract.push_back(Pred);
                         BBSet.insert(Pred);
                         update = true;
@@ -213,6 +221,11 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
         std::map<int, BasicBlock*> BBIDMap = BBIDInfo->BBIDMap;
 
         // extract the basic blocks of tasks to form functions
+        for (auto& [key, value] : taskMergingNodeMap) {
+            for (auto& bb : value) {
+                taskMergingBB[key].insert(BBIDMap[bb]);
+            }
+        }
 
         
 
