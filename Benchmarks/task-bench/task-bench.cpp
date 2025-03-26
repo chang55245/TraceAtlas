@@ -105,6 +105,48 @@ static inline void task2(tile_t *tile_out, const std::vector<tile_t*> &tile_in, 
 
 // Similar modifications for task3-task10...
 
+void handle_task_dependencies(tile_t *matrix_data, int M, int N, int nb_fields, 
+                            long t, long x, payload_t payload,
+                            const std::vector<std::pair<long, long>> &deps) {
+    if (deps.size() == 0) {
+        // No dependencies, execute task1
+        task1(&matrix_data[t % nb_fields * N + x], payload);
+    } else {
+        if (t == 0) {
+            // First timestep, execute task1
+            task1(&matrix_data[t % nb_fields * N + x], payload);
+        } else {
+            // Handle dependencies
+            tile_t *out = &matrix_data[t % nb_fields * N + x];
+            std::vector<tile_t*> inputs;
+            inputs.reserve(deps.size()); // Preallocate for efficiency
+            
+            for (size_t i = 0; i < deps.size(); i++) {
+                long dep_x = deps[i].first;
+                
+                if (dep_x < 0 || dep_x >= N) {
+                    fprintf(stderr, "Error: Dependency x index %ld out of bounds [0, %d) at position (%d, %ld)\n", 
+                            dep_x, N, x, t);
+                    continue;
+                }
+                
+                int prev_row_idx = (t-1) % nb_fields;
+                long dep_array_idx = prev_row_idx * N + dep_x;
+                
+                if (dep_array_idx < 0 || dep_array_idx >= M * N) {
+                    fprintf(stderr, "Error: Dependency array index %ld out of bounds [0, %d) at position (%d, %ld)\n", 
+                            dep_array_idx, M * N, x, t);
+                    continue;
+                }
+                
+                inputs.push_back(&matrix_data[dep_array_idx]);
+            }
+            
+            task2(out, inputs, payload);
+        }
+    }
+}
+
 struct SerialApp : public App {
   SerialApp(int argc, char **argv);
   ~SerialApp();
@@ -170,126 +212,107 @@ void SerialApp::execute_main_loop()
   display();
   
   Timer::time_start();
+  const TaskGraph &g = graphs[0];
+
+  // Privatize all arguments
+  uint64_t private_tile_size = 300;
+  tile_t **private_tile = (tile_t **)malloc(sizeof(tile_t *) * private_tile_size);
+  int *private_M = (int *)malloc(sizeof(int) * private_tile_size);
+  int *private_N = (int *)malloc(sizeof(int) * private_tile_size);
+  int *private_nb_fields = (int *)malloc(sizeof(int) * private_tile_size);
+  long *private_y = (long *)malloc(sizeof(long) * private_tile_size);
+  long *private_x = (long *)malloc(sizeof(long) * private_tile_size);
+  payload_t *private_payload = (payload_t *)malloc(sizeof(payload_t) * private_tile_size);
+  std::vector<std::pair<long, long>> *private_deps = new std::vector<std::pair<long, long>>[private_tile_size];
+
+  for (int i = 0; i < private_tile_size; i++) {
+    private_tile[i] = (tile_t *)malloc(sizeof(tile_t) * 8000);
+  }
   
-  for (unsigned i = 0; i < graphs.size(); i++) {
-    const TaskGraph &g = graphs[i];
+  for (unsigned i = 0; i < 1; i++) {
     for (int y = 0; y < g.timesteps; y++) {
-      execute_timestep(i, y);
-    }
-  }
+      if (i >= graphs.size()) {
+        fprintf(stderr, "Error: Invalid graph index %zu (max: %zu)\n", i, graphs.size()-1);
+      }
 
-  // for (unsigned i = 0; i < 1; i++) {
-  //   const TaskGraph &g = graphs[i];
-  //   for (int y = 0; y < 4; y++) {
-  //     execute_timestep(i, y);
-  //   }
-  // }
-
-
-  
-  double elapsed = Timer::time_end();
-  report_timing(elapsed);
-}
-
-void SerialApp::execute_timestep(size_t idx, long t)
-{
-  if (idx >= graphs.size()) {
-    fprintf(stderr, "Error: Invalid graph index %zu (max: %zu)\n", idx, graphs.size()-1);
-    // return;
-  }
-
-  const TaskGraph &g = graphs[idx];
-  long offset = g.offset_at_timestep(t);
-  long width = g.width_at_timestep(t);
-  long dset = g.dependence_set_at_timestep(t);
-  int nb_fields = g.nb_fields;
-  
-  if (matrix == NULL || matrix[idx].data == NULL) {
-    fprintf(stderr, "Error: NULL matrix data for graph %zu\n", idx);
-    // return;
-  }
-  
-  if (nb_fields <= 0) {
-    fprintf(stderr, "Error: Invalid number of fields %d for graph %zu\n", nb_fields, idx);
-    // return;
-  }
-  
-  payload_t payload;
-  payload.graph = g;
-  
-  // for (int x = offset; x <= offset+width-1; x++)
-  int bound = width;
-  for (int i = 0; i < bound; i++)
-  {
-    int x = i+offset;
-    
-    if (x < 0 || x >= matrix[idx].N) {
-      fprintf(stderr, "Error: x index %d out of bounds [0, %d) at timestep %ld\n", 
-              x, matrix[idx].N, t);
-      // continue;
-    }
-    
-    
-    std::vector<std::pair<long, long> > deps = g.dependencies(dset, x);   
-    
-    payload.x = x;
-    payload.y = t;
-
-
-    printf("task out timestep: %d, dep: %ld\n", t, x);
-    
-    int row_idx = t % nb_fields;
-    long array_idx = row_idx * matrix[idx].N + x;
-    
-    if (array_idx < 0 || array_idx >= matrix[idx].M * matrix[idx].N) {
-      fprintf(stderr, "Error: Array index %ld out of bounds [0, %d) at position (%d, %ld)\n", 
-              array_idx, matrix[idx].M * matrix[idx].N, x, t);
-      // continue;
-    }
-    NonKernelSplit();
-    
-    printf("task in timestep: %d, dep: %ld\n", t, x);
-    // task1(&matrix[idx].data[array_idx], payload);
-    
-    if (deps.size() == 0) {
-      // No dependencies, execute task1
-      task1(&matrix[idx].data[array_idx], payload);
-    } else {
-      if (t == 0) {
-        // First timestep, execute task1
-        task1(&matrix[idx].data[array_idx], payload);
-      } else {
-        // Handle dependencies
-        tile_t *out = &matrix[idx].data[array_idx];
-        std::vector<tile_t*> inputs;
+      long offset = g.offset_at_timestep(y);
+      long width = g.width_at_timestep(y);
+      long dset = g.dependence_set_at_timestep(y);
+      int nb_fields = g.nb_fields;
+      
+      if (matrix == NULL || matrix[i].data == NULL) {
+        fprintf(stderr, "Error: NULL matrix data for graph %zu\n", i);
+      }
+      
+      if (nb_fields <= 0) {
+        fprintf(stderr, "Error: Invalid number of fields %d for graph %zu\n", nb_fields, i);
+      }
+      
+      payload_t payload;
+      payload.graph = g;
+      
+      int bound = width;
+      for (int x_i = 0; x_i < bound; x_i++) {
+        int x = x_i + offset;
         
-        for (size_t i = 0; i < deps.size(); i++) {
-          long dep_x = deps[i].first;
-          
-          if (dep_x < 0 || dep_x >= matrix[idx].N) {
-            fprintf(stderr, "Error: Dependency x index %ld out of bounds [0, %d) at position (%d, %ld)\n", 
-                    dep_x, matrix[idx].N, x, t);
-            // continue;
-          }
-          
-          int prev_row_idx = (t-1) % nb_fields;
-          long dep_array_idx = prev_row_idx * matrix[idx].N + dep_x;
-          
-          if (dep_array_idx < 0 || dep_array_idx >= matrix[idx].M * matrix[idx].N) {
-            fprintf(stderr, "Error: Dependency array index %ld out of bounds [0, %d) at position (%d, %ld)\n", 
-                    dep_array_idx, matrix[idx].M * matrix[idx].N, x, t);
-            // continue;
-          }
-          
-          inputs.push_back(&matrix[idx].data[dep_array_idx]);
+        if (x < 0 || x >= matrix[i].N) {
+          fprintf(stderr, "Error: x index %d out of bounds [0, %d) at timestep %d\n", 
+                  x, matrix[i].N, y);
         }
         
-        task2(out, inputs, payload);
+        std::vector<std::pair<long, long>> deps = g.dependencies(dset, x);   
+        
+        payload.x = x;
+        payload.y = y;
+
+        printf("task out timestep: %d, dep: %ld\n", y, x);
+        
+        int row_idx = y % nb_fields;
+        long array_idx = row_idx * matrix[i].N + x;
+        
+        // Copy all data to private arrays
+        memcpy(private_tile[y*bound + x_i], matrix[i].data, sizeof(tile_t) * matrix[i].M * matrix[i].N);
+        private_M[y*bound + x_i] = matrix[i].M;
+        private_N[y*bound + x_i] = matrix[i].N;
+        private_nb_fields[y*bound + x_i] = nb_fields;
+        private_y[y*bound + x_i] = y;
+        private_x[y*bound + x_i] = x;
+        private_payload[y*bound + x_i] = payload;
+        private_deps[y*bound + x_i] = deps;
+
+        if (array_idx < 0 || array_idx >= matrix[i].M * matrix[i].N) {
+          fprintf(stderr, "Error: Array index %ld out of bounds [0, %d) at position (%d, %d)\n", 
+                  array_idx, matrix[i].M * matrix[i].N, x, y);
+        }
+        NonKernelSplit();
+        handle_task_dependencies(private_tile[y*bound + x_i], 
+                               private_M[y*bound + x_i],
+                               private_N[y*bound + x_i],
+                               private_nb_fields[y*bound + x_i],
+                               private_y[y*bound + x_i],
+                               private_x[y*bound + x_i],
+                               private_payload[y*bound + x_i],
+                               private_deps[y*bound + x_i]);
+        NonKernelSplit();
       }
-    } 
-    NonKernelSplit();
-    
+    }
   }
+
+  // Cleanup private arrays
+  for (int i = 0; i < 30; i++) {
+    free(private_tile[i]);
+  }
+  free(private_tile);
+  free(private_M);
+  free(private_N);
+  free(private_nb_fields);
+  free(private_y);
+  free(private_x);
+  free(private_payload);
+  delete[] private_deps;
+
+  double elapsed = Timer::time_end();
+  report_timing(elapsed);
 }
 
 void SerialApp::debug_printf(int verbose_level, const char *format, ...)
@@ -308,32 +331,18 @@ int main(int argc, char ** argv)
   //-steps 10 -width 10 -type fft -kernel compute_bound -iter 1024 -worker 1
   argc = 8;
   argv[0] = "-steps";
-  argv[1] = "1";
+  argv[1] = "8";
   argv[2] = "-width";
-  argv[3] = "2";
+  argv[3] = "8";
   argv[4] = "-type";
   argv[5] = "fft";
   argv[6] = "-kernel";
   argv[7] = "compute_bound";
   argv[8] = "-iter";
-  argv[9] = "1024";
-  argv[10] = "-worker";
-  argv[11] = "1";
+  argv[9] = "4096";
 
   SerialApp app(argc, argv);
   app.execute_main_loop();
-
-  // int a[10][10][10];
-  // for (int i = 0; i < 2; i++) {
-  //   for (int j = 0; j < 2; j++) {
-  //     for (int k = 0; k < 2; k++) {
-  //       NonKernelSplit();
-  //       a[i][j][k] = i+j+k;
-  //       printf("%d %d %d %d\n", i, j, k, a[i][j][k]);
-  //       NonKernelSplit();
-  //     }
-  //   }
-  // }
   return 0;
 }
 }

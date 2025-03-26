@@ -154,6 +154,11 @@ void GetLegalBBs()
                     legalBBs.insert(id);
                     break;
                 }
+                else if (auto *inst = dyn_cast<MemCpyInst>(bi))
+                {
+                    legalBBs.insert(id);
+                    break;
+                }
 
                 if (auto *CI = dyn_cast<CallInst>(bi)) {
                     Function *fun = CI->getCalledFunction();

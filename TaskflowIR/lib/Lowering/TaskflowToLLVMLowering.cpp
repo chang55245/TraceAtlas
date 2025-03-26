@@ -264,11 +264,13 @@ public:
         if (auto allocaOp = llvm::dyn_cast<mlir::LLVM::AllocaOp>(defOp)) {
           elemType = allocaOp.getElemType();
           uint64_t sizeInBits = layout.getTypeSizeInBits(elemType);
-        uint64_t size = llvm::divideCeil(sizeInBits, 8);
-        
+          uint64_t size = llvm::divideCeil(sizeInBits, 8);
+
+          
+        // set the size to 8 for privatization for now
         sizeConstant = rewriter.create<LLVM::ConstantOp>(
             loc, rewriter.getI64Type(), 
-            rewriter.getI64IntegerAttr(size));
+            rewriter.getI64IntegerAttr(8));
         }
       }
       auto idx = rewriter.create<LLVM::ConstantOp>(
@@ -279,7 +281,7 @@ public:
       auto alloca_new = rewriter.create<LLVM::AllocaOp>(
             loc,
             ptrType,
-            elemType,
+            funcCall.getOperand(i).getType(),
             one);
        
         // store
