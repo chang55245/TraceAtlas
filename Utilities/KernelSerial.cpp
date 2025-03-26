@@ -2191,7 +2191,7 @@ struct graph_node {
 class TaskMerging {
 private:
     // the original dag
-    
+    const int64_t SMALL_COMPLEXITY_THRESHOLD = 1000; // Threshold for small complexity nodes
     map<int,graph_node> original_map;
     map<int, graph_node> node_map;
     int graph_size;
@@ -2423,7 +2423,9 @@ public:
         return new_edges;
     }
 
-    bool depth_wise_merge() {
+
+    // merge two connected nodes that prev has only one next node and next has only one prev node
+    bool depth_wise_merge_trivial() {
         bool result = false;
         auto it = node_map.begin();
         bool found_merge = true;
@@ -2456,11 +2458,33 @@ public:
         update_stages();
         return result;
     }
+
+    bool depth_wise_merge_eliminate_small_nodes() {
+        bool result = false;
+        bool found_merge = true;
+        // detect the nodes with low complexity
+        while (found_merge) {
+            found_merge = false;
+            for (auto &[id, node] : node_map) {
+
+                if (node.compute_num + node.memory_num < SMALL_COMPLEXITY_THRESHOLD && node.prev_nodes.size() == 1) {
+                    merge_nodes(*node.prev_nodes.begin(), id, node_map);
+                    result = true;
+                    found_merge = true;
+                    break;
+                }
+            }    
+        }
+        update_stages();
+        return result;
+    }
+    // todo: 1.eliminate the nodes with low complexity
+    // todo: 2.tuning the max parallelism
     bool breadth_wise_merge() {
         bool result = false;
         map<int, graph_node> merged_map = node_map;
         bool found_merge = true;
-        const int64_t SMALL_COMPLEXITY_THRESHOLD = 100; // Threshold for small complexity nodes
+        
         int start_node = 0;
         int end_node = graph_size - 1;
 
@@ -2705,13 +2729,13 @@ void task_merging(map<int, task_feature> &task_feature_map) {
 
     // Perform merging
     bool merged = false;
-    merger.depth_wise_merge();
+    merger.depth_wise_merge_trivial();
     generateDAGJson(merger.get_merged_graph(), 
                    output_dir + "/dag_after_depth_merge.json");
     while (true) {    
-        merged = merger.breadth_wise_merge();
+        merged = merger.depth_wise_merge_eliminate_small_nodes();
         if (!merged) break;
-        merged = merger.depth_wise_merge();
+        merged = merger.depth_wise_merge_trivial();
         if (!merged) break;
     }
 

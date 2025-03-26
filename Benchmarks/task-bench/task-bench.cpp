@@ -108,43 +108,29 @@ static inline void task2(tile_t *tile_out, const std::vector<tile_t*> &tile_in, 
 void handle_task_dependencies(tile_t *matrix_data, int M, int N, int nb_fields, 
                             long t, long x, payload_t payload,
                             const std::vector<std::pair<long, long>> &deps) {
-    if (deps.size() == 0) {
+    if (deps.size() == 0|| t == 0) {
         // No dependencies, execute task1
         task1(&matrix_data[t % nb_fields * N + x], payload);
     } else {
-        if (t == 0) {
-            // First timestep, execute task1
-            task1(&matrix_data[t % nb_fields * N + x], payload);
-        } else {
             // Handle dependencies
             tile_t *out = &matrix_data[t % nb_fields * N + x];
             std::vector<tile_t*> inputs;
-            inputs.reserve(deps.size()); // Preallocate for efficiency
-            
+           
             for (size_t i = 0; i < deps.size(); i++) {
-                long dep_x = deps[i].first;
-                
-                if (dep_x < 0 || dep_x >= N) {
-                    fprintf(stderr, "Error: Dependency x index %ld out of bounds [0, %d) at position (%d, %ld)\n", 
-                            dep_x, N, x, t);
-                    continue;
+              for (long dep_x = deps[i].first; dep_x <= deps[i].second; dep_x++) {
+                if (dep_x >= 0 && dep_x < N) {
+                  int prev_row_idx = (t-1) % nb_fields;
+                  long dep_array_idx = prev_row_idx * N + dep_x;
+                  
+                  if (dep_array_idx >= 0 && dep_array_idx < M * N) {
+                    inputs.push_back(&matrix_data[dep_array_idx]);
+                  }
                 }
-                
-                int prev_row_idx = (t-1) % nb_fields;
-                long dep_array_idx = prev_row_idx * N + dep_x;
-                
-                if (dep_array_idx < 0 || dep_array_idx >= M * N) {
-                    fprintf(stderr, "Error: Dependency array index %ld out of bounds [0, %d) at position (%d, %ld)\n", 
-                            dep_array_idx, M * N, x, t);
-                    continue;
-                }
-                
-                inputs.push_back(&matrix_data[dep_array_idx]);
+              }
             }
             
             task2(out, inputs, payload);
         }
-    }
 }
 
 struct SerialApp : public App {
