@@ -235,7 +235,7 @@ void trivialMergeRefector(wsTupleMap &processMap, wsTuple t_new)
                 processMap.find(next(iter)->first) != processMap.end() && overlap(processMap[t_new.start], next(iter)->second, 0))
             {
                 processMap[prev(iter)->first] = tp_or_refactor(prev(iter)->second, processMap[t_new.start]);
-                prev(iter)->second.memory_num = 0;
+                // prev(iter)->second.memory_num = 0;
                 processMap[prev(iter)->first] = tp_or_refactor(prev(iter)->second, next(iter)->second);
                 processMap.erase(next(iter));
                 processMap.erase(iter);
@@ -255,7 +255,7 @@ void trivialMergeRefector(wsTupleMap &processMap, wsTuple t_new)
         {
             auto iter = processMap.find(t_new.start);
             processMap[t_new.start] = tp_or_refactor(t_new, processMap[t_new.start]);
-            prev(iter)->second.memory_num = 0;
+            // prev(iter)->second.memory_num = 0;
             if (processMap.find(next(iter)->first) != processMap.end() && overlap(processMap[t_new.start], next(iter)->second, 0))
             {
                 processMap[t_new.start] = tp_or_refactor(next(iter)->second, processMap[t_new.start]);
@@ -1510,7 +1510,7 @@ void DAGGenColoringRefector()
         // store tuple map should be updated later, because 1.the loads will not be considered if they are from the same node
         // 2. if the loads are still considered, they are loading from the previous node
 
-
+        printf("node %d\n", i);
         for (auto tp : loadwsTupleMap[i] )
         {
             set <int> node;
@@ -2705,15 +2705,15 @@ void task_merging(map<int, task_feature> &task_feature_map) {
 
     // Perform merging
     bool merged = false;
-    merger.depth_wise_merge();
-    generateDAGJson(merger.get_merged_graph(), 
-                   output_dir + "/dag_after_depth_merge.json");
-    while (true) {    
-        merged = merger.breadth_wise_merge();
-        if (!merged) break;
-        merged = merger.depth_wise_merge();
-        if (!merged) break;
-    }
+    // merger.depth_wise_merge();
+    // generateDAGJson(merger.get_merged_graph(), 
+    //                output_dir + "/dag_after_depth_merge.json");
+    // while (true) {    
+    //     merged = merger.breadth_wise_merge();
+    //     if (!merged) break;
+    //     merged = merger.depth_wise_merge();
+    //     if (!merged) break;
+    // }
 
     merger.analyze_schedule();
     // Generate JSON for DAG after merging
