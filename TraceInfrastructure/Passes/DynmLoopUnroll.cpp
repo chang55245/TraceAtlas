@@ -294,50 +294,49 @@ namespace DashTracer::Passes
 
                                     // Get the initial value - in this case it's stored in the alloca
                                 // Look for the store instruction in the entry block
-                                Value *InitialValue = nullptr;
-                                std::set<BasicBlock*> Visited;
-                                std::function<bool(BasicBlock*)> FindInitialStore = [&](BasicBlock *BB) -> bool {
-                                    // Skip if we've already visited this block
-                                    if (!Visited.insert(BB).second)
-                                        return false;
+                                // Value *InitialValue = nullptr;
+                                // std::set<BasicBlock*> Visited;
+                                // std::function<bool(BasicBlock*)> FindInitialStore = [&](BasicBlock *BB) -> bool {
+                                //     // Skip if we've already visited this block
+                                //     if (!Visited.insert(BB).second)
+                                //         return false;
 
-                                    // Search for store instruction in this block
-                                    for (auto &I : *BB) {
-                                        if (StoreInst *Store = dyn_cast<StoreInst>(&I)) {
-                                        if (Store->getPointerOperand() == InductionAlloca) {
-                                            InitialValue = Store->getValueOperand();
-                                            return true;
-                                        }
-                                        }
-                                    }
+                                //     // Search for store instruction in this block
+                                //     for (auto &I : *BB) {
+                                //         if (StoreInst *Store = dyn_cast<StoreInst>(&I)) {
+                                //         if (Store->getPointerOperand() == InductionAlloca) {
+                                //             InitialValue = Store->getValueOperand();
+                                //             return true;
+                                //         }
+                                //         }
+                                //     }
 
-                                    // Recursively search through predecessors
-                                    for (BasicBlock *Pred : predecessors(BB)) {
-                                        // Only search through blocks that dominate the loop header
-                                        if (DT.dominates(Pred, Header)) {
-                                        if (FindInitialStore(Pred))
-                                            return true;
-                                        }
-                                    }
-                                    return false;
-                                };
+                                //     // Recursively search through predecessors
+                                //     for (BasicBlock *Pred : predecessors(BB)) {
+                                //         // Only search through blocks that dominate the loop header
+                                //         if (DT.dominates(Pred, Header)) {
+                                //         if (FindInitialStore(Pred))
+                                //             return true;
+                                //         }
+                                //     }
+                                //     return false;
+                                // };
 
-                                if (!FindInitialStore(Header)) {
-                                    errs() << "Could not find initial value store in any dominating block\n";
-                                }
+                                // if (!FindInitialStore(Header)) {
+                                //     errs() << "Could not find initial value store in any dominating block\n";
+                                // }
                                 
                                 
-                                // Value *BoundValue = Cmp->getOperand(1);
+                                
                                 IRBuilder<> Builder(Preheader->getTerminator());
                                 Type *BoundType = Cmp->getOperand(0)->getType();
                                 Constant *PeelCountValue = ConstantInt::get(
                                     BoundType, ULO.Count, false);
-                                Value *InitialValueCasted = Builder.CreateIntCast(InitialValue, BoundType, 
-                                                     /*isSigned=*/false, "initial.casted");
-                                Value *NewBound = Builder.CreateAdd(InitialValueCasted, PeelCountValue, "new_bound");
-                                errs() << "NewBound: " << *NewBound << "\n";
-                                errs() << "InitialValue: " << *InitialValue << "\n";
-                                errs() << "Cmp: " << *Cmp << "\n";
+                            
+                                Value *NewBound = PeelCountValue;
+                                // errs() << "NewBound: " << *NewBound << "\n";
+                                // errs() << "InitialValue: " << *InitialValue << "\n";
+                                // errs() << "Cmp: " << *Cmp << "\n";
                                 ICmpInst *NewCmp = cast<ICmpInst>(Cmp->clone());
                              
                                 NewCmp->setOperand(1, NewBound);

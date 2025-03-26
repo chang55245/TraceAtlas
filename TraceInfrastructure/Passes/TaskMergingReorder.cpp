@@ -68,6 +68,39 @@ namespace DashTracer::Passes
             }
         }
 
+        vector<Instruction *> instructionsToErase;
+        for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
+        {
+            // errs() << "Processing block: " << BB->getName() << "\n";
+            auto *block = cast<BasicBlock>(BB);
+            for (BasicBlock::iterator BI = block->begin(), BE = block->end(); BI != BE; ++BI)
+            {
+                // errs() << "Processing instruction: " << *BI << "\n";
+                auto *CI = dyn_cast<Instruction>(&*BI);
+                if (!CI)
+                    continue;
+                
+                // errs() << "Processing call instruction:11 " << *CI << "\n";
+                if (auto *callInst = dyn_cast<CallInst>(CI))
+                {
+                    // errs() << "Processing call instruction:22 " << *CI << "\n";
+                    Function *calledFunc = callInst->getCalledFunction();
+                    if (calledFunc) {
+                        auto funcName = calledFunc->getName();
+                        // name start mid
+                        if (funcName == "LoadDump"|| funcName == "StoreDump"|| 
+                            funcName == "MemCpyDump"|| funcName == "ComputeDump") {
+                            instructionsToErase.push_back(CI);
+                        }
+                    }
+                }
+            }
+        }
+
+        for (auto *CI : instructionsToErase) {
+            CI->eraseFromParent();
+        }
+
         return true;
     }
 
