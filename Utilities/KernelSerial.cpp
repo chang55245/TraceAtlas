@@ -2705,15 +2705,15 @@ void task_merging(map<int, task_feature> &task_feature_map) {
 
     // Perform merging
     bool merged = false;
-    // merger.depth_wise_merge();
-    // generateDAGJson(merger.get_merged_graph(), 
-    //                output_dir + "/dag_after_depth_merge.json");
-    // while (true) {    
-    //     merged = merger.breadth_wise_merge();
-    //     if (!merged) break;
-    //     merged = merger.depth_wise_merge();
-    //     if (!merged) break;
-    // }
+    merger.depth_wise_merge();
+    generateDAGJson(merger.get_merged_graph(), 
+                   output_dir + "/dag_after_depth_merge.json");
+    while (true) {    
+        merged = merger.breadth_wise_merge();
+        if (!merged) break;
+        merged = merger.depth_wise_merge();
+        if (!merged) break;
+    }
 
     merger.analyze_schedule();
     // Generate JSON for DAG after merging
