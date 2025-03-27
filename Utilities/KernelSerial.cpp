@@ -2282,6 +2282,9 @@ private:
         if (current_node.next_nodes.empty()) {
             return children;
         }
+        if (node_children_map.find(current_node.id) != node_children_map.end()) {
+            return node_children_map[current_node.id];
+        }
         for (auto next : current_node.next_nodes) {
             children.insert(next);
             // get children's children

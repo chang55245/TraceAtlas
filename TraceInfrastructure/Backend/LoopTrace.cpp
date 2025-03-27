@@ -7,45 +7,44 @@
 #include <fstream>
 #include <iostream>
 
-// Structure to represent loop hierarchy
+#define MAX_LOOP_COUNT 1000  // Adjust size as needed
+
 struct LoopCount {
     int loopId;
     int count;
     int parentId;  // Will be set from hierarchy info
-    struct LoopCount* next;
+    bool isActive;  // To track which entries are in use
 };
 
-static LoopCount* loop_counts = nullptr;
+static LoopCount loop_array[MAX_LOOP_COUNT] = {0};
+static int next_free_index = 0;
 
 extern "C" {
     void LoopTrace(int loopID)
     {
-        // Find existing entry or create new one
-        LoopCount* current = loop_counts;
-        while (current != nullptr) {
-            if (current->loopId == loopID) {
-                current->count++;
+        // Find existing entry
+        for (int i = 0; i < next_free_index; i++) {
+            if (loop_array[i].isActive && loop_array[i].loopId == loopID) {
+                loop_array[i].count++;
                 return;
             }
-            current = current->next;
         }
 
         // Create new entry
-        LoopCount* new_count = new LoopCount();
-        new_count->loopId = loopID;
-        new_count->count = 1;
-        new_count->parentId = 0;  // Will be set from hierarchy info later
-        new_count->next = loop_counts;
-        loop_counts = new_count;
+        if (next_free_index < MAX_LOOP_COUNT) {
+            loop_array[next_free_index].loopId = loopID;
+            loop_array[next_free_index].count = 1;
+            loop_array[next_free_index].parentId = 0;
+            loop_array[next_free_index].isActive = true;
+            next_free_index++;
+        }
     }
 
     void LoopTraceInitialization()
     {
-        while (loop_counts != nullptr) {
-            LoopCount* temp = loop_counts;
-            loop_counts = loop_counts->next;
-            delete temp;
-        }
+        // Reset the array
+        memset(loop_array, 0, sizeof(loop_array));
+        next_free_index = 0;
     }
 
     void LoopTraceDestroy(int* hierarchyInfo, int hierarchySize)
@@ -57,70 +56,58 @@ extern "C" {
                 int parentId = hierarchyInfo[i + 1];
                 
                 // Find and update the corresponding loop count
-                LoopCount* current = loop_counts;
-                while (current != nullptr) {
-                    if (current->loopId == loopId) {
-                        current->parentId = parentId;
+                for (int j = 0; j < next_free_index; j++) {
+                    if (loop_array[j].isActive && loop_array[j].loopId == loopId) {
+                        loop_array[j].parentId = parentId;
                         break;
                     }
-                    current = current->next;
                 }
             }
 
             // Recalculate counts by dividing by parent counts
-            LoopCount* current = loop_counts;
-            while (current != nullptr) {
-                if (current->parentId != 0) {  // If has parent
+            for (int i = 0; i < next_free_index; i++) {
+                if (!loop_array[i].isActive) continue;
+                if (loop_array[i].parentId != 0) {
                     // Find parent's count
-                    LoopCount* parent = loop_counts;
-                    while (parent != nullptr) {
-                        if (parent->loopId == current->parentId) {
-                            // Avoid division by zero
-                            if (parent->count > 0) {
-                                current->count = current->count / parent->count;
+                    for (int j = 0; j < next_free_index; j++) {
+                        if (loop_array[j].isActive && 
+                            loop_array[j].loopId == loop_array[i].parentId) {
+                            if (loop_array[j].count > 0) {
+                                loop_array[i].count = loop_array[i].count / loop_array[j].count;
                             }
                             break;
                         }
-                        parent = parent->next;
                     }
                 }
-                current = current->next;
             }
 
             const char* LoopTraceEnvFile = getenv("LoopTrace_FILE");
-            std::string filename = LoopTraceEnvFile ? LoopTraceEnvFile : "LoopTraceFile.json";
+            const char* filename = LoopTraceEnvFile ? LoopTraceEnvFile : "LoopTraceFile.json";
 
-            std::ofstream file(filename);
-            if (!file.is_open()) {
-                std::cerr << "Error: Failed to open file " << filename << std::endl;
+            FILE* file = fopen(filename, "w");
+            if (!file) {
+                fprintf(stderr, "Error: Failed to open file %s\n", filename);
                 return;
             }
 
-            // Write JSON
-            file << "{\n    \"loopIteration\": [\n";
-            
+            fprintf(file, "{\n    \"loopIteration\": [\n");
             bool first = true;
-            current = loop_counts;
-            while (current != nullptr) {
-                if (!first) file << ",\n";
-                file << "        {\n";
-                file << "            \"loopId\": " << current->loopId << ",\n";
-                file << "            \"count\": " << current->count << ",\n";
-                file << "            \"parentId\": " << current->parentId << "\n";
-                file << "        }";
+            for (int i = 0; i < next_free_index; i++) {
+                if (!loop_array[i].isActive) continue;
+                if (!first) fprintf(file, ",\n");
+                fprintf(file, "        {\n");
+                fprintf(file, "            \"loopId\": %d,\n", loop_array[i].loopId);
+                fprintf(file, "            \"count\": %d,\n", loop_array[i].count);
+                fprintf(file, "            \"parentId\": %d\n", loop_array[i].parentId);
+                fprintf(file, "        }");
                 first = false;
-                current = current->next;
             }
             
-            file << "\n    ]\n}\n";
-            file.close();
+            fprintf(file, "\n    ]\n}\n");
+            fclose(file);
 
-            // Cleanup
-            while (loop_counts != nullptr) {
-                LoopCount* temp = loop_counts;
-                loop_counts = loop_counts->next;
-                delete temp;
-            }
+            // Reset the array
+            LoopTraceInitialization();
         } catch (const std::exception& e) {
             std::cerr << "Error in LoopTraceDestroy: " << e.what() << std::endl;
         }
