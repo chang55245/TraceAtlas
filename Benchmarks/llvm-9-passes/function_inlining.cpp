@@ -117,6 +117,11 @@ bool DynmFunctionInlining::runOnModule(Module &M)
 
         for(auto inlineCall: inlinedCalls)
         {
+            BasicBlock* BB = inlineCall->getParent();
+            BasicBlock* newBB = BB->splitBasicBlock(inlineCall);
+            if (newBB->getInstList().size() > 1) {
+                newBB->splitBasicBlock(newBB->front().getNextNode());
+            }
             errs() << "Found\n";
             InlineFunctionInfo ifi = InlineFunctionInfo(NULL);
             if (auto *call = dyn_cast<CallInst>(inlineCall))

@@ -40,7 +40,7 @@ namespace {
 
 // merged task id --> basic block ids
 std::map<int, std::set<int>> taskMergingNodeMap;
-std::map<int, std::set<BasicBlock*>> taskMergingBB;
+std::map<BasicBlock*, int> idBBMap;
 std::map<int, int> merged_node_start_bb;
 // New Module Pass for BB_ID_Dump analysis
 struct BBIDAnalysis : public AnalysisInfoMixin<BBIDAnalysis> {
@@ -75,9 +75,107 @@ AnalysisKey BBIDAnalysis::Key;
 
 // Original Function Pass (simplified)
 struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
-    void whyBBNotWorking(std::vector<BasicBlock*> &BlocksToExtract) {
-        bool AllowVarArgs = true, AllowAlloca = true;
-        SetVector<BasicBlock *> BBSet(BlocksToExtract.begin(), BlocksToExtract.end());
+    void whyBBNotWorking(std::vector<BasicBlock*> &BlocksToExtract, std::vector<int> &tobeExtracted) {
+        bool AllowVarArgs = false, AllowAlloca = false;
+        std::set<BasicBlock *> BBSet(BlocksToExtract.begin(), BlocksToExtract.end());
+
+
+        if (BlocksToExtract.empty()) {
+        errs() << "No basic blocks provided for extraction.\n";
+        return;
+    }
+
+    // --- Check for a valid single-entry block ---
+    BasicBlock *EntryBlock = BlocksToExtract.front();
+    if (EntryBlock->isEHPad()) {
+        errs() << "The entry block (" << EntryBlock->getName() << ") is a landing pad, which is not allowed.\n";
+    }
+    for (BasicBlock *BB : BlocksToExtract) {
+        if (BB != EntryBlock) {
+            for (BasicBlock *Pred : predecessors(BB)) {
+                if (!BBSet.count(Pred)) {
+                    errs() << "Block (" << BB->getName() << ") has a predecessor ("
+                           << Pred->getName() << ") outside the extraction region.\n";
+                }
+            }
+        }
+    }
+
+
+
+    // --- Check properties inside each block ---
+    for (BasicBlock *BB : BlocksToExtract) {
+        if (BB->hasAddressTaken()) {
+            errs() << "Block (" << BB->getName() << ") has its address taken.\n";
+        }
+        for (Instruction &I : *BB) {
+            // Check if any user of this instruction is a BlockAddress reference.
+            for (User *U : I.users()) {
+                if (isa<BlockAddress>(U)) {
+                    errs() << "Instruction (" << I << ") in block ("
+                           << BB->getName() << ") references a BlockAddress.\n";
+                }
+            }
+            // Disallow alloca instructions if not permitted.
+            if (isa<AllocaInst>(I) && !AllowAlloca) {
+                // errs() << "Instruction (" << I << ") in block ("
+                    //    << BB->getName() << ") is an alloca instruction which is not allowed.\n";
+            }
+            // Check invoke instructions: ensure their unwind destination is within the set.
+            if (auto *II = dyn_cast<InvokeInst>(&I)) {
+                if (BasicBlock *UnwindDest = II->getUnwindDest()) {
+                    if (!BBSet.count(UnwindDest)) {
+                        errs() << "Invoke instruction (" << I << ") in block ("
+                               << BB->getName() << ") unwinds to block ("
+                               << UnwindDest->getName() << ") outside the extraction set.\n";
+                    }
+                }
+            }
+            // Check catchswitch instructions and their handlers.
+            if (auto *CSI = dyn_cast<CatchSwitchInst>(&I)) {
+                if (BasicBlock *UnwindDest = CSI->getUnwindDest()) {
+                    if (!BBSet.count(UnwindDest)) {
+                        errs() << "CatchSwitch (" << I << ") in block ("
+                               << BB->getName() << ") unwinds to block ("
+                               << UnwindDest->getName() << ") outside the extraction set.\n";
+                    }
+                }
+                for (BasicBlock *Handler : CSI->handlers()) {
+                    if (!BBSet.count(Handler)) {
+                        errs() << "CatchSwitch (" << I << ") in block ("
+                               << BB->getName() << ") has a handler ("
+                               << Handler->getName() << ") outside the extraction set.\n";
+                    }
+                }
+            }
+            // Check cleanup pad instructions.
+            if (auto *CPI = dyn_cast<CleanupPadInst>(&I)) {
+                for (User *U : CPI->users()) {
+                    if (auto *CRI = dyn_cast<CleanupReturnInst>(U)) {
+                        if (!BBSet.count(CRI->getParent())) {
+                            errs() << "CleanupPad (" << I << ") in block ("
+                                   << BB->getName() << ") has a CleanupReturnInst with parent outside extraction set.\n";
+                        }
+                    }
+                }
+            }
+            // Check for problematic calls (e.g. vastart, eh_typeid_for)
+            if (auto *CI = dyn_cast<CallInst>(&I)) {
+                if (const Function *F = CI->getCalledFunction()) {
+                    unsigned IID = F->getIntrinsicID();
+                    if (IID == Intrinsic::vastart && !AllowVarArgs) {
+                        errs() << "Call instruction (" << I << ") in block ("
+                               << BB->getName() << ") calls vastart (varargs not allowed).\n";
+                    }
+                    if (IID == Intrinsic::eh_typeid_for) {
+                        errs() << "Call instruction (" << I << ") in block ("
+                               << BB->getName() << ") calls eh_typeid_for, which is not extractable.\n";
+                    }
+                }
+            }
+
+        }
+    }
 
         for (BasicBlock *BB : BlocksToExtract) {
             
@@ -174,13 +272,7 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
                 if (!BBSet.count(Pred) && BB != BlocksToExtract.front()) {
                         errs() << "update bb extraction set.\n";
                         errs() << "Pred: " << Pred << "\n";
-                        for (auto& [key, value] : taskMergingBB) {
-                            if (value.count(Pred)) {
-                                errs() << "Pred is in taskMergingBB\n";
-                                errs() << "key: " << key << "\n";
-                            }
-                        }
-                        
+                        tobeExtracted.push_back(idBBMap[Pred]);
                         BlocksToExtract.push_back(Pred);
                         BBSet.insert(Pred);
                         update = true;
@@ -220,35 +312,33 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
 
         std::map<int, BasicBlock*> BBIDMap = BBIDInfo->BBIDMap;
 
-        // extract the basic blocks of tasks to form functions
-        for (auto& [key, value] : taskMergingNodeMap) {
-            for (auto& bb : value) {
-                taskMergingBB[key].insert(BBIDMap[bb]);
-            }
+        for (auto& [key, value] : BBIDMap) {
+            idBBMap[value] = key;
         }
 
         
-
+        
         for (auto& [key, value] : taskMergingNodeMap) {
             std::vector<BasicBlock*> taskBBs;
+            std::vector<int> tobeExtracted;
 
            
             for (int bb : value) {
                 BasicBlock *BBPtr = BBIDMap[bb];
                 if (BBPtr->getParent()->getName() == "main") {
-                    
+                    tobeExtracted.push_back(bb);
                     if (merged_node_start_bb[key] == bb) {
                         taskBBs.insert(taskBBs.begin(), BBPtr);
                     }
                     else {
-                        taskBBs.push_back(BBPtr);                  
+                        taskBBs.push_back(BBPtr);
                     }
                     
                     // errs() <<   "Task BB id: " << BB << "\n" << "BB block: " << *BBPtr << "\n";
                 }
             }
 
-            whyBBNotWorking(taskBBs);
+            whyBBNotWorking(taskBBs,tobeExtracted);
 
             
             CodeExtractor CE(taskBBs, /* DominatorTree */ nullptr,
@@ -267,6 +357,9 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
              // todo: for unextractable tasks, we might need to manually manage them in taskflow IR
             if (!CE.isEligible()) {
                 errs() << "Task id: " << key << " not Extractable: " << CE.isEligible() << "\n";
+                for (int bb : tobeExtracted) {
+                    errs() << "check BB id: " << bb << "\n";
+                }
                 continue;
             }
 
