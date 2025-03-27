@@ -207,8 +207,8 @@ int main(int argc, char *argv[]){
     // for normal image height is 540 and width is 960
     // for 4x downscaled height is 135 and width is 240
     // for 10x downscaled height os 54 and width is 96
-    int height = 135;
-    int width = 240;
+    int height = 54;
+    int width = 96;
     int depth = 3;
     int size = height * width;
 
@@ -225,7 +225,7 @@ int main(int argc, char *argv[]){
     
     int idx = 0;
     FILE *fp;
-    char *filename = "./input/input_4x_downscaled.txt"; 
+    char *filename = "./input/input_10x_downscaled.txt"; 
     char line[100];
     double num;
 
