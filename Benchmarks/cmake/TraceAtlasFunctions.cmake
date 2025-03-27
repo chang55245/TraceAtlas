@@ -64,10 +64,12 @@ function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
         COMMAND ${LLVM_9_PATH}/bin/opt-9 -load ${TRACEATLAS_PASS_SHARED} 
                 -KernelLocating ${OUTPUT_DIR}/${TARGET_NAME}.inlined.bc -S 
                  -o ${OUTPUT_DIR}/${TARGET_NAME}.kernel_located.bc
-        
+        COMMAND ${LLVM_9_PATH}/bin/opt-9 -loop-simplify -indvars 
+                ${OUTPUT_DIR}/${TARGET_NAME}.kernel_located.bc 
+                -S -o ${OUTPUT_DIR}/${TARGET_NAME}.canonicalized.bc
         # Generate and run first tracer
         COMMAND ${LLVM_9_PATH}/bin/clang++-9 ${INCLUDES} -fuse-ld=lld 
-                ${OUTPUT_DIR}/${TARGET_NAME}.kernel_located.bc 
+                ${OUTPUT_DIR}/${TARGET_NAME}.canonicalized.bc 
                 -lm -lz -lpthread -lgsl -lgslcblas 
                 ${TRACEATLAS_PASS_BACKEND_STATIC} 
                 ${Extra_STATIC_LIBS}
