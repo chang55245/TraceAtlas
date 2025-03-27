@@ -59,11 +59,12 @@ void conv_fft_complex(dash_re_flt_type *in, dash_re_flt_type *out, int height, i
 
 // 2D forward FFT
 void conv_fft_fft2D(dash_re_flt_type *in, dash_re_flt_type *out, int height, int width){
+    height = 5;
     size_t half_width = width/2;
     bool forwardTrans = true;
 
-    dash_re_flt_type row_temp[width];
-    dash_re_flt_type row_output[width];
+    dash_re_flt_type *row_temp = (dash_re_flt_type *) malloc(sizeof(dash_re_flt_type) * width);
+    dash_re_flt_type *row_output = (dash_re_flt_type *) malloc(sizeof(dash_re_flt_type) * width);
     dash_re_flt_type *row_row_fft_output = (dash_re_flt_type *) malloc (sizeof (dash_re_flt_type) * (height * width));
 
     for(int row = 0; row < height; row++){
@@ -95,8 +96,8 @@ void conv_fft_fft2D(dash_re_flt_type *in, dash_re_flt_type *out, int height, int
         }
     }
 
-    dash_re_flt_type col_temp[width];
-    dash_re_flt_type col_output[width];
+    dash_re_flt_type *col_temp = (dash_re_flt_type *) malloc(sizeof(dash_re_flt_type) * width);
+    dash_re_flt_type *col_output = (dash_re_flt_type *) malloc(sizeof(dash_re_flt_type) * width);
     dash_re_flt_type *col_col_fft_output = (dash_re_flt_type *) malloc (sizeof (dash_re_flt_type) * (height * width));
 
     for(int row = 0; row < height; row++){
@@ -125,9 +126,13 @@ void conv_fft_fft2D(dash_re_flt_type *in, dash_re_flt_type *out, int height, int
 	    }
         }
     }
+    free(row_temp);
+    free(row_output);
     free(row_row_fft_output);
     free(row_col_swap);
     free(col_col_fft_output);
+    free(col_temp);
+    free(col_output);
 }
 
 // Conjugation operation, complex parts are multiplied by - 1
@@ -167,12 +172,17 @@ void conv_fft_mult(dash_re_flt_type *first_arr, dash_re_flt_type *second_arr, da
 
 
 void conv_fft_ifft2D(dash_re_flt_type *in, dash_re_flt_type *out, int height, int width){
+    height = 5;
     size_t half_width = width/2;
     bool forwardTrans = false;
     
-    dash_re_flt_type row_temp[width];
-    dash_re_flt_type row_output[width];
+    dash_re_flt_type *row_temp = (dash_re_flt_type *) malloc(sizeof(dash_re_flt_type) * width);
+    dash_re_flt_type *row_output = (dash_re_flt_type *) malloc(sizeof(dash_re_flt_type) * width);
     dash_re_flt_type *row_row_fft_output = (dash_re_flt_type *) malloc (sizeof (dash_re_flt_type) * (height * width));
+    dash_re_flt_type *col_temp = (dash_re_flt_type *) malloc(sizeof(dash_re_flt_type) * width);
+    dash_re_flt_type *col_output = (dash_re_flt_type *) malloc(sizeof(dash_re_flt_type) * width);
+    dash_re_flt_type *col_col_fft_output = (dash_re_flt_type *) malloc (sizeof (dash_re_flt_type) * (height * width));
+    dash_re_flt_type *row_col_swap = (dash_re_flt_type *) malloc (sizeof (dash_re_flt_type) * (height * width));
 
     for(int row = 0; row < height; row++){
         NonKernelSplit();
@@ -180,9 +190,9 @@ void conv_fft_ifft2D(dash_re_flt_type *in, dash_re_flt_type *out, int height, in
         for(int col = 0; col < width; col++){
             row_temp[col] = in[row * width + col];
         }
-        KernelEnter("FFT");
+        // KernelEnter("FFT");
         DASH_FFT(row_temp, row_output, width / 2, false);
-        KernelExit("FFT");
+        // KernelExit("FFT");
         for(int col = 0; col < width; col++){
             row_row_fft_output[row * width + col] = row_output[col];
         }
@@ -190,7 +200,7 @@ void conv_fft_ifft2D(dash_re_flt_type *in, dash_re_flt_type *out, int height, in
     }
 
     // Moving complex part of the pixels from right to below for col-by-col IFFT
-    dash_re_flt_type *row_col_swap = (dash_re_flt_type *) malloc (sizeof (dash_re_flt_type) * (height * width));
+    
     for(int row = 0; row < height; row++){
         for(int col = 0; col < width; col++){
             if(col % 2 == 0){
@@ -202,9 +212,7 @@ void conv_fft_ifft2D(dash_re_flt_type *in, dash_re_flt_type *out, int height, in
         }
     }
 
-    dash_re_flt_type col_temp[height];
-    dash_re_flt_type col_output[height];
-    dash_re_flt_type *col_col_fft_output = (dash_re_flt_type *) malloc (sizeof (dash_re_flt_type) * (height * width));
+    
 
     // Col-by-col IFFT
     for(int row = 0; row < height; row++){
@@ -213,9 +221,9 @@ void conv_fft_ifft2D(dash_re_flt_type *in, dash_re_flt_type *out, int height, in
         for(int col = 0; col < width; col++){
             col_temp[col] = row_col_swap[col * height + row];
         }
-        KernelEnter("FFT");
+        // KernelEnter("FFT");
         DASH_FFT(col_temp, col_output, width / 2, false);
-        KernelExit("FFT");
+        // KernelExit("FFT");
         for(int col = 0; col < width; col++){
             col_col_fft_output[col * height + row] = col_output[col];
         }
@@ -229,9 +237,13 @@ void conv_fft_ifft2D(dash_re_flt_type *in, dash_re_flt_type *out, int height, in
             else out[(row / 2) * (height * 2) + (2 * col + 1)] = col_col_fft_output[row * height + col];
         }
     }
+    free(row_temp);
+    free(row_output);
     free(row_row_fft_output);
     free(row_col_swap);
     free(col_col_fft_output);
+    free(col_temp);
+    free(col_output);
 }
 
 // Moving complex filters back to real 

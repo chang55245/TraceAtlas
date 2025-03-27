@@ -98,7 +98,8 @@ void grayscale_conversion(double *img, int height, int width, int depth, double 
 void gaussian_blur(double *img, int kernel_size, int height, int width, double *return_array){
     double r, g, p, s, e;
     double sum = 0;
-    double flattened_kernel[kernel_size * kernel_size];
+    // double flattened_kernel[kernel_size * kernel_size];
+    double* flattened_kernel = (double*)malloc(kernel_size * kernel_size * sizeof(double));
 
 
     // Computation of gaussian filter
@@ -125,6 +126,8 @@ void gaussian_blur(double *img, int kernel_size, int height, int width, double *
 //#elif FFT
     conv_fft(img, flattened_kernel, return_array, height, width, kernel_size);
 //#endif
+
+    // free(flattened_kernel);
 }
 
 void sobel_g_operator(double *img, double *filter, int kernel_size, int height, int width, double *return_array){
@@ -273,26 +276,26 @@ int main(int argc, char *argv[]){
 
     sobel_g_operator(blurred_img_before_canny, flattened_gx, 3, height, width, gx_canny);
 
-//#ifdef PRINT_IMAGES
-    //save_img(gx_canny, height, width, "gx_canny.png");
-//#endif
+// //#ifdef PRINT_IMAGES
+//     //save_img(gx_canny, height, width, "gx_canny.png");
+// //#endif
 
-    // Second operation of sobel. Detects lines in the y direction.
+//     // Second operation of sobel. Detects lines in the y direction.
     double flattened_gy[3 * 3] = {1.0, 2.0, 1.0, 0.0, 0.0, 0.0, -1.0, -2.0, -1.0};
 
     sobel_g_operator(blurred_img_before_canny, flattened_gy, 3, height, width, gy_canny);
     
-//#ifdef PRINT_IMAGES
-    //save_img(gy_canny, height, width, "gy_canny.png");
-//#endif
+// //#ifdef PRINT_IMAGES
+//     //save_img(gy_canny, height, width, "gy_canny.png");
+// //#endif
 
-    // Merge of gx and gy frames to generate edge marked frame.
+//     // Merge of gx and gy frames to generate edge marked frame.
     int lower_threshold = 40;
     int upper_threshold = 50;
     sobel(gx_canny, gy_canny, height, width, 40, 50, sobel_img);
 
-//#ifdef PRINT_IMAGES
-    save_img(sobel_img, height, width, "sobel_img.png");
+// //#ifdef PRINT_IMAGES
+    // save_img(sobel_img, height, width, "sobel_img.png");
 //#endif
 
     clock_gettime(CLOCK_MONOTONIC_RAW, &end);
