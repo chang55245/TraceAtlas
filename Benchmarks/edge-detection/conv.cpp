@@ -68,6 +68,7 @@ void conv_fft_fft2D(dash_re_flt_type *in, dash_re_flt_type *out, int height, int
 
     for(int row = 0; row < height; row++){
         NonKernelSplit();
+        printf("row: %d\n", row);
         for(int col = 0; col < width; col++){
             row_temp[col] = in[row * width + col];
         }
@@ -99,6 +100,7 @@ void conv_fft_fft2D(dash_re_flt_type *in, dash_re_flt_type *out, int height, int
     dash_re_flt_type *col_col_fft_output = (dash_re_flt_type *) malloc (sizeof (dash_re_flt_type) * (height * width));
 
     for(int row = 0; row < height; row++){
+        printf("row2: %d\n", row);
         NonKernelSplit();
         for(int col = 0; col < width; col++){
             col_temp[col] = row_col_swap[col * height + row];
@@ -174,6 +176,7 @@ void conv_fft_ifft2D(dash_re_flt_type *in, dash_re_flt_type *out, int height, in
 
     for(int row = 0; row < height; row++){
         NonKernelSplit();
+        printf("row3: %d\n", row);
         for(int col = 0; col < width; col++){
             row_temp[col] = in[row * width + col];
         }
@@ -206,6 +209,7 @@ void conv_fft_ifft2D(dash_re_flt_type *in, dash_re_flt_type *out, int height, in
     // Col-by-col IFFT
     for(int row = 0; row < height; row++){
         NonKernelSplit();
+        printf("row4: %d\n", row);
         for(int col = 0; col < width; col++){
             col_temp[col] = row_col_swap[col * height + row];
         }

@@ -225,7 +225,7 @@ int main(int argc, char *argv[]){
     
     int idx = 0;
     FILE *fp;
-    char *filename = "input_4x_downscaled.txt"; 
+    char *filename = "./input/input_4x_downscaled.txt"; 
     char line[100];
     double num;
 
