@@ -53,18 +53,17 @@ void xcorr(double *x, double *y, size_t n_samp, double *corr) {
   double *corr_freq = malloc(2 * len * sizeof(double));
 
 
-  // KernelEnter("FFT");
+  KernelEnter("FFT");
   printf("first fft \n");
   bool forward = true;   
-  DASH_FFT_cpu(&c, &X1, &len, &forward /* is_forward_transform? */);
-  // KernelExit("FFT");
+  DASH_FFT(c, X1, len, forward /* is_forward_transform? */);
+  KernelExit("FFT");
   
   // gsl_fft(d, X2, len);
-  // KernelEnter("FFT");
-  // printf("33");
+  KernelEnter("FFT");
   printf("second fft \n");
-  DASH_FFT_cpu(&d, &X2, &len, &forward /* is_forward_transform? */);
-  // KernelExit("FFT");
+  DASH_FFT(d, X2, len, forward /* is_forward_transform? */);
+  KernelExit("FFT");
 
   // free(c);
   // free(d);
