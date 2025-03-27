@@ -108,6 +108,10 @@ static inline void task2(tile_t *tile_out, const std::vector<tile_t*> &tile_in, 
 void handle_task_dependencies(tile_t *matrix_data, int M, int N, int nb_fields, 
                             long t, long x, payload_t payload,
                             const std::vector<std::pair<long, long>> &deps) {
+    if(nb_fields== 0){
+      printf("nb_fields is 0\n");
+      nb_fields = 1;
+    }
     if (deps.size() == 0|| t == 0) {
         // No dependencies, execute task1
         task1(&matrix_data[t % nb_fields * N + x], payload);
@@ -238,6 +242,7 @@ void SerialApp::execute_main_loop()
       payload.graph = g;
       
       int bound = width;
+      printf("bound: %d\n", bound);
       for (int x_i = 0; x_i < bound; x_i++) {
         int x = x_i + offset;
         
@@ -279,6 +284,18 @@ void SerialApp::execute_main_loop()
                                private_x[y*bound + x_i],
                                private_payload[y*bound + x_i],
                                private_deps[y*bound + x_i]);
+
+
+        // memcpy(matrix[i].data, private_tile[y*bound + x_i], sizeof(tile_t) * matrix[i].M * matrix[i].N);
+
+        // matrix[i].M = private_M[y*bound + x_i];
+        // matrix[i].N = private_N[y*bound + x_i];
+        // nb_fields = private_nb_fields[y*bound + x_i];
+        // y = private_y[y*bound + x_i];
+        // x = private_x[y*bound + x_i];
+        // payload = private_payload[y*bound + x_i];
+        // deps = private_deps[y*bound + x_i];
+
         NonKernelSplit();
       }
     }
