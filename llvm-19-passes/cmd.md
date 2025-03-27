@@ -69,5 +69,5 @@ maybe these are already included in the clang-19 command?
 {
   "directory": "/heorot/lchang21/TraceAtlas/build/llvm-19-passes",
   "command": "/heorot/lchang21/llvm-release/llvm-19/llvm-19/bin/clang-19 -g -shared -fPIC -std=c++17 -Wall -fno-rtti -I /heorot/lchang21/llvm-release/llvm-19/llvm-19/include/ -I /heorot/lchang21/TraceAtlas/vcpkg/installed/x64-linux/include MergeTaskExtraction.cpp -o TaskExtraction.so",
-  "file": "/heorot/lchang21/TraceAtlas/build/llvm-19-passes/MergeTaskExtraction.cpp"
+  "file": "/heorot/lchang21/TraceAtlas/llvm-19-passes/MergeTaskExtraction.cpp"
 }
