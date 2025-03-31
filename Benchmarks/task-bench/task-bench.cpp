@@ -244,6 +244,7 @@ void SerialApp::execute_main_loop()
       int bound = width;
       printf("bound: %d\n", bound);
       for (int x_i = 0; x_i < bound; x_i++) {
+        NonKernelSplit();
         int x = x_i + offset;
         
         if (x < 0 || x >= matrix[i].N) {
@@ -275,7 +276,8 @@ void SerialApp::execute_main_loop()
           fprintf(stderr, "Error: Array index %ld out of bounds [0, %d) at position (%d, %d)\n", 
                   array_idx, matrix[i].M * matrix[i].N, x, y);
         }
-        NonKernelSplit();
+        
+        KernelEnter("FFT");
         handle_task_dependencies(private_tile[y*bound + x_i], 
                                private_M[y*bound + x_i],
                                private_N[y*bound + x_i],
@@ -284,7 +286,7 @@ void SerialApp::execute_main_loop()
                                private_x[y*bound + x_i],
                                private_payload[y*bound + x_i],
                                private_deps[y*bound + x_i]);
-
+        KernelExit("FFT");
 
         // memcpy(matrix[i].data, private_tile[y*bound + x_i], sizeof(tile_t) * matrix[i].M * matrix[i].N);
 
@@ -334,11 +336,11 @@ int main(int argc, char ** argv)
   //-steps 10 -width 10 -type fft -kernel compute_bound -iter 1024 -worker 1
   argc = 8;
   argv[0] = "-steps";
-  argv[1] = "8";
+  argv[1] = "10";
   argv[2] = "-width";
-  argv[3] = "8";
+  argv[3] = "10";
   argv[4] = "-type";
-  argv[5] = "fft";
+  argv[5] = "all_to_all";
   argv[6] = "-kernel";
   argv[7] = "compute_bound";
   argv[8] = "-iter";

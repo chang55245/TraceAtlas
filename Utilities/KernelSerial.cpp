@@ -2191,7 +2191,7 @@ struct graph_node {
 class TaskMerging {
 private:
     // the original dag
-    const int64_t SMALL_COMPLEXITY_THRESHOLD = 10000; // Threshold for small complexity nodes
+    const int64_t SMALL_COMPLEXITY_THRESHOLD = 6000; // Threshold for small complexity nodes
     map<int,graph_node> original_map;
     map<int, graph_node> node_map;
     int graph_size;
@@ -2446,6 +2446,10 @@ public:
                 if (it->second.next_nodes.size() == 1) {
                     int next = *it->second.next_nodes.begin();
                     if (next == end_node) {
+                        it++;
+                        continue;
+                    }
+                    if (node_map[next].is_kernel) {
                         it++;
                         continue;
                     }
