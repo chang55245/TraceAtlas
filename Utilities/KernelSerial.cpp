@@ -2469,6 +2469,7 @@ public:
         while (found_merge) {
             found_merge = false;
             for (auto &[id, node] : node_map) {
+                if (node.is_kernel) continue;
 
                 if (node.compute_num + node.memory_num < SMALL_COMPLEXITY_THRESHOLD && node.prev_nodes.size() == 1) {
                     merge_nodes(*node.prev_nodes.begin(), id, node_map);
