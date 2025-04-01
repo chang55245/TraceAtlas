@@ -84,7 +84,7 @@ void Process(string &key, string &value)
         kernelInstanceIdCounter++;   
         currentLabel = value;
         kernelInstanceBBs.clear();
-        kernelInstanceBBs.insert(currentblock);
+        // kernelInstanceBBs.insert(currentblock);
     }
     }
     //kernel exit concludes the previous kernel node

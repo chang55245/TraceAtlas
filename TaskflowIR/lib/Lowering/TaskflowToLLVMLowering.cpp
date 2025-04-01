@@ -273,6 +273,9 @@ public:
             rewriter.getI64IntegerAttr(8));
         }
       }
+      sizeConstant = rewriter.create<LLVM::ConstantOp>(
+            loc, rewriter.getI64Type(), 
+            rewriter.getI64IntegerAttr(8));
       auto idx = rewriter.create<LLVM::ConstantOp>(
           loc, 
           rewriter.getI32Type(),
