@@ -356,6 +356,7 @@ struct MergeTaskExtraction : public PassInfoMixin<MergeTaskExtraction> {
              // isBlockValidForExtraction is the function that checks if the task is extractable
              // todo: for unextractable tasks, we might need to manually manage them in taskflow IR
             if (!CE.isEligible()) {
+                whyBBNotWorking(taskBBs,tobeExtracted);
                 errs() << "Task id: " << key << " not Extractable: " << CE.isEligible() << "\n";
                 for (int bb : tobeExtracted) {
                     errs() << "check BB id: " << bb << "\n";
