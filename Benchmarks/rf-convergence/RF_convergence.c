@@ -79,7 +79,8 @@ void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl
                                  double *A_real, double *A_imag,
                                  double *B_real, double *B_imag,
                                  double *C_real, double *C_imag);
-void xcorr(double *x, double *y, size_t n_samp, double *corr);
+void xcorr(double *x, double *y, size_t n_samp, double *corr,
+           double *c, double *d, double *X1, double *X2, double *corr_freq);
 
 void ConjTrans(gsl_matrix_complex **in)
 {
@@ -117,7 +118,7 @@ int main() {
 	// Reduce the number of blocks to speed up computation
 	int n_sync_blocks = 4;    // number of comms sync blocks of 64 time samples
 	int n_trn_blocks = 4;     // number of comms training blocks of 64 time samples (originally 4)
-	int n_data_blocks = 10; // number of comms data blocks of 64 time samples (originally 10)
+	int n_data_blocks = 4; // number of comms data blocks of 64 time samples (originally 10)
 	int n_start_zeros = 400;
 	int num_sync_samp = n_sync_blocks * modulo_N;
 	int n_sync_trn_zeros = 100;  // zero padding between comms sync and training signals
@@ -578,109 +579,245 @@ int main() {
 		
 	
 	}
+
+	int * helper_idx = malloc(10 * sizeof(int));
+	for (int k = 0; k < 10; k++) {
+		helper_idx[k] = 1;
+	}
 	printf("TEST TEST \r\n");
 	// Main processing loop
 	for (int k = 0; k < n_sync_blocks; k++) {
 		NonKernelSplit();
-		
+		printf("k: %d\r\n", helper_idx[k]);
 		LU_factorization_projection(Z_temp_proj[k], numRx, S_temp_delay[k], 
 								  Ntaps_projection, modulo_N,
 								  A_real[k], A_imag[k], B_real[k], B_imag[k], C_real[k], C_imag[k]);
 
 		// Replace the corresponding section of the received data with this newly projected data
-		// for (int i = 0; i < numRx; i++) {
-		// 	for (int j = 0; j < modulo_N; j++) {
-		// 		gsl_matrix_complex_set(rxSig, i, comms_sync_start_idx + k * modulo_N + j,
-		// 		                       gsl_matrix_complex_get(Z_temp_proj[k], i, j));
-		// 	}
-		// }
+		for (int i = 0; i < numRx; i++) {
+			for (int j = 0; j < modulo_N; j++) {
+				gsl_matrix_complex_set(rxSig, i, comms_sync_start_idx + k * modulo_N + j,
+				                       gsl_matrix_complex_get(Z_temp_proj[k], i, j));
+			}
+		}
+		helper_idx[k] = 2;
 		NonKernelSplit();
 	}
 
 	// Free memory after the loop - free in reverse order of allocation
-	for (int k = 0; k < n_sync_blocks; k++) {
-		free(A_real[k]); free(A_imag[k]);
-		free(B_real[k]); free(B_imag[k]);
-		free(C_real[k]); free(C_imag[k]);
-	}
-	free(A_real); free(A_imag);
-	free(B_real); free(B_imag);
-	free(C_real); free(C_imag);
+	// for (int k = 0; k < n_sync_blocks; k++) {
+	// 	free(A_real[k]); free(A_imag[k]);
+	// 	free(B_real[k]); free(B_imag[k]);
+	// 	free(C_real[k]); free(C_imag[k]);
+	// }
+	// free(A_real); free(A_imag);
+	// free(B_real); free(B_imag);
+	// free(C_real); free(C_imag);
 
 	//=============== END sync symbols section =========================================
+
+
+	gsl_matrix_complex **S_temp_delay_2 = malloc(sizeof(gsl_matrix_complex*) * n_sync_blocks);
+	gsl_matrix_complex **Z_temp_proj_2 = malloc(sizeof(gsl_matrix_complex*) * n_sync_blocks);
+
+
+	// Allocate each individual matrix and perform initialization
+	for (int k = 0; k < n_sync_blocks; k++) {
+		// Allocate the actual matrix for this index
+		S_temp_delay_2[k] = gsl_matrix_complex_alloc(numTx * Ntaps_projection, modulo_N); // 4x64
+		Z_temp_proj_2[k] = gsl_matrix_complex_alloc(numRx, modulo_N);                 // 4x64
+
+		
+		// Initialize specific elements for S_temp_delay[i]
+		// It's generally safer to zero out first if the subsequent loops don't fill everything
+		gsl_matrix_complex_set_zero(S_temp_delay_2[k]); 
+		gsl_matrix_complex_set(S_temp_delay_2[k], 0, modulo_N - 1, complexZero);  // always the case for all blocks
+		gsl_matrix_complex_set(S_temp_delay_2[k], 2, 0, complexZero);             // always the case for all blocks
+		gsl_matrix_complex_set(S_temp_delay_2[k], 3, 0, complexZero);             // always the case for all blocks
+		gsl_matrix_complex_set(S_temp_delay_2[k], 3, 1, complexZero);             // always the case for all blocks
+
+		for (int i = 0; i < modulo_N - 1; i++) {
+			gsl_matrix_complex_set(S_temp_delay_2[k], 0, i, gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + i + 1));
+		}
+		// Now the LOS and other delayed taps
+		for (int i = 1; i < Ntaps_projection; i++) {
+			for (int j = 0; j < modulo_N - (i - 1); j++) {
+				gsl_matrix_complex_set(S_temp_delay_2[k], i, j + (i - 1),
+				                       gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + j));
+			}
+		}
+		// Now grab the relevant received data block
+		for (int i = 0; i < numRx; i++) {
+			for (int j = 0; j < modulo_N; j++) {
+				gsl_matrix_complex_set(Z_temp_proj_2[k], i, j,
+				                       gsl_matrix_complex_get(rxSig, i, comms_sync_start_idx + k * modulo_N + j));
+			}
+		}
+	}
+
+
+	double **A_real_2 = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **A_imag_2 = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **B_real_2 = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **B_imag_2 = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **C_real_2 = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **C_imag_2 = (double **)malloc(n_sync_blocks * sizeof(double *));
+
+	// Check allocation of pointer array
+
+	// Allocate each 1D array
+	for (int k = 0; k < n_sync_blocks; k++) {
+		A_real_2[k] = (double *)malloc(max_size * sizeof(double));
+		A_imag_2[k] = (double *)malloc(max_size * sizeof(double));
+		B_real_2[k] = (double *)malloc(max_size * sizeof(double));
+		B_imag_2[k] = (double *)malloc(max_size * sizeof(double));
+		C_real_2[k] = (double *)malloc(max_size * sizeof(double));
+		C_imag_2[k] = (double *)malloc(max_size * sizeof(double));
+		
+	
+	}
 
 	// // // //=============== BEGIN training symbols section =========================================
 
 	// // // // Now the non-zero entries (one block of 64 samples at a time)
-	// // // for (int k = 0; k < n_trn_blocks; k++) {
-	// // // 	// The -1_th delay tap
-	// // // 	for (int i = 0; i < modulo_N - 1; i++) {
-	// // // 		gsl_matrix_complex_set(S_temp_delay, 0, i, gsl_matrix_complex_get(x_Training, 0, k * modulo_N + i + 1));
-	// // // 	}
-	// // // 	// Now the LOS and other delayed taps
-	// // // 	for (int i = 1; i < Ntaps_projection; i++) {
-	// // // 		for (int j = 0; j < modulo_N - (i - 1); j++) {
-	// // // 			gsl_matrix_complex_set(S_temp_delay, i, j + (i - 1),
-	// // // 			                       gsl_matrix_complex_get(x_Training, 0, k * modulo_N + j));
-	// // // 		}
-	// // // 	}
-	// // // 	// Now grab the relevant received data block
-	// // // 	for (int i = 0; i < numRx; i++) {
-	// // // 		for (int j = 0; j < modulo_N; j++) {
-	// // // 			// int comms_trn_start_idx = ipeak + num_sync_samp + n_sync_trn_zeros;
-	// // // 			gsl_matrix_complex_set(Z_temp_proj, i, j,
-	// // // 			                       gsl_matrix_complex_get(rxSig, i, comms_trn_start_idx + k * modulo_N + j));
-	// // // 		}
-	// // // 	}
-	// // // 	// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
-	// // // 	// after projection onto the subspace orthogonal to S_temp_delay.
-	// // // 	LU_factorization_projection(Z_temp_proj, numRx, S_temp_delay, Ntaps_projection, modulo_N);
-	// // // 	// Replace the corresponding section of the received data with this newly projected data
-	// // // 	for (int i = 0; i < numRx; i++) {
-	// // // 		for (int j = 0; j < modulo_N; j++) {
-	// // // 			// int comms_sync_start_idx = ipeak;
-	// // // 			gsl_matrix_complex_set(rxSig, i, comms_trn_start_idx + k * modulo_N + j,
-	// // // 			                       gsl_matrix_complex_get(Z_temp_proj, i, j));
-	// // // 		}
-	// // // 	}
-	// // // }
+	for (int k = 0; k < n_trn_blocks; k++) {
+		NonKernelSplit();
+		printf("k: %d\r\n", helper_idx[k]);
+		// The -1_th delay tap
+		for (int i = 0; i < modulo_N - 1; i++) {
+			gsl_matrix_complex_set(S_temp_delay_2[k], 0, i, gsl_matrix_complex_get(x_Training, 0, k * modulo_N + i + 1));
+		}
+		// Now the LOS and other delayed taps
+		for (int i = 1; i < Ntaps_projection; i++) {
+			for (int j = 0; j < modulo_N - (i - 1); j++) {
+				gsl_matrix_complex_set(S_temp_delay_2[k], i, j + (i - 1),
+				                       gsl_matrix_complex_get(x_Training, 0, k * modulo_N + j));
+			}
+		}
+		// Now grab the relevant received data block
+		for (int i = 0; i < numRx; i++) {
+			for (int j = 0; j < modulo_N; j++) {
+				// int comms_trn_start_idx = ipeak + num_sync_samp + n_sync_trn_zeros;
+				gsl_matrix_complex_set(Z_temp_proj_2[k], i, j,
+				                       gsl_matrix_complex_get(rxSig, i, comms_trn_start_idx + k * modulo_N + j));
+			}
+		}
+		// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
+		// after projection onto the subspace orthogonal to S_temp_delay.
+		LU_factorization_projection(Z_temp_proj_2[k], numRx, S_temp_delay_2[k], Ntaps_projection, modulo_N,
+									A_real_2[k], A_imag_2[k], B_real_2[k], B_imag_2[k], C_real_2[k], C_imag_2[k]);
+		// Replace the corresponding section of the received data with this newly projected data
+		for (int i = 0; i < numRx; i++) {
+			for (int j = 0; j < modulo_N; j++) {
+				// int comms_sync_start_idx = ipeak;
+				gsl_matrix_complex_set(rxSig, i, comms_trn_start_idx + k * modulo_N + j,
+				                       gsl_matrix_complex_get(Z_temp_proj_2[k], i, j));
+			}
+		}
+		helper_idx[k] = 3;
+		NonKernelSplit();
+	}
 	// // // //=============== END training symbols section =========================================
 
 	// // // //=============== BEGIN data symbols section =========================================
 
+
+	gsl_matrix_complex **S_temp_delay_3 = malloc(sizeof(gsl_matrix_complex*) * n_sync_blocks);
+	gsl_matrix_complex **Z_temp_proj_3 = malloc(sizeof(gsl_matrix_complex*) * n_sync_blocks);
+
+
+	// Allocate each individual matrix and perform initialization
+	for (int k = 0; k < n_sync_blocks; k++) {
+		// Allocate the actual matrix for this index
+		S_temp_delay_3[k] = gsl_matrix_complex_alloc(numTx * Ntaps_projection, modulo_N); // 4x64
+		Z_temp_proj_3[k] = gsl_matrix_complex_alloc(numRx, modulo_N);                 // 4x64
+
+		
+		// Initialize specific elements for S_temp_delay[i]
+		// It's generally safer to zero out first if the subsequent loops don't fill everything
+		gsl_matrix_complex_set_zero(S_temp_delay_3[k]); 
+		gsl_matrix_complex_set(S_temp_delay_3[k], 0, modulo_N - 1, complexZero);  // always the case for all blocks
+		gsl_matrix_complex_set(S_temp_delay_3[k], 2, 0, complexZero);             // always the case for all blocks
+		gsl_matrix_complex_set(S_temp_delay_3[k], 3, 0, complexZero);             // always the case for all blocks
+		gsl_matrix_complex_set(S_temp_delay_3[k], 3, 1, complexZero);             // always the case for all blocks
+
+		for (int i = 0; i < modulo_N - 1; i++) {
+			gsl_matrix_complex_set(S_temp_delay_3[k], 0, i, gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + i + 1));
+		}
+		// Now the LOS and other delayed taps
+		for (int i = 1; i < Ntaps_projection; i++) {
+			for (int j = 0; j < modulo_N - (i - 1); j++) {
+				gsl_matrix_complex_set(S_temp_delay_3[k], i, j + (i - 1),
+				                       gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + j));
+			}
+		}
+		// Now grab the relevant received data block
+		for (int i = 0; i < numRx; i++) {
+			for (int j = 0; j < modulo_N; j++) {
+				gsl_matrix_complex_set(Z_temp_proj_3[k], i, j,
+				                       gsl_matrix_complex_get(rxSig, i, comms_sync_start_idx + k * modulo_N + j));
+			}
+		}
+	}
+
+	double **A_real_3 = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **A_imag_3 = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **B_real_3 = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **B_imag_3 = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **C_real_3 = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **C_imag_3 = (double **)malloc(n_sync_blocks * sizeof(double *));
+
+	for (int k = 0; k < n_sync_blocks; k++) {
+		A_real_3[k] = (double *)malloc(max_size * sizeof(double));
+		A_imag_3[k] = (double *)malloc(max_size * sizeof(double));
+		B_real_3[k] = (double *)malloc(max_size * sizeof(double));
+		B_imag_3[k] = (double *)malloc(max_size * sizeof(double));
+		C_real_3[k] = (double *)malloc(max_size * sizeof(double));
+		C_imag_3[k] = (double *)malloc(max_size * sizeof(double));
+	}
+
+	// for (int k = 0; k < n_data_blocks; k++) {
+	// 	printf("k: %d\r\n", helper_idx[k]);
+	// 	helper_idx[k] = 4;
+	// }
 	// // // // Now the non-zero entries (one block of 64 samples at a time)
-	// // // for (int k = 0; k < n_data_blocks; k++) {
-	// // // 	// The -1_th delay tap
-	// // // 	for (int i = 0; i < modulo_N - 1; i++) {
-	// // // 		gsl_matrix_complex_set(S_temp_delay, 0, i, gsl_matrix_complex_get(dataEstimate, 0, k * modulo_N + i + 1));
-	// // // 	}
-	// // // 	// Now the LOS and other delayed taps
-	// // // 	for (int i = 1; i < Ntaps_projection; i++) {
-	// // // 		for (int j = 0; j < modulo_N - (i - 1); j++) {
-	// // // 			gsl_matrix_complex_set(S_temp_delay, i, j + (i - 1),
-	// // // 			                       gsl_matrix_complex_get(dataEstimate, 0, k * modulo_N + j));
-	// // // 		}
-	// // // 	}
-	// // // 	// Now grab the relevant received data block
-	// // // 	for (int i = 0; i < numRx; i++) {
-	// // // 		for (int j = 0; j < modulo_N; j++) {
-	// // // 			// int comms_data_start_idx = comms_trn_start_idx + num_trn_samp + num_trn_data_zeros;
-	// // // 			gsl_matrix_complex_set(Z_temp_proj, i, j,
-	// // // 			                       gsl_matrix_complex_get(rxSig, i, comms_data_start_idx + k * modulo_N + j));
-	// // // 		}
-	// // // 	}
-	// // // 	// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
-	// // // 	// after projection onto the subspace orthogonal to S_temp_delay.
-	// // // 	LU_factorization_projection(Z_temp_proj, numRx, S_temp_delay, Ntaps_projection, modulo_N);
-	// // // 	// Replace the corresponding section of the received data with this newly projected data
-	// // // 	for (int i = 0; i < numRx; i++) {
-	// // // 		for (int j = 0; j < modulo_N; j++) {
-	// // // 			// int comms_sync_start_idx = ipeak;
-	// // // 			gsl_matrix_complex_set(rxSig, i, comms_data_start_idx + k * modulo_N + j,
-	// // // 			                       gsl_matrix_complex_get(Z_temp_proj, i, j));
-	// // // 		}
-	// // // 	}
-	// // // }
+	for (int k = 0; k < n_data_blocks; k++) {
+		NonKernelSplit();
+		// printf("k: %d\r\n", helper_idx[k]);
+		// The -1_th delay tap
+		for (int i = 0; i < modulo_N - 1; i++) {
+			gsl_matrix_complex_set(S_temp_delay_3[k], 0, i, gsl_matrix_complex_get(dataEstimate, 0, k * modulo_N + i + 1));
+		}
+		// Now the LOS and other delayed taps
+		for (int i = 1; i < Ntaps_projection; i++) {
+			for (int j = 0; j < modulo_N - (i - 1); j++) {
+				gsl_matrix_complex_set(S_temp_delay_3[k], i, j + (i - 1),
+				                       gsl_matrix_complex_get(dataEstimate, 0, k * modulo_N + j));
+			}
+		}
+		// Now grab the relevant received data block
+		for (int i = 0; i < numRx; i++) {
+			for (int j = 0; j < modulo_N; j++) {
+				// int comms_data_start_idx = comms_trn_start_idx + num_trn_samp + num_trn_data_zeros;
+				gsl_matrix_complex_set(Z_temp_proj_3[k], i, j,
+				                       gsl_matrix_complex_get(rxSig, i, comms_data_start_idx + k * modulo_N + j));
+			}
+		}
+		// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
+		// after projection onto the subspace orthogonal to S_temp_delay.
+		LU_factorization_projection(Z_temp_proj_2[k], numRx, S_temp_delay_2[k], Ntaps_projection, modulo_N,
+									A_real_2[k], A_imag_2[k], B_real_2[k], B_imag_2[k], C_real_2[k], C_imag_2[k]);
+		// Replace the corresponding section of the received data with this newly projected data
+		for (int i = 0; i < numRx; i++) {
+			for (int j = 0; j < modulo_N; j++) {
+				// int comms_sync_start_idx = ipeak;
+				gsl_matrix_complex_set(rxSig, i, comms_data_start_idx + k * modulo_N + j,
+				                       	gsl_matrix_complex_get(Z_temp_proj_2[k], i, j));
+			}
+		}
+		helper_idx[k] = 4;
+		NonKernelSplit();
+	}
 	// // // //=============== END data symbols section =========================================
 
 	// // // printf("Done projecting onto subspace orthogonal to comms signal.");
@@ -690,82 +827,66 @@ int main() {
 	
 	// // // // Original value was 1024. This might exceed the new, smaller num_rx_samp.
 	// // // // Cap n_samples at num_rx_samp to avoid out-of-bounds access.
-	// // // size_t n_samples = 1024; 
-	// // // if (n_samples > num_rx_samp) {
-	// // // 	n_samples = num_rx_samp; // Use the available samples if less than 1024
-	// // // 	printf("Warning: Radar processing using reduced n_samples = %zu due to smaller num_rx_samp.\n", n_samples);
-	// // // }
-	
+	size_t n_samples = 1024;
+	size_t len = 2 * n_samples - 1;
 
-	
-	// // // double B = 1e6;
-	// // // double T = 100/B;
-	// // // double sampling_rate = 1e6;
-	// // // double lag;
-	// // // // Allocate based on the potentially adjusted n_samples
-	// // // double *corr = malloc((2 * (2 * n_samples - 1)) * sizeof(double)); 
-	// // // double *received = malloc(2 * n_samples * sizeof(double));
-	// // // double *pulse = malloc(2 * n_samples * sizeof(double));         // array for the original pulse
-	
+	// // Pre-allocate all arrays needed for xcorr
+	double *corr = malloc((2 * (2 * n_samples - 1)) * sizeof(double));
+	double *received = malloc(2 * n_samples * sizeof(double));
+	double *pulse = malloc(2 * n_samples * sizeof(double));
+	double *c = malloc(2 * len * sizeof(double));
+	double *d = malloc(2 * len * sizeof(double));
+	double *X1 = malloc(2 * len * sizeof(double));
+	double *X2 = malloc(2 * len * sizeof(double));
+	double *corr_freq = malloc(2 * len * sizeof(double));
 
-	// // // // This loop now correctly uses n_samples which is <= num_rx_samp
-	// // // for (int i = 0; i < n_samples; i++) {
-	// // // 	temp_complex = gsl_complex_add(gsl_matrix_complex_get(rxSig, 0, i),gsl_complex_add(gsl_matrix_complex_get(rxSig, 1, i), gsl_complex_add(gsl_matrix_complex_get(rxSig, 2, i),gsl_matrix_complex_get(rxSig, 3, i))));
-	// // // 	received[2*i] = GSL_REAL(temp_complex);
-	// // // 	received[2*i + 1] = GSL_IMAG(temp_complex);
-	// // // }
 
-    // FILE *fp;
-	// fp = fopen(PDPULSE, "r");  // read the original pulse
-	// // Ensure we don't read past the end of the file if it's smaller than expected,
-	// // and don't read more than allocated for pulse.
-	// for (int i = 0; i < 2 * n_samples; i++) {
-	// 	fscanf(fp, "%lf", &pulse[i]);
-	// }
-	// fclose(fp);
-	
+	// Rest of the code remains the same until xcorr call
+	for (int i = 0; i < n_samples; i++) {
+		temp_complex = gsl_complex_add(gsl_matrix_complex_get(rxSig, 0, i),
+			   gsl_complex_add(gsl_matrix_complex_get(rxSig, 1, i),
+			   gsl_complex_add(gsl_matrix_complex_get(rxSig, 2, i),
+			   gsl_matrix_complex_get(rxSig, 3, i))));
+		received[2*i] = GSL_REAL(temp_complex);
+		received[2*i + 1] = GSL_IMAG(temp_complex);
+	}
 
-	// xcorr(received, pulse, n_samples, corr);
+	FILE *fp = fopen(PDPULSE, "r");
+	for (int i = 0; i < 2 * n_samples; i++) {
+		fscanf(fp, "%lf", &pulse[i]);
+	}
+	fclose(fp);
+
+	// Call xcorr with pre-allocated arrays
+	xcorr(received, pulse, n_samples, corr, c, d, X1, X2, corr_freq);
 
 	// Code to find maximum
-	// double max_corr = 0,tmp=0;
-	// double index = 0;
+	double max_corr = 0,tmp=0;
+	double index = 0;
 	// // Adjust loop bounds for corr array size
-	// for (size_t i = 0; i < 2 * (2 * n_samples - 1); i += 2) { 
-	// 	// Only finding maximum of real part of correlation
-	// 	tmp = corr[i]*corr[i] + corr[i+1]*corr[i+1];
-	// 	// Original code only checked real part for maximum. Keeping that logic.
-	// 	if (corr[i] > max_corr) { 
-	// 		max_corr = corr[i];
-	// 		index = i / 2;
-	// 	}
-	// }
+	for (size_t i = 0; i < 2 * (2 * n_samples - 1); i += 2) { 
+		// Only finding maximum of real part of correlation
+		tmp = corr[i]*corr[i] + corr[i+1]*corr[i+1];
+		// Original code only checked real part for maximum. Keeping that logic.
+		if (corr[i] > max_corr) { 
+			max_corr = corr[i];
+			index = i / 2;
+		}
+	}
 	
-	// lag = ((2 * n_samples) - 1 - index) / sampling_rate;
+	double lag = ((2 * n_samples) - 1 - index) / 1e6;
 	
-	// printf("Lag Value is: %lf\n", lag); // Added newline for cleaner output
+	printf("Lag Value is: %lf\n", lag); // Added newline for cleaner output
 
-	// // Free allocated memory at the end
+	// // Free all allocated memory at the end
 	// free(corr);
 	// free(received);
 	// free(pulse);
-	// gsl_matrix_complex_free(rxSig);
-	// gsl_matrix_complex_free(sync_symbols);
-	// gsl_matrix_complex_free(x_Training);
-	// gsl_matrix_complex_free(QAM_constellation);
-	// free(sync_symbols_real);
-	// free(sync_symbols_imag);
-	// free(rx_data_sync_real);
-	// free(rx_data_sync_imag);
-	// gsl_matrix_complex_free(rxSigDelays);
-	// gsl_matrix_complex_free(autoCorrMatrix);
-	// gsl_matrix_complex_free(invAutoCorr);
-	// gsl_matrix_complex_free(arrayResponse);
-	// gsl_matrix_complex_free(beamFormer);
-	// gsl_matrix_complex_free(rxDataDelays);
-	// gsl_matrix_complex_free(dataEstimate);
-	// gsl_matrix_complex_free(S_temp_delay);
-	// gsl_matrix_complex_free(Z_temp_proj);
+	// free(c);
+	// free(d);
+	// free(X1);
+	// free(X2);
+	// free(corr_freq);
 
 	return 0;
 	// END RF_convergence.c
@@ -916,79 +1037,51 @@ void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl
 //================ End LU-factorization approach ================================================
 
 //================ Pulse-Doppler approach ================================================
-void xcorr(double *x, double *y, size_t n_samp, double *corr) {
+void xcorr(double *x, double *y, size_t n_samp, double *corr,
+           double *c, double *d, double *X1, double *X2, double *corr_freq) {
+    size_t len = 2 * n_samp - 1;
+    size_t x_count = 0;
+    size_t y_count = 0;
 
-	size_t len = 2 * n_samp - 1;
+    // Use the pre-allocated arrays instead of malloc
+    for (size_t i = 0; i < 2 * len; i += 2) {
+        // Check bounds for x access: x_count should be < 2 * n_samp
+        if (i / 2 >= n_samp -1 && x_count < 2 * n_samp) {
+            c[i] = x[x_count];
+            c[i + 1] = x[x_count + 1];
+            x_count += 2;
+        } else {
+            c[i] = 0;
+            c[i + 1] = 0;
+        }
 
-	double *c = malloc(2 * len * sizeof(double));
-	double *d = malloc(2 * len * sizeof(double));
+        // Check bounds for y access: y_count should be < 2 * n_samp
+        if (i/2 < n_samp && y_count < 2 * n_samp) {
+            d[i] = y[y_count];
+            d[i + 1] = y[y_count + 1];
+            y_count += 2;
+        } else {
+            d[i] = 0;
+            d[i + 1] = 0;
+        }
+    }
 
+    KernelEnter("FFT");
+    gsl_fft(c, X1, len);
+    KernelExit("FFT");
 
-	size_t x_count = 0;
-	size_t y_count = 0;
+    KernelEnter("FFT");
+    gsl_fft(d, X2, len);
+    KernelExit("FFT");
 
-	// The logic inside this loop seems complex and potentially error-prone
-	// relating indices i, x_count, y_count to n_samp and len.
-	// Original logic preserved, but careful review might be needed if issues persist.
-	for (size_t i = 0; i < 2 * len; i += 2) {
-		// Check bounds for x access: x_count should be < 2 * n_samp
-		if (i / 2 >= n_samp -1 && x_count < 2 * n_samp) { // Original check was i/2 > n_samp-1
-			c[i] = x[x_count];
-			c[i + 1] = x[x_count + 1];
-			x_count += 2;
-		} else {
-			c[i] = 0;
-			c[i + 1] = 0;
-		}
+    for (size_t i = 0; i < 2 * len; i += 2) {
+        corr_freq[i] = (X1[i] * X2[i]) + (X1[i + 1] * X2[i + 1]);
+        corr_freq[i + 1] = (X1[i + 1] * X2[i]) - (X1[i] * X2[i + 1]);
+    }
 
-		// Check bounds for y access: y_count should be < 2 * n_samp
-		if (i/2 < n_samp && y_count < 2 * n_samp) { // Original check was i > n_samp (maybe meant i/2 ?)
-			d[i] = y[y_count];
-			d[i + 1] = y[y_count + 1];
-			y_count += 2;
-		} else {
-			d[i] = 0;
-			d[i + 1] = 0;
-		}
-	}
-
-
-	double *X1 = malloc(2 * len * sizeof(double));
-	double *X2 = malloc(2 * len * sizeof(double));
-	double *corr_freq = malloc(2 * len * sizeof(double));
-	// Add NULL checks for malloc
-
-
-    //KERN_ENTER(make_label("FFT[1D][%d][complex][float64][forward]",len));
-	KernelEnter("FFT");
-	gsl_fft(c, X1, len);
-	KernelExit("FFT");
-    //KERN_EXIT(make_label("FFT[1D][%d][complex][float64][forward]",len));
-    //KERN_ENTER(make_label("FFT[1D][%d][complex][float64][forward]",len));
-	KernelEnter("FFT");
-	gsl_fft(d, X2, len);
-	KernelExit("FFT");
-    //KERN_EXIT(make_label("FFT[1D][%d][complex][float64][forward]",len));
-
-    //KERN_ENTER(make_label("ZIP[multiply][complex][float64][%d]",len));
-	for (size_t i = 0; i < 2 * len; i += 2) {
-		corr_freq[i] = (X1[i] * X2[i]) + (X1[i + 1] * X2[i + 1]);
-		corr_freq[i + 1] = (X1[i + 1] * X2[i]) - (X1[i] * X2[i + 1]);
-	}
-    //KERN_EXIT(make_label("ZIP[multiply][complex][float64][%d]",len));
-
-    //KERN_ENTER(make_label("FFT[1D][%d][complex][float64][backward]",len));
-	KernelEnter("FFT");
-	gsl_ifft(corr_freq, corr, len);
-	KernelExit("FFT");
-    //KERN_EXIT(make_label("FFT[1D][%d][complex][float64][backward]",len));
-
-	// Free intermediate arrays
-	free(c);
-	free(d);
-	free(X1);
-	free(X2);
-	free(corr_freq);
+    KernelEnter("FFT");
+    gsl_ifft(corr_freq, corr, len);
+    KernelExit("FFT");
 }
 
 //================ End radar correlator approach ================================================
