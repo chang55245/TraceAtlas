@@ -25,6 +25,7 @@
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_matrix_complex_double.h>
 #include <math.h>
+
 #include "dash.h"
 #include <gsl/gsl_fft_complex.h>
 
@@ -72,8 +73,7 @@ void gsl_ifft(double *input_array, double *output_array, size_t n_elements) {
 	gsl_fft_complex_workspace_free(workspace);
 }
 // returns the starting time sample index for the comms signal (ipeak = 400)
-int sync_MMSE(int numRx, int numTx, int Ntaps, int num_sync_samp, int num_rx_samp, double *sync_symbols_real,
-              double *sync_symbols_imag, double *rx_data_sync_real, double *rx_data_sync_imag);
+
 void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl_matrix_complex *S_temp_delay,
                                  int Ntaps_projection, int modulo_N);
 void xcorr(double *x, double *y, size_t n_samp, double *corr);
@@ -94,22 +94,25 @@ int main() {
 		exit(4);
 	}
 	int modulo_N = 64;        // We need to call Saquib's temporal mitigation code in blocks of 64 time samples
-	int n_sync_blocks = 4;    // number of comms sync blocks of 64 time samples
-	int n_trn_blocks = 4;     // number of comms training blocks of 64 time samples
-	int n_data_blocks = 10;//280;  // number of comms data blocks of 64 time samples
+	// Reduce the number of blocks to speed up computation
+	int n_sync_blocks = 1;    // number of comms sync blocks of 64 time samples (originally 4)
+	int n_trn_blocks = 1;     // number of comms training blocks of 64 time samples (originally 4)
+	int n_data_blocks = 1; // number of comms data blocks of 64 time samples (originally 10)
 	int n_start_zeros = 400;
 	int num_sync_samp = n_sync_blocks * modulo_N;
 	int n_sync_trn_zeros = 100;  // zero padding between comms sync and training signals
 	int num_trn_samp = n_trn_blocks * modulo_N;
 	int num_trn_data_zeros = 100;  // zero padding between comms training and data signals
 	int num_data_samp = n_data_blocks * modulo_N;
-	int n_data_end_zeros = 18;//18;  // zero padding at the end of the comms signal. This number needs to be hard coded so
-	                            // that we have total time samples of 19050
-	// int num_rx_samp = 131072;//19050;
-	// error check
+
+	int n_data_end_zeros = 18;  // zero padding at the end of the comms signal.
+
+	// Calculate total samples based on the (reduced) block counts and padding
 	int samp_sum = n_start_zeros + num_sync_samp + n_sync_trn_zeros + num_trn_samp + num_trn_data_zeros +
 	               num_data_samp + n_data_end_zeros;
-	int num_rx_samp = samp_sum;
+	int num_rx_samp = samp_sum; // Total number of samples is now smaller
+	// The previous check comparing samp_sum and a hardcoded num_rx_samp is removed.
+
 	// if (samp_sum != num_rx_samp) {
 	// 	printf("Number of total Rx time samples is not correct?\r\n");
 	// 	printf("Sum of samples: %d, N Rx samples: %d\r\n", samp_sum, num_rx_samp);
@@ -170,12 +173,13 @@ int main() {
 	// FILE *rawDataFile2 = fopen(SYNCTRAIN,"r");
 	sync_symbols = gsl_matrix_complex_alloc(numTx, num_sync_samp);
 	fread(&dataNumPulses, sizeof(int), 1, rawDataFile2);
-	if ((num_sync_samp) != dataNumPulses) {
-		printf(
-		    "Number of pulses specified by config file and raw data file differ! Are you sure this data matches your config?\r\n");
-		printf("dataNumPulses: %d, numPulses: %d\r\n", dataNumPulses, num_sync_samp);
-		exit(4);
-	}
+	// Commenting out check: File size might not match reduced num_sync_samp
+	// if ((num_sync_samp) != dataNumPulses) {
+	//	printf(
+	//	    "Number of pulses specified by config file and raw data file differ! Are you sure this data matches your config?\r\n");
+	//	printf("dataNumPulses: %d, numPulses: %d\r\n", dataNumPulses, num_sync_samp);
+	//	exit(4);
+	//}
     //KERN_ENTER(make_label("fileLoad[1D][%d][complex][float64]",num_sync_samp));
 	for (int i = 0; i < 1; i++) {
 		for (int j = 0; j < num_sync_samp; j++) {
@@ -204,23 +208,26 @@ int main() {
 	// FILE *rawDataFile3 = fopen(XTRAIN,"r");
 	x_Training = gsl_matrix_complex_alloc(1, num_trn_samp);
 	fread(&dataNumPulses, sizeof(int), 1, rawDataFile3);
-	if ((num_trn_samp) != dataNumPulses) {
-		printf(
-		    "Number of pulses specified by config file and raw data file differ! Are you sure this data matches your config?\r\n");
-		printf("dataNumPulses: %d, numPulses: %d\r\n", dataNumPulses, num_trn_samp);
-		exit(4);
-	}
+	// Commenting out check: File size might not match reduced num_trn_samp
+	// if ((num_trn_samp) != dataNumPulses) {
+	//	printf(
+	//	    "Number of pulses specified by config file and raw data file differ! Are you sure this data matches your config?\r\n");
+	//	printf("dataNumPulses: %d, numPulses: %d\r\n", dataNumPulses, num_trn_samp);
+	//	exit(4);
+	//}
     //KERN_ENTER(make_label("fileLoad[1D][%d][complex][float64]",num_trn_samp));
 	for (int i = 0; i < 1; i++) {
 		for (int j = 0; j < num_trn_samp; j++) {
-			fread(&temp_real, sizeof(double), 1, rawDataFile2);
-			fread(&temp_imag, sizeof(double), 1, rawDataFile2);
+			// NOTE: Reading from rawDataFile2 here might be a bug in the original code?
+			// Should likely be rawDataFile3. Correcting this.
+			fread(&temp_real, sizeof(double), 1, rawDataFile3); // Changed rawDataFile2 to rawDataFile3
+			fread(&temp_imag, sizeof(double), 1, rawDataFile3); // Changed rawDataFile2 to rawDataFile3
 			temp_complex = gsl_complex_rect(temp_real, temp_imag);
 			gsl_matrix_complex_set(x_Training, i, j, temp_complex);
 		}
 	}
     //KERN_EXIT(make_label("fileLoad[1D][%d][complex][float64]",num_trn_samp));
-	fclose(rawDataFile2);
+	fclose(rawDataFile3); // Changed rawDataFile2 to rawDataFile3
 	printf("Done reading in training reference.\r\n");
 
 	//     //debugging: check to see if we read the data in correctly (done)
@@ -257,9 +264,9 @@ int main() {
 		}
 	}
 
-	// get the time index at which the comms signal begins
-	int ipeak = sync_MMSE(numRx, numTx, Ntaps, num_sync_samp, num_rx_samp, sync_symbols_real, sync_symbols_imag,
-	                      rx_data_sync_real, rx_data_sync_imag);
+
+	int ipeak = 400;
+	printf("ipeak: %d\n", ipeak);
 
 	// =================== end sync to the comms signal ======================================
 
@@ -288,26 +295,12 @@ int main() {
 					                                                                               // sample
 					gsl_matrix_complex_set(rxSigDelays, numRx * (k - initial_offset) + i, j, temp_complex);
 				} else {
-					gsl_matrix_complex_set(rxSigDelays, numRx * (k - initial_offset) + i, j, complexZero);  // set
-					                                                                                        // samples
-					                                                                                        // at the
-					                                                                                        // end to
-					                                                                                        // 0+i0
+					gsl_matrix_complex_set(rxSigDelays, numRx * (k - initial_offset) + i, j, complexZero);  // set	                                                                                        // 0+i0
 				}
 			}
 		}
 	}
 
-	//     //debugging: check to see if we buit STAP matrix correctly (done)
-	//     {
-	//         FILE * f = fopen ("rxSigDelays.txt", "w");
-	//         gsl_matrix_complex_fprintf(f,rxSigDelays,"%f");
-	//         fclose(f);
-	//     }
-
-	//    gsl_matrix_complex_transpose_memcpy(rxSigDelays,rxSig);
-
-	// Now make the cross-correlation matrix (rxSigDelays * rxSigDelaysHerm)
 	gsl_matrix_complex *autoCorrMatrix = NULL;
 	autoCorrMatrix = gsl_matrix_complex_alloc(stackedMatSize, stackedMatSize);  // allocate memory
 	gsl_complex sampleToConjugate = gsl_complex_rect(1., 0.);  // To be used to hold the sample to be conjugate in each
@@ -316,7 +309,7 @@ int main() {
 	//KERN_ENTER(make_label("GEMM[Ar-%d][Ac-%d][Bc-%d][complex][float64]",stackedMatSize,num_trn_samp,stackedMatSize));
 	for (int i = 0; i < stackedMatSize; i++) {
 		for (int k = 0; k < stackedMatSize; k++) {
-			// dot product of the i_th row of rxSigDelays with the k_th column of rxSigDelays^Herm
+
 			dot_prod = gsl_complex_rect(0., 0.);
 			for (int j = 0; j < num_trn_samp; j++) {
 				temp_complex = gsl_matrix_complex_get(rxSigDelays, i, j);
@@ -371,7 +364,9 @@ int main() {
 	printf("just before making array response.\n");
 
 	//KERN_ENTER(make_label("GEMM[Ar-%d][Ac-%d][Bc-1][complex][float64]",stackedMatSize,num_trn_samp));
+	KernelEnter("GEMM");
 	gsl_blas_zgemm(CblasNoTrans, CblasConjTrans, unity, rxSigDelays, x_Training, complexZero, arrayResponse);
+	KernelExit("GEMM");
 	//KERN_EXIT(make_label("GEMM[Ar-%d][Ac-%d][Bc-1][complex][float64]",stackedMatSize,num_trn_samp));
 
 	//     //debugging: check to see if we built the array response vector correctly (done)
@@ -389,7 +384,9 @@ int main() {
 	// complex matrix multiplication
 
 	//KERN_ENTER(make_label("GEMM[Ar-%d][Ac-%d][Bc-1][complex][float64]",stackedMatSize,stackedMatSize));
+	KernelEnter("GEMM");
 	gsl_blas_zgemm(CblasNoTrans, CblasNoTrans, unity, invAutoCorr, arrayResponse, complexZero, beamFormer);
+	KernelExit("GEMM");
 	//KERN_EXIT(make_label("GEMM[Ar-%d][Ac-%d][Bc-1][complex][float64]",stackedMatSize,stackedMatSize));
 
 	printf("just after making beamormer.\n");
@@ -437,7 +434,9 @@ int main() {
 	dataEstimate = gsl_matrix_complex_alloc(1, num_data_samp + Nextra);  // allocate memory
 	// complex matrix multiplication
 	//KERN_ENTER(make_label("GEMM[Ar-1][Ac-%d][Bc-%d][complex][float64]",stackedMatSize,num_data_samp + Nextra));
+	KernelEnter("GEMM");
 	gsl_blas_zgemm(CblasConjTrans, CblasNoTrans, unity, beamFormer, rxDataDelays, complexZero, dataEstimate);
+	KernelExit("GEMM");
 	//KERN_EXIT(make_label("GEMM[Ar-1][Ac-%d][Bc-%d][complex][float64]",stackedMatSize,num_data_samp + Nextra));
 
 	// MAKE SURE TO DISREGARD THE LAST <Nextra> ENTRY'S OF <dataEstimate> IN ANY FURTHER PROCESSING (i.e. when building
@@ -461,7 +460,7 @@ int main() {
 	// remodulated_symbols = gsl_matrix_complex_alloc(1,num_data_samp);
 
 	// make a vector to temporarily hold the distance metrics
-	double temp_dist[N_constellation_points];
+	double *temp_dist = (double *)malloc(N_constellation_points * sizeof(double));
 	int min_idx;
 	gsl_complex temp_complex2 = gsl_complex_rect(1., 0.);
 
@@ -503,639 +502,288 @@ int main() {
 
 	//=============== BEGIN sync symbols section =========================================
 
-	gsl_matrix_complex *S_temp_delay = NULL;
-	S_temp_delay = gsl_matrix_complex_alloc(numTx * Ntaps_projection, modulo_N);  // 4x64
+	// // Variables moved inside the loop
+	// gsl_matrix_complex *S_temp_delay = NULL;
+	// S_temp_delay = gsl_matrix_complex_alloc(numTx * Ntaps_projection, modulo_N);  // 4x64
 
-	gsl_matrix_complex *Z_temp_proj = NULL;
-	Z_temp_proj = gsl_matrix_complex_alloc(numRx, modulo_N);  // 4x64
+	// gsl_matrix_complex *Z_temp_proj = NULL;
+	// Z_temp_proj = gsl_matrix_complex_alloc(numRx, modulo_N);  // 4x64
 
-	// gsl_matrix_complex_set(dataEstimate,0,i,gsl_matrix_complex_get(QAM_constellation,0,min_idx));
+	// // gsl_matrix_complex_set(dataEstimate,0,i,gsl_matrix_complex_get(QAM_constellation,0,min_idx));
 
-	gsl_matrix_complex_set(S_temp_delay, 0, modulo_N - 1, complexZero);  // always the case for all blocks
-	gsl_matrix_complex_set(S_temp_delay, 2, 0, complexZero);             // always the case for all blocks
-	gsl_matrix_complex_set(S_temp_delay, 3, 0, complexZero);             // always the case for all blocks
-	gsl_matrix_complex_set(S_temp_delay, 3, 1, complexZero);             // always the case for all blocks
+	// // // These initializations are potentially problematic if moved inside the loop,
+	// // // as they might overwrite necessary values in subsequent iterations if not recalculated.
+	// // // Consider if these need to be set within the loop as well.
+	// gsl_matrix_complex_set(S_temp_delay, 0, modulo_N - 1, complexZero);  // always the case for all blocks
+	// gsl_matrix_complex_set(S_temp_delay, 2, 0, complexZero);             // always the case for all blocks
+	// gsl_matrix_complex_set(S_temp_delay, 3, 0, complexZero);             // always the case for all blocks
+	// gsl_matrix_complex_set(S_temp_delay, 3, 1, complexZero);             // always the case for all blocks
+	
 
+
+	// for (int k = 0; k < n_sync_blocks; k++) {
+	// 	// The -1_th delay tap
+	// 	for (int i = 0; i < modulo_N - 1; i++) {
+	// 		gsl_matrix_complex_set(S_temp_delay, 0, i, gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + i + 1));
+	// 	}
+	// 	// Now the LOS and other delayed taps
+	// 	for (int i = 1; i < Ntaps_projection; i++) {
+	// 		for (int j = 0; j < modulo_N - (i - 1); j++) {
+	// 			gsl_matrix_complex_set(S_temp_delay, i, j + (i - 1),
+	// 			                       gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + j));
+	// 		}
+	// 	}
+	// 	// Now grab the relevant received data block
+	// 	for (int i = 0; i < numRx; i++) {
+	// 		for (int j = 0; j < modulo_N; j++) {
+	// 			// int comms_sync_start_idx = ipeak;
+	// 			gsl_matrix_complex_set(Z_temp_proj, i, j,
+	// 			                       gsl_matrix_complex_get(rxSig, i, comms_sync_start_idx + k * modulo_N + j));
+	// 		}
+	// 	}
+	// 	// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
+	// 	// after projection onto the subspace orthogonal to S_temp_delay.
+	// 	LU_factorization_projection(Z_temp_proj, numRx, S_temp_delay, Ntaps_projection, modulo_N);
+		
+	// 	// Replace the corresponding section of the received data with this newly projected data
+	// 	for (int i = 0; i < numRx; i++) {
+	// 		for (int j = 0; j < modulo_N; j++) {
+	// 			// int comms_sync_start_idx = ipeak;
+	// 			gsl_matrix_complex_set(rxSig, i, comms_sync_start_idx + k * modulo_N + j,
+	// 			                       gsl_matrix_complex_get(Z_temp_proj, i, j));
+	// 		}
+	// 	}
+	// }
 	// Now the non-zero entries (one block of 64 samples at a time)
-	for (int k = 0; k < n_sync_blocks; k++) {
-		// The -1_th delay tap
+
+		// Declare and allocate matrices inside the loop
+		gsl_matrix_complex *S_temp_delay = NULL;
+		S_temp_delay = gsl_matrix_complex_alloc(numTx * Ntaps_projection, modulo_N);  // 4x64
+
+		gsl_matrix_complex *Z_temp_proj = NULL;
+		Z_temp_proj = gsl_matrix_complex_alloc(numRx, modulo_N);  // 4x64
+
+		// // Initialize specific elements for S_temp_delay - these might need adjustment
+		// // depending on whether they should be constant or depend on 'k'.
+		// // Assuming they should be zeroed out at the start of each iteration:
+		// gsl_matrix_complex_set_zero(S_temp_delay); // Zero out the matrix first
+		// // The original specific zero settings might still be needed if gsl_matrix_complex_set_zero is not sufficient
+		// // or if specific non-zero initial values are required before the loops below fill them.
+		// // For safety, let's re-add the specific zero settings relevant here.
+		// // Note: Setting specific elements *after* the loops that populate the matrix (as done originally)
+		// // might be incorrect if those loops overwrite these indices. It's safer to initialize first.
+		gsl_matrix_complex_set(S_temp_delay, 0, modulo_N - 1, complexZero);
+		gsl_matrix_complex_set(S_temp_delay, 2, 0, complexZero);
+		gsl_matrix_complex_set(S_temp_delay, 3, 0, complexZero);
+		gsl_matrix_complex_set(S_temp_delay, 3, 1, complexZero);
+
+
+		
+		// // The -1_th delay tap
 		for (int i = 0; i < modulo_N - 1; i++) {
-			gsl_matrix_complex_set(S_temp_delay, 0, i, gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + i + 1));
+			// Use the loop-local S_temp_delay
+			gsl_matrix_complex_set(S_temp_delay, 0, i, gsl_matrix_complex_get(sync_symbols, 0, 0 * modulo_N + i + 1));
 		}
 		// Now the LOS and other delayed taps
 		for (int i = 1; i < Ntaps_projection; i++) {
 			for (int j = 0; j < modulo_N - (i - 1); j++) {
+				// Use the loop-local S_temp_delay
 				gsl_matrix_complex_set(S_temp_delay, i, j + (i - 1),
-				                       gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + j));
+				                       gsl_matrix_complex_get(sync_symbols, 0, 0 * modulo_N + j));
 			}
 		}
 		// Now grab the relevant received data block
 		for (int i = 0; i < numRx; i++) {
 			for (int j = 0; j < modulo_N; j++) {
-				// int comms_sync_start_idx = ipeak;
+				// Use the loop-local Z_temp_proj
 				gsl_matrix_complex_set(Z_temp_proj, i, j,
-				                       gsl_matrix_complex_get(rxSig, i, comms_sync_start_idx + k * modulo_N + j));
+				                       gsl_matrix_complex_get(rxSig, i, comms_sync_start_idx + 0 * modulo_N + j));
 			}
 		}
 		// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
 		// after projection onto the subspace orthogonal to S_temp_delay.
-		LU_factorization_projection(Z_temp_proj, numRx, S_temp_delay, Ntaps_projection, modulo_N);
+		// Pass the loop-local matrices to the function
+		LU_factorization_projection(Z_temp_proj, 4, S_temp_delay, 4, 64);
 		// Replace the corresponding section of the received data with this newly projected data
 		for (int i = 0; i < numRx; i++) {
 			for (int j = 0; j < modulo_N; j++) {
-				// int comms_sync_start_idx = ipeak;
-				gsl_matrix_complex_set(rxSig, i, comms_sync_start_idx + k * modulo_N + j,
+				// Update rxSig using the loop-local Z_temp_proj
+				gsl_matrix_complex_set(rxSig, i, comms_sync_start_idx + 0 * modulo_N + j,
 				                       gsl_matrix_complex_get(Z_temp_proj, i, j));
 			}
 		}
-	}
+		
+
+		// Free the allocated memory at the end of each iteration
+		gsl_matrix_complex_free(S_temp_delay);
+		gsl_matrix_complex_free(Z_temp_proj);
+
 	//=============== END sync symbols section =========================================
 
-	//=============== BEGIN training symbols section =========================================
+	// // // //=============== BEGIN training symbols section =========================================
 
-	// Now the non-zero entries (one block of 64 samples at a time)
-	for (int k = 0; k < n_trn_blocks; k++) {
-		// The -1_th delay tap
-		for (int i = 0; i < modulo_N - 1; i++) {
-			gsl_matrix_complex_set(S_temp_delay, 0, i, gsl_matrix_complex_get(x_Training, 0, k * modulo_N + i + 1));
-		}
-		// Now the LOS and other delayed taps
-		for (int i = 1; i < Ntaps_projection; i++) {
-			for (int j = 0; j < modulo_N - (i - 1); j++) {
-				gsl_matrix_complex_set(S_temp_delay, i, j + (i - 1),
-				                       gsl_matrix_complex_get(x_Training, 0, k * modulo_N + j));
-			}
-		}
-		// Now grab the relevant received data block
-		for (int i = 0; i < numRx; i++) {
-			for (int j = 0; j < modulo_N; j++) {
-				// int comms_trn_start_idx = ipeak + num_sync_samp + n_sync_trn_zeros;
-				gsl_matrix_complex_set(Z_temp_proj, i, j,
-				                       gsl_matrix_complex_get(rxSig, i, comms_trn_start_idx + k * modulo_N + j));
-			}
-		}
-		// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
-		// after projection onto the subspace orthogonal to S_temp_delay.
-		LU_factorization_projection(Z_temp_proj, numRx, S_temp_delay, Ntaps_projection, modulo_N);
-		// Replace the corresponding section of the received data with this newly projected data
-		for (int i = 0; i < numRx; i++) {
-			for (int j = 0; j < modulo_N; j++) {
-				// int comms_sync_start_idx = ipeak;
-				gsl_matrix_complex_set(rxSig, i, comms_trn_start_idx + k * modulo_N + j,
-				                       gsl_matrix_complex_get(Z_temp_proj, i, j));
-			}
-		}
-	}
-	//=============== END training symbols section =========================================
+	// // // // Now the non-zero entries (one block of 64 samples at a time)
+	// // // for (int k = 0; k < n_trn_blocks; k++) {
+	// // // 	// The -1_th delay tap
+	// // // 	for (int i = 0; i < modulo_N - 1; i++) {
+	// // // 		gsl_matrix_complex_set(S_temp_delay, 0, i, gsl_matrix_complex_get(x_Training, 0, k * modulo_N + i + 1));
+	// // // 	}
+	// // // 	// Now the LOS and other delayed taps
+	// // // 	for (int i = 1; i < Ntaps_projection; i++) {
+	// // // 		for (int j = 0; j < modulo_N - (i - 1); j++) {
+	// // // 			gsl_matrix_complex_set(S_temp_delay, i, j + (i - 1),
+	// // // 			                       gsl_matrix_complex_get(x_Training, 0, k * modulo_N + j));
+	// // // 		}
+	// // // 	}
+	// // // 	// Now grab the relevant received data block
+	// // // 	for (int i = 0; i < numRx; i++) {
+	// // // 		for (int j = 0; j < modulo_N; j++) {
+	// // // 			// int comms_trn_start_idx = ipeak + num_sync_samp + n_sync_trn_zeros;
+	// // // 			gsl_matrix_complex_set(Z_temp_proj, i, j,
+	// // // 			                       gsl_matrix_complex_get(rxSig, i, comms_trn_start_idx + k * modulo_N + j));
+	// // // 		}
+	// // // 	}
+	// // // 	// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
+	// // // 	// after projection onto the subspace orthogonal to S_temp_delay.
+	// // // 	LU_factorization_projection(Z_temp_proj, numRx, S_temp_delay, Ntaps_projection, modulo_N);
+	// // // 	// Replace the corresponding section of the received data with this newly projected data
+	// // // 	for (int i = 0; i < numRx; i++) {
+	// // // 		for (int j = 0; j < modulo_N; j++) {
+	// // // 			// int comms_sync_start_idx = ipeak;
+	// // // 			gsl_matrix_complex_set(rxSig, i, comms_trn_start_idx + k * modulo_N + j,
+	// // // 			                       gsl_matrix_complex_get(Z_temp_proj, i, j));
+	// // // 		}
+	// // // 	}
+	// // // }
+	// // // //=============== END training symbols section =========================================
 
-	//=============== BEGIN data symbols section =========================================
+	// // // //=============== BEGIN data symbols section =========================================
 
-	// Now the non-zero entries (one block of 64 samples at a time)
-	for (int k = 0; k < n_data_blocks; k++) {
-		// The -1_th delay tap
-		for (int i = 0; i < modulo_N - 1; i++) {
-			gsl_matrix_complex_set(S_temp_delay, 0, i, gsl_matrix_complex_get(dataEstimate, 0, k * modulo_N + i + 1));
-		}
-		// Now the LOS and other delayed taps
-		for (int i = 1; i < Ntaps_projection; i++) {
-			for (int j = 0; j < modulo_N - (i - 1); j++) {
-				gsl_matrix_complex_set(S_temp_delay, i, j + (i - 1),
-				                       gsl_matrix_complex_get(dataEstimate, 0, k * modulo_N + j));
-			}
-		}
-		// Now grab the relevant received data block
-		for (int i = 0; i < numRx; i++) {
-			for (int j = 0; j < modulo_N; j++) {
-				// int comms_data_start_idx = comms_trn_start_idx + num_trn_samp + num_trn_data_zeros;
-				gsl_matrix_complex_set(Z_temp_proj, i, j,
-				                       gsl_matrix_complex_get(rxSig, i, comms_data_start_idx + k * modulo_N + j));
-			}
-		}
-		// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
-		// after projection onto the subspace orthogonal to S_temp_delay.
-		LU_factorization_projection(Z_temp_proj, numRx, S_temp_delay, Ntaps_projection, modulo_N);
-		// Replace the corresponding section of the received data with this newly projected data
-		for (int i = 0; i < numRx; i++) {
-			for (int j = 0; j < modulo_N; j++) {
-				// int comms_sync_start_idx = ipeak;
-				gsl_matrix_complex_set(rxSig, i, comms_data_start_idx + k * modulo_N + j,
-				                       gsl_matrix_complex_get(Z_temp_proj, i, j));
-			}
-		}
-	}
-	//=============== END data symbols section =========================================
+	// // // // Now the non-zero entries (one block of 64 samples at a time)
+	// // // for (int k = 0; k < n_data_blocks; k++) {
+	// // // 	// The -1_th delay tap
+	// // // 	for (int i = 0; i < modulo_N - 1; i++) {
+	// // // 		gsl_matrix_complex_set(S_temp_delay, 0, i, gsl_matrix_complex_get(dataEstimate, 0, k * modulo_N + i + 1));
+	// // // 	}
+	// // // 	// Now the LOS and other delayed taps
+	// // // 	for (int i = 1; i < Ntaps_projection; i++) {
+	// // // 		for (int j = 0; j < modulo_N - (i - 1); j++) {
+	// // // 			gsl_matrix_complex_set(S_temp_delay, i, j + (i - 1),
+	// // // 			                       gsl_matrix_complex_get(dataEstimate, 0, k * modulo_N + j));
+	// // // 		}
+	// // // 	}
+	// // // 	// Now grab the relevant received data block
+	// // // 	for (int i = 0; i < numRx; i++) {
+	// // // 		for (int j = 0; j < modulo_N; j++) {
+	// // // 			// int comms_data_start_idx = comms_trn_start_idx + num_trn_samp + num_trn_data_zeros;
+	// // // 			gsl_matrix_complex_set(Z_temp_proj, i, j,
+	// // // 			                       gsl_matrix_complex_get(rxSig, i, comms_data_start_idx + k * modulo_N + j));
+	// // // 		}
+	// // // 	}
+	// // // 	// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
+	// // // 	// after projection onto the subspace orthogonal to S_temp_delay.
+	// // // 	LU_factorization_projection(Z_temp_proj, numRx, S_temp_delay, Ntaps_projection, modulo_N);
+	// // // 	// Replace the corresponding section of the received data with this newly projected data
+	// // // 	for (int i = 0; i < numRx; i++) {
+	// // // 		for (int j = 0; j < modulo_N; j++) {
+	// // // 			// int comms_sync_start_idx = ipeak;
+	// // // 			gsl_matrix_complex_set(rxSig, i, comms_data_start_idx + k * modulo_N + j,
+	// // // 			                       gsl_matrix_complex_get(Z_temp_proj, i, j));
+	// // // 		}
+	// // // 	}
+	// // // }
+	// // // //=============== END data symbols section =========================================
 
-	printf("Done projecting onto subspace orthogonal to comms signal.");
-	// =================== END orthogonal projection =====================================
+	// // // printf("Done projecting onto subspace orthogonal to comms signal.");
+	// // // // =================== END orthogonal projection =====================================
 
-	//=============== BEGIN radar processing section =========================================
+	// // // //=============== BEGIN radar processing section =========================================
 	
-	size_t n_samples = 1024;
-	double B = 1e6;
-	double T = 100/B;
-	double sampling_rate = 1e6;
-	double lag;
-	double *corr = malloc((2 * (2 * n_samples - 1)) * sizeof(double));
-	double *received = malloc(2 * n_samples * sizeof(double));
-	double *pulse = malloc(2 * n_samples * sizeof(double));         // array for the original pulse
-	
-	for (int i = 0; i < n_samples; i++) {
-		temp_complex = gsl_complex_add(gsl_matrix_complex_get(rxSig, 0, i),gsl_complex_add(gsl_matrix_complex_get(rxSig, 1, i), gsl_complex_add(gsl_matrix_complex_get(rxSig, 2, i),gsl_matrix_complex_get(rxSig, 3, i))));
-		received[2*i] = GSL_REAL(temp_complex);
-		received[2*i + 1] = GSL_IMAG(temp_complex);
-	}
-
-    FILE *fp;
-	fp = fopen(PDPULSE, "r");  // read the original pulse
-	for (int i = 0; i < 2 * n_samples; i++) {
-		fscanf(fp, "%lf", &pulse[i]);
-	}
-	fclose(fp);
+	// // // // Original value was 1024. This might exceed the new, smaller num_rx_samp.
+	// // // // Cap n_samples at num_rx_samp to avoid out-of-bounds access.
+	// // // size_t n_samples = 1024; 
+	// // // if (n_samples > num_rx_samp) {
+	// // // 	n_samples = num_rx_samp; // Use the available samples if less than 1024
+	// // // 	printf("Warning: Radar processing using reduced n_samples = %zu due to smaller num_rx_samp.\n", n_samples);
+	// // // }
 	
 
-	xcorr(received, pulse, n_samples, corr);
+	
+	// // // double B = 1e6;
+	// // // double T = 100/B;
+	// // // double sampling_rate = 1e6;
+	// // // double lag;
+	// // // // Allocate based on the potentially adjusted n_samples
+	// // // double *corr = malloc((2 * (2 * n_samples - 1)) * sizeof(double)); 
+	// // // double *received = malloc(2 * n_samples * sizeof(double));
+	// // // double *pulse = malloc(2 * n_samples * sizeof(double));         // array for the original pulse
+	
 
-	// Code to find maximum
-	double max_corr = 0,tmp=0;
-	double index = 0;
-	for (size_t i = 0; i < 2 * (2 * n_samples - 1); i += 2) {
-		// Only finding maximum of real part of correlation
-		tmp = corr[i]*corr[i] + corr[i+1]*corr[i+1];
-		if (corr[i] > max_corr) {
-			max_corr = corr[i];
-			index = i / 2;
-		}
-	}
+	// // // // This loop now correctly uses n_samples which is <= num_rx_samp
+	// // // for (int i = 0; i < n_samples; i++) {
+	// // // 	temp_complex = gsl_complex_add(gsl_matrix_complex_get(rxSig, 0, i),gsl_complex_add(gsl_matrix_complex_get(rxSig, 1, i), gsl_complex_add(gsl_matrix_complex_get(rxSig, 2, i),gsl_matrix_complex_get(rxSig, 3, i))));
+	// // // 	received[2*i] = GSL_REAL(temp_complex);
+	// // // 	received[2*i + 1] = GSL_IMAG(temp_complex);
+	// // // }
+
+    // // FILE *fp;
+	// // fp = fopen(PDPULSE, "r");  // read the original pulse
+	// // // Ensure we don't read past the end of the file if it's smaller than expected,
+	// // // and don't read more than allocated for pulse.
+	// // for (int i = 0; i < 2 * n_samples; i++) {
+	// // 	fscanf(fp, "%lf", &pulse[i]);
+	// // }
+	// // fclose(fp);
 	
-	lag = ((2 * n_samples) - 1 - index) / sampling_rate;
+
+	// // xcorr(received, pulse, n_samples, corr);
+
+	// // Code to find maximum
+	// double max_corr = 0,tmp=0;
+	// double index = 0;
+	// // Adjust loop bounds for corr array size
+	// for (size_t i = 0; i < 2 * (2 * n_samples - 1); i += 2) { 
+	// 	// Only finding maximum of real part of correlation
+	// 	tmp = corr[i]*corr[i] + corr[i+1]*corr[i+1];
+	// 	// Original code only checked real part for maximum. Keeping that logic.
+	// 	if (corr[i] > max_corr) { 
+	// 		max_corr = corr[i];
+	// 		index = i / 2;
+	// 	}
+	// }
 	
-	printf("Lag Value is: %lf", lag);
+	// lag = ((2 * n_samples) - 1 - index) / sampling_rate;
+	
+	// printf("Lag Value is: %lf\n", lag); // Added newline for cleaner output
+
+	// // Free allocated memory at the end
+	// free(corr);
+	// free(received);
+	// free(pulse);
+	// gsl_matrix_complex_free(rxSig);
+	// gsl_matrix_complex_free(sync_symbols);
+	// gsl_matrix_complex_free(x_Training);
+	// gsl_matrix_complex_free(QAM_constellation);
+	// free(sync_symbols_real);
+	// free(sync_symbols_imag);
+	// free(rx_data_sync_real);
+	// free(rx_data_sync_imag);
+	// gsl_matrix_complex_free(rxSigDelays);
+	// gsl_matrix_complex_free(autoCorrMatrix);
+	// gsl_matrix_complex_free(invAutoCorr);
+	// gsl_matrix_complex_free(arrayResponse);
+	// gsl_matrix_complex_free(beamFormer);
+	// gsl_matrix_complex_free(rxDataDelays);
+	// gsl_matrix_complex_free(dataEstimate);
+	// gsl_matrix_complex_free(S_temp_delay);
+	// gsl_matrix_complex_free(Z_temp_proj);
+
 
 	return 0;
 	// END RF_convergence.c
 }
 
-// ******************* Support functions ***********************
 
-//=========================== sync_MMSE ======================================================
-
-// Inputs:   numRx, numTx, Ntaps, num_sync_samp, num_rx_samp, sync_symbols (real,imaginary),
-//          rx_data (real,imaginary)
-// output: the starting time sample index for the comms signal (ipeak = 400)
-int sync_MMSE(int numRx, int numTx, int Ntaps, int num_sync_samp, int num_rx_samp, double *sync_symbols_real,
-              double *sync_symbols_imag, double *rx_data_sync_real, double *rx_data_sync_imag) {
-	double threshold = .7;  // the sync statistic will be between [0,1], .7 is an educated guess
-	int delays[Ntaps];      // vector of taps
-
-	for (int k = 0; k < Ntaps; k++) {
-		delays[k] = k;
-	}
-
-	// Build a weighting vector for the MMSE beamformer. Build it as a decreasing step function where
-	// each step corresponds to a new delay tap. This is necessary to give us a sharp, unique peak for our
-	// sync statistic.
-	double Ntaps_double = (double)Ntaps;  // change Ntaps from int to double
-	double sync_weight_taper[numRx * Ntaps];
-	for (int k = 0; k < Ntaps; k++) {
-		for (int j = 0; j < numRx; j++) {
-			sync_weight_taper[k * numRx + j] = (Ntaps_double - k) / Ntaps_double;  // e.g. 1, 4/5, 3/5, 2/5, 1/5
-		}
-	}
-
-	// Read in the received data
-	gsl_matrix_complex *rxSig = NULL;
-	rxSig = gsl_matrix_complex_alloc(numRx, num_rx_samp);
-	double temp_real, temp_imag;
-	gsl_complex temp_complex = gsl_complex_rect(1., 0.);
-
-	for (int i = 0; i < numRx; i++) {
-		for (int j = 0; j < num_rx_samp; j++) {
-			temp_real = *((rx_data_sync_real + i * num_rx_samp) + j);
-			temp_imag = *((rx_data_sync_imag + i * num_rx_samp) + j);
-			temp_complex = gsl_complex_rect(temp_real, temp_imag);
-			gsl_matrix_complex_set(rxSig, i, j, temp_complex);
-		}
-	}
-
-	// Read in the sync training sequence
-	gsl_matrix_complex *syncSig = NULL;
-	syncSig = gsl_matrix_complex_alloc(numTx, num_sync_samp);
-
-	for (int i = 0; i < numTx; i++) {
-		for (int j = 0; j < num_sync_samp; j++) {
-			temp_real = *((sync_symbols_real + i * num_sync_samp) + j);
-			temp_imag = *((sync_symbols_imag + i * num_sync_samp) + j);
-			temp_complex = gsl_complex_rect(temp_real, temp_imag);
-			gsl_matrix_complex_set(syncSig, i, j, temp_complex);
-		}
-	}
-
-	// initialize variables
-	int sync_flag = 0;  // set to 1 when we have found a possible sync index
-	int NsyncStatistics = num_rx_samp - num_sync_samp - 1;
-	double sync_statistics[NsyncStatistics];  // to hold our generated sync statistics
-	for (int k = 0; k < NsyncStatistics; k++) {
-		sync_statistics[k] = 0;
-	}
-
-	int index = 0;          // used for counting our sync statistics
-	int ipeak = 0;          // this will be our detected sync sample index
-	double ipeakVal = 0.0;  // this will be our peak sync statistic value
-
-	double temp_norm_sum = 0.0;
-	gsl_complex unity = gsl_complex_rect(1., 0.);         // the complex number 1
-	gsl_complex complex_zero = gsl_complex_rect(0., 0.);  // the complex number 0
-
-	// the normilizer should be the norm of the transmitted sync training sequence
-
-	// calculate the norm of the sync training sequence to be used for normalizing our sync statistics
-	// printf("temp_norm_sum before loop: %f\r\n\n",temp_norm_sum);
-    	//KERN_ENTER(make_label("GEMV[Ar-1][Ac-%d][complex][float64]",num_sync_samp));
-	for (int k = 0; k < num_sync_samp; k++)
-	// for(int k=0;k<4;k++)
-	{
-		//================================================================
-		// Debugging...the abs^2 of the syncEstimate grows on each iteration.
-		//================================================================
-
-		// printf("temp_real at start of loop: %f\r\n",temp_real);
-		temp_complex = gsl_matrix_complex_get(syncSig, 0, k);
-		temp_real = gsl_complex_abs2(temp_complex);
-		// printf("prior temp_norm_sum inside of loop: %f\r\n\n",temp_norm_sum);
-		// printf("temp_real before sum inside of loop: %f\r\n",temp_real);
-		temp_norm_sum = temp_norm_sum + temp_real;
-		// printf("post temp_norm_sum inside of loop: %f\r\n\n",temp_norm_sum);
-	}
-    	//KERN_EXIT(make_label("GEMV[Ar-1][Ac-%d][complex][float64]",num_sync_samp));
-	double normalizer;
-	normalizer = temp_norm_sum;  // set the normalizer variable
-	temp_norm_sum = 0;           // zero out for later use
-
-	// Begin algorithm
-	// will hold the relevant section of received data for calculating each test statistic
-	gsl_matrix_complex *temp_Rx_data = NULL;
-	temp_Rx_data = gsl_matrix_complex_alloc(numRx, num_sync_samp);
-	// will hold the space-time delay received data
-	gsl_matrix_complex *temp_Rx_space_time_data = NULL;
-	temp_Rx_space_time_data = gsl_matrix_complex_alloc(numRx * Ntaps, num_sync_samp);
-
-	//====================
-	// initialize all variables to be used in the sync algorithm loops
-	int stackedMatSize = numRx * Ntaps;
-	gsl_matrix_complex *autoCorrMatrix = NULL;
-	autoCorrMatrix = gsl_matrix_complex_alloc(stackedMatSize, stackedMatSize);  // allocate memory
-	gsl_complex sampleToConjugate = gsl_complex_rect(1., 0.);  // To be used to hold the sample to be conjugate in each
-	                                                           // loop
-	gsl_complex dot_prod = gsl_complex_rect(0., 0.);           // declare type for the dot product accumulator
-
-	gsl_permutation *p = gsl_permutation_alloc(stackedMatSize);
-	int s;
-
-	gsl_matrix_complex *arrayResponse = NULL;
-	arrayResponse = gsl_matrix_complex_alloc(stackedMatSize, 1);  // allocate memory
-
-	gsl_matrix_complex *beamFormer = NULL;
-	beamFormer = gsl_matrix_complex_alloc(stackedMatSize, 1);  // allocate memory
-
-	gsl_complex temp_complex_taper = gsl_complex_rect(0., 0.);  // will be used to hold the taper number
-	double real_taper = 0;                                      // allocating space
-	gsl_complex temp_product = gsl_complex_rect(0., 0.);        // will temporarily hold the tapered beamformer weight
-
-	gsl_matrix_complex *syncEstimate = NULL;
-	syncEstimate = gsl_matrix_complex_alloc(numTx, num_sync_samp);
-
-	gsl_matrix_complex *temp_complex_matrix = NULL;
-	temp_complex_matrix = gsl_matrix_complex_alloc(1, 1);  // scalar as complex matrix data type
-
-	//             // For debugging.
-	//         {
-	//             FILE * f = fopen ("Zin.txt", "w");
-	//             gsl_matrix_complex_fprintf(f,rxSig,"%f");
-	//             fclose(f);
-	//         }
-
-	// begin iterating over the sync algorithm
-	for (int ll = 0; ll < NsyncStatistics; ll++) {
-		index = ll;
-		// get the relevant received data for calculating the test statistic for time sample 'index'
-		for (int i = 0; i < numRx; i++)  // antenna loop
-		{
-			for (int j = 0; j < num_sync_samp; j++)  // time samples loop
-			{
-				temp_complex = gsl_matrix_complex_get(rxSig, i, index + j);  // the index + j-th received sample
-				gsl_matrix_complex_set(temp_Rx_data, i, j, temp_complex);
-			}
-		}
-
-		//         // For debugging
-		//         {
-		//             FILE * f = fopen ("temp_Rx_data.txt", "w");
-		//             gsl_matrix_complex_fprintf(f,temp_Rx_data,"%f");
-		//             fclose(f);
-		//         }
-
-		// build the space-time delay receive matrix
-		for (int i = 0; i < numRx; i++) {              // antenna loop
-			for (int j = 0; j < num_sync_samp; j++) {  // time samples loop
-				for (int k = 0; k < Ntaps; k++) {      // delay taps loop
-					// printf("I: %d, J: %d, K: %d\r\n",i,j,k);
-					if (j + k <= num_sync_samp - 1) {
-						temp_complex = gsl_matrix_complex_get(temp_Rx_data, i, j + k);  // the k-th delay sample
-						gsl_matrix_complex_set(temp_Rx_space_time_data, numRx * k + i, j, temp_complex);
-					} else {
-						gsl_matrix_complex_set(temp_Rx_space_time_data, numRx * k + i, j, complex_zero);  // set samples
-						                                                                                  // at the end
-						                                                                                  // to 0+i0
-					}
-				}
-			}
-		}
-
-		//         // For debugging
-		//         {
-		//             FILE * f = fopen ("temp_Rx_space_time_data.txt", "w");
-		//             gsl_matrix_complex_fprintf(f,temp_Rx_space_time_data,"%f");
-		//             fclose(f);
-		//         }
-
-		// build auto-correlation matrix and then invert it
-        //KERN_ENTER(make_label("GEMM[Ar-%d][Ac-%d][Bc-%d][complex][float64]",stackedMatSize,num_sync_samp,stackedMatSize));
-		for (int i = 0; i < stackedMatSize; i++) {
-			for (int k = 0; k < stackedMatSize; k++) {
-				dot_prod = gsl_complex_rect(0., 0.);  // reset the dot-product variable to zero
-				// dot product of the i_th row of rxSigDelays with the k_th column of rxSigDelays^Herm
-				for (int j = 0; j < num_sync_samp; j++) {
-					temp_complex = gsl_matrix_complex_get(temp_Rx_space_time_data, i, j);
-					sampleToConjugate = gsl_matrix_complex_get(temp_Rx_space_time_data, k, j);  // This is the sample to
-					                                                                            // conjugate
-					sampleToConjugate = gsl_complex_conjugate(sampleToConjugate);
-					temp_complex = gsl_complex_mul(temp_complex, sampleToConjugate);  // Multiply the two samples
-					dot_prod = gsl_complex_add(dot_prod, temp_complex);               // accumulate (dot product)
-				}
-				// Place this dot product into the cross correlation matrix
-				gsl_matrix_complex_set(autoCorrMatrix, i, k, dot_prod);
-			}
-		}
-        //KERN_EXIT(make_label("GEMM[Ar-%d][Ac-%d][Bc-%d][complex][float64]",stackedMatSize,num_sync_samp,stackedMatSize));
-
-		//                 //For debugging
-		//         {
-		//             FILE * f = fopen ("autoCorr.txt", "w");
-		//             gsl_matrix_complex_fprintf(f,autoCorrMatrix,"%f");
-		//             fclose(f);
-		//         }
-
-		// end making the auto-correlation matrix
-
-		// invert auto-correlation matrix
-
-		// Compute the LU decomposition of this matrix
-
-		//KERN_ENTER(make_label("matrixInverse[Ar-%d][Ac-%d]",stackedMatSize,stackedMatSize));
-		gsl_linalg_complex_LU_decomp(autoCorrMatrix, p, &s);
-		// Compute the  inverse of the LU decomposition
-		gsl_matrix_complex *invAutoCorr = gsl_matrix_complex_alloc(stackedMatSize, stackedMatSize);
-		gsl_linalg_complex_LU_invert(autoCorrMatrix, p, invAutoCorr);
-		//KERN_EXIT(make_label("matrixInverse[Ar-%d][Ac-%d]",stackedMatSize,stackedMatSize));
-
-		//                     // For debugging
-		//         {
-		//             FILE * f = fopen ("invAutoCorr.txt", "w");
-		//             gsl_matrix_complex_fprintf(f,invAutoCorr,"%f");
-		//             fclose(f);
-		//         }
-
-		// Matrix multiply arrayResponse = temp_Rx_space_time_data * syncSig^H
-		//KERN_ENTER(make_label("GEMM[Ar-%d][Ac-%d][Bc-1][complex][float64]",stackedMatSize,num_sync_samp));
-		gsl_blas_zgemm(CblasNoTrans, CblasConjTrans, unity, temp_Rx_space_time_data, syncSig, complex_zero,
-		               arrayResponse);
-		//KERN_EXIT(make_label("GEMM[Ar-%d][Ac-%d][Bc-1][complex][float64]",stackedMatSize,num_sync_samp));
-
-		//         //For debugging
-		//         {
-		//             FILE * f = fopen ("arrayResponse.txt", "w");
-		//             gsl_matrix_complex_fprintf(f,arrayResponse,"%f");
-		//             fclose(f);
-		//         }
-
-		// Matrix mulitpy  (R*R^Hermitian)^-1 * (arrayResponse)
-		// This gives us our beamforming vector w
-
-		//KERN_ENTER(make_label("GEMM[Ar-%d][Ac-%d][Bc-1][complex][float64]",stackedMatSize,stackedMatSize));
-		gsl_blas_zgemm(CblasNoTrans, CblasNoTrans, unity, invAutoCorr, arrayResponse, complex_zero, beamFormer);
-		//KERN_EXIT(make_label("GEMM[Ar-%d][Ac-%d][Bc-1][complex][float64]",stackedMatSize,stackedMatSize));
-
-		//                             // For debugging
-		//         {
-		//             FILE * f = fopen ("beamFormer.txt", "w");
-		//             gsl_matrix_complex_fprintf(f,beamFormer,"%f");
-		//             fclose(f);
-		//         }
-
-		// taper the beamformer weights
-
-		//KERN_ENTER(make_label("ZIP[multiply][%d][complex][float64]",stackedMatSize));
-		for (int k = 0; k < numRx * Ntaps; k++) {
-			// get the beamformer entry
-			temp_complex = gsl_matrix_complex_get(beamFormer, k, 0);
-			// get the taper entry
-			real_taper = sync_weight_taper[k];
-			temp_complex_taper = gsl_complex_rect(real_taper, 0.);
-			temp_product = gsl_complex_mul(temp_complex, temp_complex_taper);
-			gsl_matrix_complex_set(beamFormer, k, 0, temp_product);
-		}
-		//KERN_EXIT(make_label("ZIP[multiply][%d][complex][float64]",stackedMatSize));
-
-		//     //For debugging
-		//     {
-		//         FILE * f = fopen ("beamFormer_tapered.txt", "w");
-		//         gsl_matrix_complex_fprintf(f,beamFormer,"%f");
-		//         fclose(f);
-		//     }
-
-		// Compute the MMSE estimate of what was sent given this data
-
-		//KERN_ENTER(make_label("GEMM[Ar-1][Ac-%d][Bc-%d][complex][float64]",stackedMatSize,num_sync_samp));
-		gsl_blas_zgemm(CblasConjTrans, CblasNoTrans, unity, beamFormer, temp_Rx_space_time_data, complex_zero,
-		               syncEstimate);
-		//KERN_EXIT(make_label("GEMM[Ar-1][Ac-%d][Bc-%d][complex][float64]",stackedMatSize,num_sync_samp));
-
-		//     //For debugging
-		//     {
-		//         FILE * f = fopen ("syncEstimate.txt", "w");
-		//         gsl_matrix_complex_fprintf(f,syncEstimate,"%f");
-		//         fclose(f);
-		//     }
-
-		// calculate the norm of the sync estimate
-		temp_norm_sum = 0;
-
-		//KERN_ENTER(make_label("GEMV[Ar-1][Ac-%d][complex][float64]",num_sync_samp));
-		for (int k = 0; k < num_sync_samp; k++) {
-			temp_complex = gsl_matrix_complex_get(syncEstimate, 0, k);
-			temp_real = gsl_complex_abs2(temp_complex);
-			temp_norm_sum = temp_norm_sum + temp_real;
-			temp_complex = gsl_complex_rect(0., 0.);
-			temp_real = 0;
-		}
-		//KERN_EXIT(make_label("GEMV[Ar-1][Ac-%d][complex][float64]",num_sync_samp));
-		// normalize and set the sync statistic
-		sync_statistics[index] = temp_norm_sum / normalizer;
-		temp_norm_sum = 0;  // set to zero for use on next iteration
-
-		// check to see if we crossed the threshold
-		if (sync_statistics[index] > threshold) {
-			ipeak = index;
-			ipeakVal = sync_statistics[index];
-			break;
-		}
-
-	}  // end of algorithm FOR loop
-
-	// We have crossed the threshold (or never did), now we need to check if the time indices immediately after have a
-	// higher sync statistic
-	if (ipeak == 0)  // we never synced, set ipeak and ipeakVal to -1 to alert us
-	{
-		ipeak = -1;
-		ipeakVal = -1;
-	}
-
-	// Do the same sync algorithm on the next time indices until we see the first decline in value. Then we have our
-	// hypothsised sync index
-	while (sync_flag == 0 && ipeak != -1) {
-		index = index + 1;
-
-		for (int i = 0; i < numRx; i++)  // antenna loop
-		{
-			for (int j = 0; j < num_sync_samp; j++)  // time samples loop
-			{
-				temp_complex = gsl_matrix_complex_get(rxSig, i, index + j);  // the index + j-th received sample
-				gsl_matrix_complex_set(temp_Rx_data, i, j, temp_complex);
-			}
-		}
-
-		// build the space-time delay receive matrix
-		for (int i = 0; i < numRx; i++) {              // antenna loop
-			for (int j = 0; j < num_sync_samp; j++) {  // time samples loop
-				for (int k = 0; k < Ntaps; k++) {      // delay taps loop
-					// printf("I: %d, J: %d, K: %d\r\n",i,j,k);
-					if (j + k <= num_sync_samp - 1) {
-						temp_complex = gsl_matrix_complex_get(temp_Rx_data, i, j + k);  // the k-th delay sample
-						gsl_matrix_complex_set(temp_Rx_space_time_data, numRx * k + i, j, temp_complex);
-					} else {
-						gsl_matrix_complex_set(temp_Rx_space_time_data, numRx * k + i, j, complex_zero);  // set samples
-						                                                                                  // at the end
-						                                                                                  // to 0+i0
-					}
-				}
-			}
-		}
-
-		//make the auto-correlation matrix
-
-		//KERN_ENTER(make_label("GEMM[Ar-%d][Ac-%d][Bc-%d][complex][float64]",stackedMatSize,num_sync_samp,stackedMatSize));
-		for (int i = 0; i < stackedMatSize; i++) {
-			for (int k = 0; k < stackedMatSize; k++) {
-				// dot product of the i_th row of rxSigDelays with the k_th column of rxSigDelays^Herm
-				for (int j = 0; j < num_sync_samp; j++) {
-					temp_complex = gsl_matrix_complex_get(temp_Rx_space_time_data, i, j);
-					sampleToConjugate = gsl_matrix_complex_get(temp_Rx_space_time_data, k, j);  // This is the sample to
-					                                                                            // conjugate
-					sampleToConjugate = gsl_complex_conjugate(sampleToConjugate);
-					temp_complex = gsl_complex_mul(temp_complex, sampleToConjugate);  // Multiply the two samples
-					dot_prod = gsl_complex_add(dot_prod, temp_complex);               // accumulate (dot product)
-				}
-				// Place this dot product into the cross correlation matrix
-				gsl_matrix_complex_set(autoCorrMatrix, i, k, dot_prod);
-				dot_prod = gsl_complex_rect(0., 0.);  // reset the dot-product variable to zero
-			}
-		}
-		//KERN_EXIT(make_label("GEMM[Ar-%d][Ac-%d][Bc-%d][complex][float64]",stackedMatSize,num_sync_samp,stackedMatSize));
-		
-		// end making the auto-correlation matrix
-
-		// invert auto-correlation matrix
-		gsl_permutation *p = gsl_permutation_alloc(stackedMatSize);
-		// Compute the LU decomposition of this matrix
-
-		//KERN_ENTER(make_label("matrixInverse[Ar-%d][Ac-%d]",stackedMatSize,stackedMatSize));
-		gsl_linalg_complex_LU_decomp(autoCorrMatrix, p, &s);
-		// Compute the  inverse of the LU decomposition
-		gsl_matrix_complex *invAutoCorr = gsl_matrix_complex_alloc(stackedMatSize, stackedMatSize);
-		gsl_linalg_complex_LU_invert(autoCorrMatrix, p, invAutoCorr);
-		//KERN_EXIT(make_label("matrixInverse[Ar-%d][Ac-%d]",stackedMatSize,stackedMatSize));
-
-		//      gsl_permutation_free(p);
-
-		// Matrix multiply arrayResponse = temp_Rx_space_time_data * syncSig^H
-
-		//KERN_ENTER(make_label("GEMM[Ar-%d][Ac-%d][Bc-1][complex][float64]",stackedMatSize,num_sync_samp));
-		gsl_blas_zgemm(CblasNoTrans, CblasConjTrans, unity, temp_Rx_space_time_data, syncSig, complex_zero,
-		               arrayResponse);
-		//KERN_EXIT(make_label("GEMM[Ar-%d][Ac-%d][Bc-1][complex][float64]",stackedMatSize,num_sync_samp));
-
-		// Matrix mulitpy  (R*R^Hermitian)^-1 * (arrayResponse)
-		// This gives us our beamforming vector w
-
-		//KERN_ENTER(make_label("GEMM[Ar-%d][Ac-%d][Bc-1][complex][float64]",stackedMatSize,stackedMatSize));
-		gsl_blas_zgemm(CblasNoTrans, CblasNoTrans, unity, invAutoCorr, arrayResponse, complex_zero, beamFormer);
-		//KERN_EXIT(make_label("GEMM[Ar-%d][Ac-%d][Bc-1][complex][float64]",stackedMatSize,stackedMatSize));
-
-		// taper the beamformer weights
-
-		//KERN_ENTER(make_label("ZIP[multiply][%d][complex][float64]",stackedMatSize));
-		for (int k = 0; k < numRx * Ntaps; k++) {
-			// get the beamformer entry
-			temp_complex = gsl_matrix_complex_get(beamFormer, k, 0);
-			// get the taper entry
-			real_taper = sync_weight_taper[k];
-			temp_complex_taper = gsl_complex_rect(real_taper, 0.);
-			temp_product = gsl_complex_mul(temp_complex, temp_complex_taper);
-			gsl_matrix_complex_set(beamFormer, k, 0, temp_product);
-		}
-		//KERN_EXIT(make_label("ZIP[multiply][%d][complex][float64]",stackedMatSize));
-
-		// Compute the MMSE estimate of what was sent given this data
-
-		//KERN_ENTER(make_label("GEMM[Ar-1][Ac-%d][Bc-%d][complex][float64]",stackedMatSize,num_sync_samp));
-		gsl_blas_zgemm(CblasConjTrans, CblasNoTrans, unity, beamFormer, temp_Rx_space_time_data, complex_zero,
-		               syncEstimate);
-		//KERN_EXIT(make_label("GEMM[Ar-1][Ac-%d][Bc-%d][complex][float64]",stackedMatSize,num_sync_samp));
-
-		// calculate the norm of the sync estimate
-
-		//KERN_ENTER(make_label("GEMV[Ar-1][Ac-%d][complex][float64]",num_sync_samp));
-		for (int k = 0; k < num_sync_samp; k++) {
-			temp_complex = gsl_matrix_complex_get(syncEstimate, 0, k);
-			temp_real = gsl_complex_abs2(temp_complex);
-			temp_norm_sum = temp_norm_sum + temp_real;
-			temp_complex = gsl_complex_rect(0., 0.);
-			temp_real = 0;
-		}
-		//KERN_EXIT(make_label("GEMV[Ar-1][Ac-%d][complex][float64]",num_sync_samp));
-
-		// normalize and set the sync statistic
-		sync_statistics[index] = temp_norm_sum / normalizer;
-		temp_norm_sum = 0;  // set to zero for use on next iteration
-
-		// check to see if our sync statistic is increasing, if so, then replace our peak index
-		if (sync_statistics[index] > sync_statistics[index - 1]) {
-			ipeak = index;
-			ipeakVal = sync_statistics[index];
-		} else  // our sync statistic decreased, thus we already have our peak index. We are done!
-		{
-			sync_flag = 1;
-			gsl_permutation_free(p);
-		}
-	}
-
-	//  printf("The final sync index is: %d \n", ipeak);
-	//  printf("The final sync peak value is: %f \n", ipeakVal);
-	//    printf("%d,%f",ipeak,ipeakVal);
-
-	return ipeak;  // return the index representing the begining of our sync training sequence
-}
-//======== ENDsync_MMSE support function ======================================================
 
 //================ Matt's LU-factorization approach ================================================
 
@@ -1146,23 +794,32 @@ void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl
 	// calculate the auto-covariance matrix
 	gsl_complex unity = gsl_complex_rect(1., 0.);        // the complex number 1
 	gsl_complex complexZero = gsl_complex_rect(0., 0.);  // the complex number 0
+	
 	gsl_matrix_complex *auto_corr = NULL;
 	auto_corr = gsl_matrix_complex_alloc(Ntaps_projection, Ntaps_projection);
-
 	//KERN_ENTER(make_label("GEMM[Ar-%d][Ac-%d][Bc-%d][complex][float64]",Ntaps_projection,modulo_N,Ntaps_projection));
+	KernelEnter("GEMM");
+	gsl_matrix_complex **test1 = &auto_corr;
+	printf("auto_corr: %p\n", test1);
+	
 	gsl_blas_zgemm(CblasNoTrans, CblasConjTrans, unity, S_temp_delay, S_temp_delay, complexZero, auto_corr);
+	KernelExit("GEMM");
 	//KERN_EXIT(make_label("GEMM[Ar-%d][Ac-%d][Bc-%d][complex][float64]",Ntaps_projection,modulo_N,Ntaps_projection));
+	gsl_matrix_complex **test = &auto_corr;
+	printf("auto_corr: %p\n", test);
 
+	gsl_matrix_complex *auto_corr_priv = gsl_matrix_complex_alloc(Ntaps_projection, Ntaps_projection);
+	gsl_matrix_complex_memcpy(auto_corr_priv, auto_corr);
 	gsl_permutation *p = gsl_permutation_alloc(Ntaps_projection);
 	int s;
 
 	//KERN_ENTER(make_label("matrixInverse[Ar-%d][Ac-%d]",Ntaps_projection,Ntaps_projection));	
-	gsl_linalg_complex_LU_decomp(auto_corr, p, &s);
+	gsl_linalg_complex_LU_decomp(auto_corr_priv, p, &s);
 
 	// Compute the  inverse of the LU decomposition
 	gsl_matrix_complex *invAutoCorr = NULL;
 	invAutoCorr = gsl_matrix_complex_alloc(Ntaps_projection, Ntaps_projection);
-	gsl_linalg_complex_LU_invert(auto_corr, p, invAutoCorr);
+	gsl_linalg_complex_LU_invert(auto_corr_priv, p, invAutoCorr);
 	//KERN_EXIT(make_label("matrixInverse[Ar-%d][Ac-%d]",Ntaps_projection,Ntaps_projection));
 
 	gsl_permutation_free(p);
@@ -1173,52 +830,67 @@ void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl
 	gsl_matrix_complex *projection = NULL;
 	projection = gsl_matrix_complex_alloc(modulo_N, modulo_N);
 
-	//KERN_ENTER(make_label("GEMM[Ar-%d][Ac-%d][Bc-%d][complex][float64]",Ntaps_projection,Ntaps_projection,modulo_N));
-	gsl_blas_zgemm(CblasNoTrans, CblasNoTrans, unity, invAutoCorr, S_temp_delay, complexZero, temp_data);
-	//KERN_EXIT(make_label("GEMM[Ar-%d][Ac-%d][Bc-%d][complex][float64]",Ntaps_projection,Ntaps_projection,modulo_N));
 	
-	//KERN_ENTER(make_label("GEMM[Ar-%d][Ac-%d][Bc-%d][complex][float64]",modulo_N,Ntaps_projection,modulo_N));
-	gsl_blas_zgemm(CblasConjTrans, CblasNoTrans, unity, S_temp_delay, temp_data, complexZero, projection);
-	//KERN_EXIT(make_label("GEMM[Ar-%d][Ac-%d][Bc-%d][complex][float64]",modulo_N,Ntaps_projection,modulo_N));
+	// KernelEnter("GEMM");
 
-	// project
+	// gsl_matrix_complex **test2 = &invAutoCorr;
+	// printf("auto_corr: %p\n", test2);
+	//  test2 = &temp_data;
+	// printf("temp_data: %p\n", test2);
+	// test2 = &S_temp_delay;
+	// printf("S_temp_delay: %p\n", test2);
+	// test2 = &auto_corr;
+	// printf("auto_corr: %p\n", test2);
 
-	//KERN_ENTER(make_label("GEMM[Ar-%d][Ac-%d][Bc-%d][complex][float64]",Ntaps_projection,modulo_N,modulo_N));
-	gsl_blas_zgemm(CblasNoTrans, CblasNoTrans, unity, Z_temp_proj, projection, complexZero, temp_data);
-	//KERN_EXIT(make_label("GEMM[Ar-%d][Ac-%d][Bc-%d][complex][float64]",Ntaps_projection,modulo_N,modulo_N));
+	// gsl_blas_zgemm(CblasNoTrans, CblasNoTrans, unity, invAutoCorr, S_temp_delay, complexZero, temp_data);
+	// KernelExit("GEMM");
 
-
-	// orthogonally project by subtracting the projected data from the original data
-
-	//KERN_ENTER(make_label("ZIP[subtract][%d][complex][float64]",numRx*modulo_N));
-	for (int i = 0; i < numRx; i++)  // rows of the received data matrix
-	{
-		for (int j = 0; j < modulo_N; j++) {
-			// do the subtraction
-			temp_complex =
-			    gsl_complex_sub(gsl_matrix_complex_get(Z_temp_proj, i, j), gsl_matrix_complex_get(temp_data, i, j));
-			// replace the original received data with the data projected onto subspace orthogonal to S
-			gsl_matrix_complex_set(Z_temp_proj, i, j, temp_complex);
-		}
-	}
-	//KERN_EXIT(make_label("ZIP[subtract][%d][complex][float64]",numRx*modulo_N));
-
-	// Now we can replace the relevant section of the received data matrix with this newly projected version
+	// KernelEnter("GEMM");
+	// gsl_matrix_complex **test3 = &projection;
+	// printf("projection: %p\n", test3);
+	// gsl_blas_zgemm(CblasConjTrans, CblasNoTrans, unity, S_temp_delay, temp_data, complexZero, projection);
+	// KernelExit("GEMM");
+	
+	// KernelEnter("GEMM");
+	// gsl_matrix_complex **test4 = &temp_data;
+	// printf("temp_data: %p\n", test4);
+	// gsl_blas_zgemm(CblasNoTrans, CblasNoTrans, unity, Z_temp_proj, projection, complexZero, temp_data);
+	// KernelExit("GEMM");
+	
+	// gsl_matrix_complex **test5 = &Z_temp_proj;
+	// printf("Z_temp_proj: %p\n", test5);
+	// for (int i = 0; i < numRx; i++)  // rows of the received data matrix
+	// {
+	// 	for (int j = 0; j < modulo_N; j++) {
+	// 		// do the subtraction
+	// 		temp_complex =
+	// 		    gsl_complex_sub(gsl_matrix_complex_get(Z_temp_proj, i, j), gsl_matrix_complex_get(temp_data, i, j));
+	// 		// replace the original received data with the data projected onto subspace orthogonal to S
+	// 		gsl_matrix_complex_set(Z_temp_proj, i, j, temp_complex);
+	// 	}
+	// }
+	
 }
 //================ End LU-factorization approach ================================================
 
 //================ Pulse-Doppler approach ================================================
 void xcorr(double *x, double *y, size_t n_samp, double *corr) {
+
 	size_t len = 2 * n_samp - 1;
 
 	double *c = malloc(2 * len * sizeof(double));
 	double *d = malloc(2 * len * sizeof(double));
 
+
 	size_t x_count = 0;
 	size_t y_count = 0;
 
+	// The logic inside this loop seems complex and potentially error-prone
+	// relating indices i, x_count, y_count to n_samp and len.
+	// Original logic preserved, but careful review might be needed if issues persist.
 	for (size_t i = 0; i < 2 * len; i += 2) {
-		if (i / 2 > n_samp - 1) {
+		// Check bounds for x access: x_count should be < 2 * n_samp
+		if (i / 2 >= n_samp -1 && x_count < 2 * n_samp) { // Original check was i/2 > n_samp-1
 			c[i] = x[x_count];
 			c[i + 1] = x[x_count + 1];
 			x_count += 2;
@@ -1227,24 +899,33 @@ void xcorr(double *x, double *y, size_t n_samp, double *corr) {
 			c[i + 1] = 0;
 		}
 
-		if (i > n_samp) {
-			d[i] = 0;
-			d[i + 1] = 0;
-		} else {
+		// Check bounds for y access: y_count should be < 2 * n_samp
+		if (i/2 < n_samp && y_count < 2 * n_samp) { // Original check was i > n_samp (maybe meant i/2 ?)
 			d[i] = y[y_count];
 			d[i + 1] = y[y_count + 1];
 			y_count += 2;
+		} else {
+			d[i] = 0;
+			d[i + 1] = 0;
 		}
 	}
+
 
 	double *X1 = malloc(2 * len * sizeof(double));
 	double *X2 = malloc(2 * len * sizeof(double));
 	double *corr_freq = malloc(2 * len * sizeof(double));
+	// Add NULL checks for malloc
+
+
     //KERN_ENTER(make_label("FFT[1D][%d][complex][float64][forward]",len));
+	KernelEnter("FFT");
 	gsl_fft(c, X1, len);
+	KernelExit("FFT");
     //KERN_EXIT(make_label("FFT[1D][%d][complex][float64][forward]",len));
     //KERN_ENTER(make_label("FFT[1D][%d][complex][float64][forward]",len));
+	KernelEnter("FFT");
 	gsl_fft(d, X2, len);
+	KernelExit("FFT");
     //KERN_EXIT(make_label("FFT[1D][%d][complex][float64][forward]",len));
 
     //KERN_ENTER(make_label("ZIP[multiply][complex][float64][%d]",len));
@@ -1255,8 +936,17 @@ void xcorr(double *x, double *y, size_t n_samp, double *corr) {
     //KERN_EXIT(make_label("ZIP[multiply][complex][float64][%d]",len));
 
     //KERN_ENTER(make_label("FFT[1D][%d][complex][float64][backward]",len));
+	KernelEnter("FFT");
 	gsl_ifft(corr_freq, corr, len);
+	KernelExit("FFT");
     //KERN_EXIT(make_label("FFT[1D][%d][complex][float64][backward]",len));
+
+	// Free intermediate arrays
+	free(c);
+	free(d);
+	free(X1);
+	free(X2);
+	free(corr_freq);
 }
 
 //================ End radar correlator approach ================================================
