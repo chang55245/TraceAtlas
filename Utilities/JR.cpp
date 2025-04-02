@@ -76,16 +76,16 @@ void Process(string &key, string &value)
     //kernel enter concludes the previous node, kernel or non-kernel
     if (key == "KernelEnter")
     {
+        
         // kernel enter bb need to be the start bb of current node
         if (CheckNodeCreationIsLegal()){
         nodeInfo newNode = nodeInfo{currentLabel,kernelInstanceBBs};
         nodeKiidMap[kernelInstanceIdCounter] = newNode;
-
         kernelInstanceIdCounter++;   
-        currentLabel = value;
         kernelInstanceBBs.clear();
         // kernelInstanceBBs.insert(currentblock);
     }
+        currentLabel = value;
     }
     //kernel exit concludes the previous kernel node
     else if (key == "KernelExit")
