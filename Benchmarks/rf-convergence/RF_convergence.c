@@ -74,7 +74,7 @@ void gsl_ifft(double *input_array, double *output_array, size_t n_elements) {
 }
 // returns the starting time sample index for the comms signal (ipeak = 400)
 
-void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl_matrix_complex *S_temp_delay,
+void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl_matrix_complex *S_temp_delay,gsl_matrix_complex *S_temp_delay_cpy,
                                  int Ntaps_projection, int modulo_N);
 void xcorr(double *x, double *y, size_t n_samp, double *corr);
 
@@ -522,13 +522,16 @@ int main() {
 
 	// Allocate the array of pointers first
 	gsl_matrix_complex **S_temp_delay = malloc(sizeof(gsl_matrix_complex*) * n_sync_blocks);
+	gsl_matrix_complex **S_temp_delay_cpy = malloc(sizeof(gsl_matrix_complex*) * n_sync_blocks);
 	gsl_matrix_complex **Z_temp_proj = malloc(sizeof(gsl_matrix_complex*) * n_sync_blocks);
-
+	// int* helper_array = malloc(sizeof(int) * 10);
+	// helper_array[0] = 0;
 
 	// Allocate each individual matrix and perform initialization
 	for (int k = 0; k < n_sync_blocks; k++) {
 		// Allocate the actual matrix for this index
 		S_temp_delay[k] = gsl_matrix_complex_alloc(numTx * Ntaps_projection, modulo_N); // 4x64
+		S_temp_delay_cpy[k] = gsl_matrix_complex_alloc(numTx * Ntaps_projection, modulo_N); // 4x64
 		Z_temp_proj[k] = gsl_matrix_complex_alloc(numRx, modulo_N);                 // 4x64
 
 		
@@ -540,13 +543,22 @@ int main() {
 		gsl_matrix_complex_set(S_temp_delay[k], 3, 0, complexZero);             // always the case for all blocks
 		gsl_matrix_complex_set(S_temp_delay[k], 3, 1, complexZero);             // always the case for all blocks
 
+		gsl_matrix_complex_set_zero(S_temp_delay_cpy[k]); 
+		gsl_matrix_complex_set(S_temp_delay_cpy[k], 0, modulo_N - 1, complexZero);  // always the case for all blocks
+		gsl_matrix_complex_set(S_temp_delay_cpy[k], 2, 0, complexZero);             // always the case for all blocks
+		gsl_matrix_complex_set(S_temp_delay_cpy[k], 3, 0, complexZero);             // always the case for all blocks
+		gsl_matrix_complex_set(S_temp_delay_cpy[k], 3, 1, complexZero);             // always the case for all blocks
+
 		for (int i = 0; i < modulo_N - 1; i++) {
 			gsl_matrix_complex_set(S_temp_delay[k], 0, i, gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + i + 1));
+			gsl_matrix_complex_set(S_temp_delay_cpy[k], 0, i, gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + i + 1));
 		}
 		// Now the LOS and other delayed taps
 		for (int i = 1; i < Ntaps_projection; i++) {
 			for (int j = 0; j < modulo_N - (i - 1); j++) {
 				gsl_matrix_complex_set(S_temp_delay[k], i, j + (i - 1),
+				                       gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + j));
+				gsl_matrix_complex_set(S_temp_delay_cpy[k], i, j + (i - 1),
 				                       gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + j));
 			}
 		}
@@ -557,74 +569,88 @@ int main() {
 				                       gsl_matrix_complex_get(rxSig, i, comms_sync_start_idx + k * modulo_N + j));
 			}
 		}
+		
 	}
+	printf("Finished initializing S_temp_delay and Z_temp_proj.\n");
 
 	// Now the non-zero entries (one block of 64 samples at a time)
 	// The main processing loop remains largely the same, using [k] index
 	for (int k = 0; k < n_sync_blocks; k++) {
 		NonKernelSplit();
+		printf("Finished NonKernelSplit.\n");
 		// The -1_th delay tap
 		// Note: The S_temp_delay[k] initialization for specific zero elements was moved to the allocation loop above.
 		// Ensure the loops below correctly populate the non-zero elements without relying on prior state other than the zeros just set.
 		
 		// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
 		// after projection onto the subspace orthogonal to S_temp_delay.
-		LU_factorization_projection(Z_temp_proj[k], numRx, S_temp_delay[k], Ntaps_projection, modulo_N);
+		LU_factorization_projection(Z_temp_proj[k], 4, S_temp_delay[k],S_temp_delay_cpy[k], 4, 64);
 		// Replace the corresponding section of the received data with this newly projected data
-		for (int i = 0; i < numRx; i++) {
-			for (int j = 0; j < modulo_N; j++) {
-				gsl_matrix_complex_set(rxSig, i, comms_sync_start_idx + k * modulo_N + j,
-				                       gsl_matrix_complex_get(Z_temp_proj[k], i, j));
-			}
-		}
+		// for (int i = 0; i < numRx; i++) {
+		// 	for (int j = 0; j < modulo_N; j++) {
+		// 		gsl_matrix_complex_set(rxSig, i, comms_sync_start_idx + k * modulo_N + j,
+		// 		                       gsl_matrix_complex_get(Z_temp_proj[k], i, j));
+		// 	}
+		// }
+		// helper_array[0] = 2;
 		NonKernelSplit();
 	}
 
-	// Free the allocated memory
-	for (int k = 0; k < n_sync_blocks; k++) {
-		gsl_matrix_complex_free(S_temp_delay[k]);
-		gsl_matrix_complex_free(Z_temp_proj[k]);
-	}
-	free(S_temp_delay);
-	free(Z_temp_proj);
 
-	//=============== END sync symbols section =========================================
+	// printf("Starting training symbols section.helper_array[0] = %d\n", helper_array[0]);
+	// gsl_matrix_complex **S_temp_delay1 = malloc(sizeof(gsl_matrix_complex*) * n_sync_blocks);
+	// gsl_matrix_complex **Z_temp_proj1 = malloc(sizeof(gsl_matrix_complex*) * n_sync_blocks);
+	// gsl_matrix_complex ** rxSig_res = &rxSig;
+	// for (int k = 0; k < n_trn_blocks; k++) {
+	// 	// Allocate the actual matrix for this index
+	// 	S_temp_delay1[k] = gsl_matrix_complex_alloc(numTx * Ntaps_projection, modulo_N); // 4x64
+	// 	Z_temp_proj1[k] = gsl_matrix_complex_alloc(numRx, modulo_N);                 // 4x64
 
-	// // // //=============== BEGIN training symbols section =========================================
+	// 	gsl_matrix_complex_set_zero(S_temp_delay1[k]); 
+	// 	gsl_matrix_complex_set(S_temp_delay1[k], 0, modulo_N - 1, complexZero);  // always the case for all blocks
+	// 	gsl_matrix_complex_set(S_temp_delay1[k], 2, 0, complexZero);             // always the case for all blocks
+	// 	gsl_matrix_complex_set(S_temp_delay1[k], 3, 0, complexZero);             // always the case for all blocks
+	// 	gsl_matrix_complex_set(S_temp_delay1[k], 3, 1, complexZero);             // always the case for all blocks
 
-	// // // // Now the non-zero entries (one block of 64 samples at a time)
-	// // // for (int k = 0; k < n_trn_blocks; k++) {
-	// // // 	// The -1_th delay tap
-	// // // 	for (int i = 0; i < modulo_N - 1; i++) {
-	// // // 		gsl_matrix_complex_set(S_temp_delay, 0, i, gsl_matrix_complex_get(x_Training, 0, k * modulo_N + i + 1));
-	// // // 	}
-	// // // 	// Now the LOS and other delayed taps
-	// // // 	for (int i = 1; i < Ntaps_projection; i++) {
-	// // // 		for (int j = 0; j < modulo_N - (i - 1); j++) {
-	// // // 			gsl_matrix_complex_set(S_temp_delay, i, j + (i - 1),
-	// // // 			                       gsl_matrix_complex_get(x_Training, 0, k * modulo_N + j));
-	// // // 		}
-	// // // 	}
-	// // // 	// Now grab the relevant received data block
-	// // // 	for (int i = 0; i < numRx; i++) {
-	// // // 		for (int j = 0; j < modulo_N; j++) {
-	// // // 			// int comms_trn_start_idx = ipeak + num_sync_samp + n_sync_trn_zeros;
-	// // // 			gsl_matrix_complex_set(Z_temp_proj, i, j,
-	// // // 			                       gsl_matrix_complex_get(rxSig, i, comms_trn_start_idx + k * modulo_N + j));
-	// // // 		}
-	// // // 	}
-	// // // 	// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
-	// // // 	// after projection onto the subspace orthogonal to S_temp_delay.
-	// // // 	LU_factorization_projection(Z_temp_proj, numRx, S_temp_delay, Ntaps_projection, modulo_N);
-	// // // 	// Replace the corresponding section of the received data with this newly projected data
-	// // // 	for (int i = 0; i < numRx; i++) {
-	// // // 		for (int j = 0; j < modulo_N; j++) {
-	// // // 			// int comms_sync_start_idx = ipeak;
-	// // // 			gsl_matrix_complex_set(rxSig, i, comms_trn_start_idx + k * modulo_N + j,
-	// // // 			                       gsl_matrix_complex_get(Z_temp_proj, i, j));
-	// // // 		}
-	// // // 	}
-	// // // }
+	// 	for (int i = 0; i < modulo_N - 1; i++) {
+	// 		gsl_matrix_complex_set(S_temp_delay1[k], 0, i, gsl_matrix_complex_get(x_Training, 0, k * modulo_N + i + 1));
+	// 	}
+	// 	// Now the LOS and other delayed taps
+	// 	for (int i = 1; i < Ntaps_projection; i++) {
+	// 		for (int j = 0; j < modulo_N - (i - 1); j++) {
+	// 			gsl_matrix_complex_set(S_temp_delay1[k], i, j + (i - 1),
+	// 			                       gsl_matrix_complex_get(x_Training, 0, k * modulo_N + j));
+	// 		}
+	// 	}
+	// 	// Now grab the relevant received data block
+	// 	for (int i = 0; i < numRx; i++) {
+	// 		for (int j = 0; j < modulo_N; j++) {
+	// 			// int comms_trn_start_idx = ipeak + num_sync_samp + n_sync_trn_zeros;
+	// 			gsl_matrix_complex_set(Z_temp_proj1[k], i, j,
+	// 			                       gsl_matrix_complex_get(*rxSig_res, i, comms_trn_start_idx + k * modulo_N + j));
+	// 		}
+	// 	}
+	// }
+
+
+	// for (int k = 0; k < n_trn_blocks; k++) {
+	// 	NonKernelSplit();
+
+	// 	// The -1_th delay tap
+		
+	// 	// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
+	// 	// after projection onto the subspace orthogonal to S_temp_delay.
+	// 	LU_factorization_projection(Z_temp_proj1[k], numRx, S_temp_delay1[k], Ntaps_projection, modulo_N);
+	// 	// Replace the corresponding section of the received data with this newly projected data
+	// 	for (int i = 0; i < numRx; i++) {
+	// 		for (int j = 0; j < modulo_N; j++) {
+	// 			// int comms_sync_start_idx = ipeak;
+	// 			gsl_matrix_complex_set(rxSig, i, comms_trn_start_idx + k * modulo_N + j,
+	// 			                       gsl_matrix_complex_get(Z_temp_proj1[k], i, j));
+	// 		}
+	// 	}
+	// 	NonKernelSplit();
+	// }
 	// // // //=============== END training symbols section =========================================
 
 	// // // //=============== BEGIN data symbols section =========================================
@@ -784,15 +810,15 @@ void TransToDashGemm(CBLAS_TRANSPOSE_t TransA, CBLAS_TRANSPOSE_t TransB, const g
 	
 	for (int i = 0; i < A->size1; i++) {
 		for (int j = 0; j < A->size2; j++) {
-			A_real[i * A->size2 + j] = GSL_REAL(gsl_matrix_complex_get(A, i, j));
-			A_imag[i * A->size2 + j] = GSL_IMAG(gsl_matrix_complex_get(A, i, j));
+			A_real[i * A->size2 + j] = 0;
+			A_imag[i * A->size2 + j] = 0;
 		}
 	}
 
 	for(int i = 0; i < B->size1; i++) {
 		for(int j = 0; j < B->size2; j++) {
-			B_real[i * B->size2 + j] = GSL_REAL(gsl_matrix_complex_get(B, i, j));
-			B_imag[i * B->size2 + j] = GSL_IMAG(gsl_matrix_complex_get(B, i, j));
+			B_real[i * B->size2 + j] = 0;
+			B_imag[i * B->size2 + j] = 0;
 		}
 	}
 
@@ -801,16 +827,16 @@ void TransToDashGemm(CBLAS_TRANSPOSE_t TransA, CBLAS_TRANSPOSE_t TransB, const g
 	// this if statement causes problem because the loop induction variables are not known at compile time, they are struct not variables. needs further supports
 
 	// if (alpha.dat[0] == unity.dat[0] && alpha.dat[1] == unity.dat[1] && beta.dat[0] == complexZero.dat[0] && beta.dat[1] == complexZero.dat[1]) 
-	{
+	
 
 		// printf("a rows = %d \n", A->size1);
 		// printf("a cols = %d \n", A->size2);
 		// printf("b rows = %d \n", B->size1);
 		// printf("b cols = %d \n", B->size2);
-		KernelEnter("GEMM");
+		// KernelEnter("GEMM");
 		DASH_GEMM(A_real, A_imag, B_real, B_imag, C_real, C_imag, A->size1, A->size2, B->size2);
-		KernelExit("GEMM");
-	}
+		// KernelExit("GEMM");
+	
 
 	for (int i = 0; i < C->size1; i++) {
 		for (int j = 0; j < C->size2; j++) {
@@ -821,7 +847,7 @@ void TransToDashGemm(CBLAS_TRANSPOSE_t TransA, CBLAS_TRANSPOSE_t TransB, const g
 }
 //================ Matt's LU-factorization approach ================================================
 
-void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl_matrix_complex *S_temp_delay,
+void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl_matrix_complex *S_temp_delay,gsl_matrix_complex *S_temp_delay_cpy,
                                  int Ntaps_projection, int modulo_N) {
 	gsl_complex temp_complex = gsl_complex_rect(1., 0.);
 
@@ -831,56 +857,58 @@ void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl
 	gsl_matrix_complex *auto_corr = NULL;
 	auto_corr = gsl_matrix_complex_alloc(Ntaps_projection, Ntaps_projection);
 
-    // KernelEnter("GEMM");
-	TransToDashGemm(CblasNoTrans, CblasConjTrans, unity, S_temp_delay, S_temp_delay, complexZero, auto_corr);
+    KernelEnter("GEMM");
+	printf("S_temp_delay = %p\n", S_temp_delay);
+	printf("S_temp_delay_cpy = %p\n", S_temp_delay_cpy);
+	TransToDashGemm(CblasNoTrans, CblasConjTrans, unity, S_temp_delay, S_temp_delay_cpy, complexZero, S_temp_delay_cpy);
+	gsl_blas_zgemm(CblasNoTrans, CblasConjTrans, unity, S_temp_delay, S_temp_delay, complexZero, auto_corr);
+    KernelExit("GEMM");
 
-    // KernelExit("GEMM");
-
-	gsl_permutation *p = gsl_permutation_alloc(Ntaps_projection);
-	int s;
+	// gsl_permutation *p = gsl_permutation_alloc(Ntaps_projection);
+	// int s;
 
 		
-	gsl_linalg_complex_LU_decomp(auto_corr, p, &s);
+	// gsl_linalg_complex_LU_decomp(auto_corr, p, &s);
 
-	// Compute the  inverse of the LU decomposition
-	gsl_matrix_complex *invAutoCorr = NULL;
-	invAutoCorr = gsl_matrix_complex_alloc(Ntaps_projection, Ntaps_projection);
-	gsl_linalg_complex_LU_invert(auto_corr, p, invAutoCorr);
-
-
-	gsl_permutation_free(p);
-
-	// Do the orthogonal projection
-	gsl_matrix_complex *temp_data = NULL;
-	temp_data = gsl_matrix_complex_alloc(Ntaps_projection, modulo_N);
-	gsl_matrix_complex *projection = NULL;
-	projection = gsl_matrix_complex_alloc(modulo_N, modulo_N);
+	// // Compute the  inverse of the LU decomposition
+	// gsl_matrix_complex *invAutoCorr = NULL;
+	// invAutoCorr = gsl_matrix_complex_alloc(Ntaps_projection, Ntaps_projection);
+	// gsl_linalg_complex_LU_invert(auto_corr, p, invAutoCorr);
 
 
+	// gsl_permutation_free(p);
 
-	TransToDashGemm(CblasNoTrans, CblasNoTrans, unity, invAutoCorr, S_temp_delay, complexZero, temp_data);
+	// // Do the orthogonal projection
+	// gsl_matrix_complex *temp_data = NULL;
+	// temp_data = gsl_matrix_complex_alloc(Ntaps_projection, modulo_N);
+	// gsl_matrix_complex *projection = NULL;
+	// projection = gsl_matrix_complex_alloc(modulo_N, modulo_N);
 
 
 
-	TransToDashGemm(CblasConjTrans, CblasNoTrans, unity, S_temp_delay, temp_data, complexZero, projection);
+	// TransToDashGemm(CblasNoTrans, CblasNoTrans, unity, invAutoCorr, S_temp_delay, complexZero, temp_data);
 
 
-	TransToDashGemm(CblasNoTrans, CblasNoTrans, unity, Z_temp_proj, projection, complexZero, temp_data);
+
+	// TransToDashGemm(CblasConjTrans, CblasNoTrans, unity, S_temp_delay, temp_data, complexZero, projection);
 
 
-	// orthogonally project by subtracting the projected data from the original data
+	// TransToDashGemm(CblasNoTrans, CblasNoTrans, unity, Z_temp_proj, projection, complexZero, temp_data);
 
 
-	for (int i = 0; i < numRx; i++)  // rows of the received data matrix
-	{
-		for (int j = 0; j < modulo_N; j++) {
-			// do the subtraction
-			temp_complex =
-			    gsl_complex_sub(gsl_matrix_complex_get(Z_temp_proj, i, j), gsl_matrix_complex_get(temp_data, i, j));
-			// replace the original received data with the data projected onto subspace orthogonal to S
-			gsl_matrix_complex_set(Z_temp_proj, i, j, temp_complex);
-		}
-	}
+	// // orthogonally project by subtracting the projected data from the original data
+
+
+	// for (int i = 0; i < numRx; i++)  // rows of the received data matrix
+	// {
+	// 	for (int j = 0; j < modulo_N; j++) {
+	// 		// do the subtraction
+	// 		temp_complex =
+	// 		    gsl_complex_sub(gsl_matrix_complex_get(Z_temp_proj, i, j), gsl_matrix_complex_get(temp_data, i, j));
+	// 		// replace the original received data with the data projected onto subspace orthogonal to S
+	// 		gsl_matrix_complex_set(Z_temp_proj, i, j, temp_complex);
+	// 	}
+	// }
 
 	// Now we can replace the relevant section of the received data matrix with this newly projected version
 }
