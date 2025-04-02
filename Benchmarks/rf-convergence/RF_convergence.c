@@ -822,8 +822,7 @@ void TransToDashGemm(CBLAS_TRANSPOSE_t TransA, CBLAS_TRANSPOSE_t TransB, const g
 		}
 	}
 
-	gsl_complex unity = gsl_complex_rect(1., 0.);
-	gsl_complex complexZero = gsl_complex_rect(0, 0);
+	
 	// this if statement causes problem because the loop induction variables are not known at compile time, they are struct not variables. needs further supports
 
 	// if (alpha.dat[0] == unity.dat[0] && alpha.dat[1] == unity.dat[1] && beta.dat[0] == complexZero.dat[0] && beta.dat[1] == complexZero.dat[1]) 
@@ -885,8 +884,14 @@ void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl
 	// projection = gsl_matrix_complex_alloc(modulo_N, modulo_N);
 
 
-
+	// KernelEnter("GEMM");
+	// printf("S_temp_delay = %p\n", S_temp_delay);
+	// printf("S_temp_delay_cpy = %p\n", invAutoCorr);
 	// TransToDashGemm(CblasNoTrans, CblasNoTrans, unity, invAutoCorr, S_temp_delay, complexZero, temp_data);
+	// // gsl_blas_zgemm(CblasNoTrans, CblasConjTrans, unity, invAutoCorr, S_temp_delay, complexZero, temp_data);
+    // KernelExit("GEMM");
+
+	
 
 
 
