@@ -120,9 +120,9 @@ int main() {
 	}
 	int modulo_N = 64;        // We need to call Saquib's temporal mitigation code in blocks of 64 time samples
 	// Reduce the number of blocks to speed up computation
-	int n_sync_blocks = 1;    // number of comms sync blocks of 64 time samples (originally 4)
-	int n_trn_blocks = 1;     // number of comms training blocks of 64 time samples (originally 4)
-	int n_data_blocks = 1; // number of comms data blocks of 64 time samples (originally 10)
+	int n_sync_blocks = 4;    // number of comms sync blocks of 64 time samples (originally 4)
+	int n_trn_blocks = 4;     // number of comms training blocks of 64 time samples (originally 4)
+	int n_data_blocks = 10; // number of comms data blocks of 64 time samples (originally 10)
 	int n_start_zeros = 400;
 	int num_sync_samp = n_sync_blocks * modulo_N;
 	int n_sync_trn_zeros = 100;  // zero padding between comms sync and training signals
@@ -511,64 +511,82 @@ int main() {
 
 	printf("Remodulated the data estimate.\r\n");
 
+	// =================== end MMSE comms signal estimation ================================
+
+	// =================== begin orthogonal projection =====================================
+	// Now we need to project the received signal onto the subspace orthogonal to the comms signal.
+	// Beginning at the sync index we project the sync signal, trn signal, and comms data signal.
+	// IGNORE the sections between these signal where we zero padded the comms signal.
+
+	//=============== BEGIN sync symbols section =========================================
+
+	// Allocate the array of pointers first
+	gsl_matrix_complex **S_temp_delay = malloc(sizeof(gsl_matrix_complex*) * n_sync_blocks);
+	gsl_matrix_complex **Z_temp_proj = malloc(sizeof(gsl_matrix_complex*) * n_sync_blocks);
 
 
-	// Declare and allocate matrices inside the loop
-	gsl_matrix_complex *S_temp_delay = NULL;
-	S_temp_delay = gsl_matrix_complex_alloc(numTx * Ntaps_projection, modulo_N);  // 4x64
-
-	gsl_matrix_complex *Z_temp_proj = NULL;
-	Z_temp_proj = gsl_matrix_complex_alloc(numRx, modulo_N);  // 4x64
-
-
-	gsl_matrix_complex_set(S_temp_delay, 0, modulo_N - 1, complexZero);
-	gsl_matrix_complex_set(S_temp_delay, 2, 0, complexZero);
-	gsl_matrix_complex_set(S_temp_delay, 3, 0, complexZero);
-	gsl_matrix_complex_set(S_temp_delay, 3, 1, complexZero);
-
-
+	// Allocate each individual matrix and perform initialization
 	for (int k = 0; k < n_sync_blocks; k++) {
-		NonKernelSplit();
-		// // The -1_th delay tap
+		// Allocate the actual matrix for this index
+		S_temp_delay[k] = gsl_matrix_complex_alloc(numTx * Ntaps_projection, modulo_N); // 4x64
+		Z_temp_proj[k] = gsl_matrix_complex_alloc(numRx, modulo_N);                 // 4x64
+
+		
+		// Initialize specific elements for S_temp_delay[i]
+		// It's generally safer to zero out first if the subsequent loops don't fill everything
+		gsl_matrix_complex_set_zero(S_temp_delay[k]); 
+		gsl_matrix_complex_set(S_temp_delay[k], 0, modulo_N - 1, complexZero);  // always the case for all blocks
+		gsl_matrix_complex_set(S_temp_delay[k], 2, 0, complexZero);             // always the case for all blocks
+		gsl_matrix_complex_set(S_temp_delay[k], 3, 0, complexZero);             // always the case for all blocks
+		gsl_matrix_complex_set(S_temp_delay[k], 3, 1, complexZero);             // always the case for all blocks
+
 		for (int i = 0; i < modulo_N - 1; i++) {
-			// Use the loop-local S_temp_delay
-			gsl_matrix_complex_set(S_temp_delay, 0, i, gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + i + 1));
+			gsl_matrix_complex_set(S_temp_delay[k], 0, i, gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + i + 1));
 		}
 		// Now the LOS and other delayed taps
 		for (int i = 1; i < Ntaps_projection; i++) {
 			for (int j = 0; j < modulo_N - (i - 1); j++) {
-				// Use the loop-local S_temp_delay
-				gsl_matrix_complex_set(S_temp_delay, i, j + (i - 1),
+				gsl_matrix_complex_set(S_temp_delay[k], i, j + (i - 1),
 				                       gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + j));
 			}
 		}
 		// Now grab the relevant received data block
 		for (int i = 0; i < numRx; i++) {
 			for (int j = 0; j < modulo_N; j++) {
-				// Use the loop-local Z_temp_proj
-				gsl_matrix_complex_set(Z_temp_proj, i, j,
-				                       gsl_matrix_complex_get(rxSig, i, comms_sync_start_idx + 0 * modulo_N + j));
+				gsl_matrix_complex_set(Z_temp_proj[k], i, j,
+				                       gsl_matrix_complex_get(rxSig, i, comms_sync_start_idx + k * modulo_N + j));
 			}
 		}
+	}
+
+	// Now the non-zero entries (one block of 64 samples at a time)
+	// The main processing loop remains largely the same, using [k] index
+	for (int k = 0; k < n_sync_blocks; k++) {
+		NonKernelSplit();
+		// The -1_th delay tap
+		// Note: The S_temp_delay[k] initialization for specific zero elements was moved to the allocation loop above.
+		// Ensure the loops below correctly populate the non-zero elements without relying on prior state other than the zeros just set.
+		
 		// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
 		// after projection onto the subspace orthogonal to S_temp_delay.
-		// Pass the loop-local matrices to the function
-		LU_factorization_projection(Z_temp_proj, 4, S_temp_delay, 4, 64);
+		LU_factorization_projection(Z_temp_proj[k], numRx, S_temp_delay[k], Ntaps_projection, modulo_N);
 		// Replace the corresponding section of the received data with this newly projected data
 		for (int i = 0; i < numRx; i++) {
 			for (int j = 0; j < modulo_N; j++) {
-				// Update rxSig using the loop-local Z_temp_proj
 				gsl_matrix_complex_set(rxSig, i, comms_sync_start_idx + k * modulo_N + j,
-				                       gsl_matrix_complex_get(Z_temp_proj, i, j));
+				                       gsl_matrix_complex_get(Z_temp_proj[k], i, j));
 			}
 		}
-		
-
-		// Free the allocated memory at the end of each iteration
-		gsl_matrix_complex_free(S_temp_delay);
-		gsl_matrix_complex_free(Z_temp_proj);
 		NonKernelSplit();
 	}
+
+	// Free the allocated memory
+	for (int k = 0; k < n_sync_blocks; k++) {
+		gsl_matrix_complex_free(S_temp_delay[k]);
+		gsl_matrix_complex_free(Z_temp_proj[k]);
+	}
+	free(S_temp_delay);
+	free(Z_temp_proj);
 
 	//=============== END sync symbols section =========================================
 
