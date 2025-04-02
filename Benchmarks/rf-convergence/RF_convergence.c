@@ -75,31 +75,26 @@ void gsl_ifft(double *input_array, double *output_array, size_t n_elements) {
 // returns the starting time sample index for the comms signal (ipeak = 400)
 
 void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl_matrix_complex *S_temp_delay,
-                                 int Ntaps_projection, int modulo_N);
+                                 int Ntaps_projection, int modulo_N,
+                                 double *A_real, double *A_imag,
+                                 double *B_real, double *B_imag,
+                                 double *C_real, double *C_imag);
 void xcorr(double *x, double *y, size_t n_samp, double *corr);
 
 void ConjTrans(gsl_matrix_complex **in)
 {
 	gsl_matrix_complex *input = *in;
-
 	gsl_matrix_complex *temp = gsl_matrix_complex_alloc(input->size2, input->size1);
-	int rows = input->size1;
-	// printf("inside rows = %d \n", rows);
-    int cols = input->size2;
-	// printf("inside cols = %d \n", cols);
-
-    for (int i = 0; i < rows; i++)
-    {
-        for (int j = 0; j < cols; j++)
-        {
+	
+	for (int i = 0; i < input->size1; i++) {
+		for (int j = 0; j < input->size2; j++) {
             gsl_complex z = gsl_matrix_complex_get(input, i, j);
             gsl_complex z_conj = gsl_complex_conjugate(z);
             gsl_matrix_complex_set(temp, j, i, z_conj);
         }
     }
 
-	// gsl_matrix_complex_free(*in);
-
+	gsl_matrix_complex_free(*in);  // Free the old matrix
 	*in = temp;
 }
 
@@ -120,7 +115,7 @@ int main() {
 	}
 	int modulo_N = 64;        // We need to call Saquib's temporal mitigation code in blocks of 64 time samples
 	// Reduce the number of blocks to speed up computation
-	int n_sync_blocks = 4;    // number of comms sync blocks of 64 time samples (originally 4)
+	int n_sync_blocks = 4;    // number of comms sync blocks of 64 time samples
 	int n_trn_blocks = 4;     // number of comms training blocks of 64 time samples (originally 4)
 	int n_data_blocks = 10; // number of comms data blocks of 64 time samples (originally 10)
 	int n_start_zeros = 400;
@@ -561,32 +556,56 @@ int main() {
 
 	// Now the non-zero entries (one block of 64 samples at a time)
 	// The main processing loop remains largely the same, using [k] index
+	size_t max_matrix_dim = Ntaps_projection > modulo_N ? Ntaps_projection : modulo_N;
+	size_t max_size = max_matrix_dim * max_matrix_dim;  // New calculation to handle all matrix operations
+	double **A_real = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **A_imag = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **B_real = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **B_imag = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **C_real = (double **)malloc(n_sync_blocks * sizeof(double *));
+	double **C_imag = (double **)malloc(n_sync_blocks * sizeof(double *));
+
+	// Check allocation of pointer array
+
+	// Allocate each 1D array
+	for (int k = 0; k < n_sync_blocks; k++) {
+		A_real[k] = (double *)malloc(max_size * sizeof(double));
+		A_imag[k] = (double *)malloc(max_size * sizeof(double));
+		B_real[k] = (double *)malloc(max_size * sizeof(double));
+		B_imag[k] = (double *)malloc(max_size * sizeof(double));
+		C_real[k] = (double *)malloc(max_size * sizeof(double));
+		C_imag[k] = (double *)malloc(max_size * sizeof(double));
+		
+	
+	}
+	printf("TEST TEST \r\n");
+	// Main processing loop
 	for (int k = 0; k < n_sync_blocks; k++) {
 		NonKernelSplit();
-		// The -1_th delay tap
-		// Note: The S_temp_delay[k] initialization for specific zero elements was moved to the allocation loop above.
-		// Ensure the loops below correctly populate the non-zero elements without relying on prior state other than the zeros just set.
 		
-		// Now project using this block. After calling the function the matrix Z_temp_proj will hold the receivd data
-		// after projection onto the subspace orthogonal to S_temp_delay.
-		LU_factorization_projection(Z_temp_proj[k], numRx, S_temp_delay[k], Ntaps_projection, modulo_N);
+		LU_factorization_projection(Z_temp_proj[k], numRx, S_temp_delay[k], 
+								  Ntaps_projection, modulo_N,
+								  A_real[k], A_imag[k], B_real[k], B_imag[k], C_real[k], C_imag[k]);
+
 		// Replace the corresponding section of the received data with this newly projected data
-		for (int i = 0; i < numRx; i++) {
-			for (int j = 0; j < modulo_N; j++) {
-				gsl_matrix_complex_set(rxSig, i, comms_sync_start_idx + k * modulo_N + j,
-				                       gsl_matrix_complex_get(Z_temp_proj[k], i, j));
-			}
-		}
+		// for (int i = 0; i < numRx; i++) {
+		// 	for (int j = 0; j < modulo_N; j++) {
+		// 		gsl_matrix_complex_set(rxSig, i, comms_sync_start_idx + k * modulo_N + j,
+		// 		                       gsl_matrix_complex_get(Z_temp_proj[k], i, j));
+		// 	}
+		// }
 		NonKernelSplit();
 	}
 
-	// Free the allocated memory
+	// Free memory after the loop - free in reverse order of allocation
 	for (int k = 0; k < n_sync_blocks; k++) {
-		gsl_matrix_complex_free(S_temp_delay[k]);
-		gsl_matrix_complex_free(Z_temp_proj[k]);
+		free(A_real[k]); free(A_imag[k]);
+		free(B_real[k]); free(B_imag[k]);
+		free(C_real[k]); free(C_imag[k]);
 	}
-	free(S_temp_delay);
-	free(Z_temp_proj);
+	free(A_real); free(A_imag);
+	free(B_real); free(B_imag);
+	free(C_real); free(C_imag);
 
 	//=============== END sync symbols section =========================================
 
@@ -696,19 +715,19 @@ int main() {
 	// // // 	received[2*i + 1] = GSL_IMAG(temp_complex);
 	// // // }
 
-    // // FILE *fp;
-	// // fp = fopen(PDPULSE, "r");  // read the original pulse
-	// // // Ensure we don't read past the end of the file if it's smaller than expected,
-	// // // and don't read more than allocated for pulse.
-	// // for (int i = 0; i < 2 * n_samples; i++) {
-	// // 	fscanf(fp, "%lf", &pulse[i]);
-	// // }
-	// // fclose(fp);
+    // FILE *fp;
+	// fp = fopen(PDPULSE, "r");  // read the original pulse
+	// // Ensure we don't read past the end of the file if it's smaller than expected,
+	// // and don't read more than allocated for pulse.
+	// for (int i = 0; i < 2 * n_samples; i++) {
+	// 	fscanf(fp, "%lf", &pulse[i]);
+	// }
+	// fclose(fp);
 	
 
-	// // xcorr(received, pulse, n_samples, corr);
+	// xcorr(received, pulse, n_samples, corr);
 
-	// // Code to find maximum
+	// Code to find maximum
 	// double max_corr = 0,tmp=0;
 	// double index = 0;
 	// // Adjust loop bounds for corr array size
@@ -748,81 +767,84 @@ int main() {
 	// gsl_matrix_complex_free(S_temp_delay);
 	// gsl_matrix_complex_free(Z_temp_proj);
 
-
 	return 0;
 	// END RF_convergence.c
 }
 
 
-void TransToDashGemm(CBLAS_TRANSPOSE_t TransA, CBLAS_TRANSPOSE_t TransB, const gsl_complex alpha, const gsl_matrix_complex *A, const gsl_matrix_complex *B, const gsl_complex beta, gsl_matrix_complex *C)
-{
-	if (TransA==CblasConjTrans) {
-		ConjTrans(&A);
-		// printf("outside rows = %d \n", A->size1);
-		// printf("outside cols = %d \n", A->size2);
+void TransToDashGemm(CBLAS_TRANSPOSE_t TransA, CBLAS_TRANSPOSE_t TransB, 
+                    const gsl_complex alpha, const gsl_matrix_complex *A, 
+                    const gsl_matrix_complex *B, const gsl_complex beta, 
+                    gsl_matrix_complex *C,
+                    double *A_real, double *A_imag,
+                    double *B_real, double *B_imag,
+                    double *C_real, double *C_imag) {
+    // Create non-const copies for ConjTrans
+    // gsl_matrix_complex *A_copy = NULL;
+    // gsl_matrix_complex *B_copy = NULL;
+    
+    // if (TransA == CblasConjTrans) {
+    //     A_copy = gsl_matrix_complex_alloc(A->size1, A->size2);
+    //     gsl_matrix_complex_memcpy(A_copy, A);
+    //     ConjTrans(&A_copy);
+    //     A = A_copy;  // Use the transformed copy
+    // }
 
-	}
+    // if (TransB == CblasConjTrans) {
+    //     B_copy = gsl_matrix_complex_alloc(B->size1, B->size2);
+    //     gsl_matrix_complex_memcpy(B_copy, B);
+    //     ConjTrans(&B_copy);
+    //     B = B_copy;  // Use the transformed copy
+    // }
 
-	if (TransB==CblasConjTrans) {
-		ConjTrans(&B);
-		// printf("outside rows = %d \n", B->size1);
-		// printf("outside cols = %d \n", B->size2);
-	}
+    // Rest of the function remains the same
+    for (int i = 0; i < A->size1; i++) {
+        for (int j = 0; j < A->size2; j++) {
+            A_real[i * A->size2 + j] = GSL_REAL(gsl_matrix_complex_get(A, i, j));
+            A_imag[i * A->size2 + j] = GSL_IMAG(gsl_matrix_complex_get(A, i, j));
+        }
+    }
 
-	double *A_real, *A_imag;
-	double *B_real, *B_imag;
-	double *C_real, *C_imag;
-	// Dynamic memory allocation
-	A_real = (double *)malloc(A->size1 * A->size2 * sizeof(double));
-	A_imag = (double *)malloc(A->size1 * A->size2 * sizeof(double));
+    for(int i = 0; i < B->size1; i++) {
+        for(int j = 0; j < B->size2; j++) {
+            B_real[i * B->size2 + j] = GSL_REAL(gsl_matrix_complex_get(B, i, j));
+            B_imag[i * B->size2 + j] = GSL_IMAG(gsl_matrix_complex_get(B, i, j));
+        }
+    }
 
-	B_real = (double *)malloc(B->size1 * B->size2 * sizeof(double));
-	B_imag = (double *)malloc(B->size1 * B->size2 * sizeof(double));
+    gsl_complex unity = gsl_complex_rect(1., 0.);
+    gsl_complex complexZero = gsl_complex_rect(0, 0);
+    // this if statement causes problem because the loop induction variables are not known at compile time, they are struct not variables. needs further supports
 
-	C_real = (double *)malloc(C->size1 * C->size2 * sizeof(double));
-	C_imag = (double *)malloc(C->size1 * C->size2 * sizeof(double));
-	
-	for (int i = 0; i < A->size1; i++) {
-		for (int j = 0; j < A->size2; j++) {
-			A_real[i * A->size2 + j] = GSL_REAL(gsl_matrix_complex_get(A, i, j));
-			A_imag[i * A->size2 + j] = GSL_IMAG(gsl_matrix_complex_get(A, i, j));
-		}
-	}
+    // if (alpha.dat[0] == unity.dat[0] && alpha.dat[1] == unity.dat[1] && beta.dat[0] == complexZero.dat[0] && beta.dat[1] == complexZero.dat[1]) 
+    {
 
-	for(int i = 0; i < B->size1; i++) {
-		for(int j = 0; j < B->size2; j++) {
-			B_real[i * B->size2 + j] = GSL_REAL(gsl_matrix_complex_get(B, i, j));
-			B_imag[i * B->size2 + j] = GSL_IMAG(gsl_matrix_complex_get(B, i, j));
-		}
-	}
+        // printf("a rows = %d \n", A->size1);
+        // printf("a cols = %d \n", A->size2);
+        // printf("b rows = %d \n", B->size1);
+        // printf("b cols = %d \n", B->size2);
+        KernelEnter("GEMM");
+        DASH_GEMM(A_real, A_imag, B_real, B_imag, C_real, C_imag, A->size1, A->size2, B->size2);
+        KernelExit("GEMM");
+    }
 
-	gsl_complex unity = gsl_complex_rect(1., 0.);
-	gsl_complex complexZero = gsl_complex_rect(0, 0);
-	// this if statement causes problem because the loop induction variables are not known at compile time, they are struct not variables. needs further supports
-
-	// if (alpha.dat[0] == unity.dat[0] && alpha.dat[1] == unity.dat[1] && beta.dat[0] == complexZero.dat[0] && beta.dat[1] == complexZero.dat[1]) 
-	{
-
-		// printf("a rows = %d \n", A->size1);
-		// printf("a cols = %d \n", A->size2);
-		// printf("b rows = %d \n", B->size1);
-		// printf("b cols = %d \n", B->size2);
-		KernelEnter("GEMM");
-		DASH_GEMM(A_real, A_imag, B_real, B_imag, C_real, C_imag, A->size1, A->size2, B->size2);
-		KernelExit("GEMM");
-	}
-
-	for (int i = 0; i < C->size1; i++) {
-		for (int j = 0; j < C->size2; j++) {
-			gsl_matrix_complex_set(C, i, j, gsl_complex_rect(C_real[i * C->size2 + j], C_imag[i * C->size2 + j]));
-		}
-	}
-	
+    for (int i = 0; i < C->size1; i++) {
+        for (int j = 0; j < C->size2; j++) {
+            gsl_matrix_complex_set(C, i, j, gsl_complex_rect(C_real[i * C->size2 + j], C_imag[i * C->size2 + j]));
+        }
+    }
+    
+    // Free the temporary copies if they were created
+    // if (A_copy) gsl_matrix_complex_free(A_copy);
+    // if (B_copy) gsl_matrix_complex_free(B_copy);
 }
 //================ Matt's LU-factorization approach ================================================
 
 void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl_matrix_complex *S_temp_delay,
-                                 int Ntaps_projection, int modulo_N) {
+                                 int Ntaps_projection, int modulo_N,
+                                 double *A_real, double *A_imag,
+                                 double *B_real, double *B_imag,
+                                 double *C_real, double *C_imag) {
 	gsl_complex temp_complex = gsl_complex_rect(1., 0.);
 
 	// calculate the auto-covariance matrix
@@ -832,7 +854,8 @@ void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl
 	auto_corr = gsl_matrix_complex_alloc(Ntaps_projection, Ntaps_projection);
 
     // KernelEnter("GEMM");
-	TransToDashGemm(CblasNoTrans, CblasConjTrans, unity, S_temp_delay, S_temp_delay, complexZero, auto_corr);
+	TransToDashGemm(CblasNoTrans, CblasConjTrans, unity, S_temp_delay, S_temp_delay, complexZero, auto_corr,
+                    A_real, A_imag, B_real, B_imag, C_real, C_imag);
 
     // KernelExit("GEMM");
 
@@ -858,14 +881,20 @@ void LU_factorization_projection(gsl_matrix_complex *Z_temp_proj, int numRx, gsl
 
 
 
-	TransToDashGemm(CblasNoTrans, CblasNoTrans, unity, invAutoCorr, S_temp_delay, complexZero, temp_data);
+	TransToDashGemm(CblasNoTrans, CblasNoTrans, unity, invAutoCorr, S_temp_delay, 
+                    complexZero, temp_data,
+                    A_real, A_imag, B_real, B_imag, C_real, C_imag);
 
 
 
-	TransToDashGemm(CblasConjTrans, CblasNoTrans, unity, S_temp_delay, temp_data, complexZero, projection);
+	TransToDashGemm(CblasConjTrans, CblasNoTrans, unity, S_temp_delay, temp_data, 
+                    complexZero, projection,
+                    A_real, A_imag, B_real, B_imag, C_real, C_imag);
 
 
-	TransToDashGemm(CblasNoTrans, CblasNoTrans, unity, Z_temp_proj, projection, complexZero, temp_data);
+	TransToDashGemm(CblasNoTrans, CblasNoTrans, unity, Z_temp_proj, projection, 
+                    complexZero, temp_data,
+                    A_real, A_imag, B_real, B_imag, C_real, C_imag);
 
 
 	// orthogonally project by subtracting the projected data from the original data
