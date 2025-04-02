@@ -562,7 +562,7 @@ int main() {
 
 		gsl_matrix_complex *Z_temp_proj = NULL;
 		Z_temp_proj = gsl_matrix_complex_alloc(numRx, modulo_N);  // 4x64
-
+	
 		// // Initialize specific elements for S_temp_delay - these might need adjustment
 		// // depending on whether they should be constant or depend on 'k'.
 		// // Assuming they should be zeroed out at the start of each iteration:
@@ -578,18 +578,19 @@ int main() {
 		gsl_matrix_complex_set(S_temp_delay, 3, 1, complexZero);
 
 
-		
+	for (int k = 0; k < n_sync_blocks; k++) {
+		NonKernelSplit();
 		// // The -1_th delay tap
 		for (int i = 0; i < modulo_N - 1; i++) {
 			// Use the loop-local S_temp_delay
-			gsl_matrix_complex_set(S_temp_delay, 0, i, gsl_matrix_complex_get(sync_symbols, 0, 0 * modulo_N + i + 1));
+			gsl_matrix_complex_set(S_temp_delay, 0, i, gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + i + 1));
 		}
 		// Now the LOS and other delayed taps
 		for (int i = 1; i < Ntaps_projection; i++) {
 			for (int j = 0; j < modulo_N - (i - 1); j++) {
 				// Use the loop-local S_temp_delay
 				gsl_matrix_complex_set(S_temp_delay, i, j + (i - 1),
-				                       gsl_matrix_complex_get(sync_symbols, 0, 0 * modulo_N + j));
+				                       gsl_matrix_complex_get(sync_symbols, 0, k * modulo_N + j));
 			}
 		}
 		// Now grab the relevant received data block
@@ -608,7 +609,7 @@ int main() {
 		for (int i = 0; i < numRx; i++) {
 			for (int j = 0; j < modulo_N; j++) {
 				// Update rxSig using the loop-local Z_temp_proj
-				gsl_matrix_complex_set(rxSig, i, comms_sync_start_idx + 0 * modulo_N + j,
+				gsl_matrix_complex_set(rxSig, i, comms_sync_start_idx + k * modulo_N + j,
 				                       gsl_matrix_complex_get(Z_temp_proj, i, j));
 			}
 		}
@@ -617,6 +618,8 @@ int main() {
 		// Free the allocated memory at the end of each iteration
 		gsl_matrix_complex_free(S_temp_delay);
 		gsl_matrix_complex_free(Z_temp_proj);
+		NonKernelSplit();
+	}
 
 	//=============== END sync symbols section =========================================
 
