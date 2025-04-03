@@ -260,23 +260,39 @@ public:
       Value sizeConstant;
       Type elemType;
       auto operand = funcCall.getOperand(i);
+      bool isload = false;
+      Value loadoperand;
       if (auto defOp = operand.getDefiningOp()) {
         if (auto allocaOp = llvm::dyn_cast<mlir::LLVM::AllocaOp>(defOp)) {
-          elemType = allocaOp.getElemType();
-          uint64_t sizeInBits = layout.getTypeSizeInBits(elemType);
-          uint64_t size = llvm::divideCeil(sizeInBits, 8);
-
           
-        // set the size to 8 for privatization for now
+        }
+        else if (auto loadOp = llvm::dyn_cast<mlir::LLVM::LoadOp>(defOp)) {
+          isload = true;
+          loadoperand = loadOp.getOperand();
+        }
+        
+      }
+      if (isload) {
         sizeConstant = rewriter.create<LLVM::ConstantOp>(
             loc, rewriter.getI64Type(), 
             rewriter.getI64IntegerAttr(8));
-        }
+
+        auto idx = rewriter.create<LLVM::ConstantOp>(
+          loc, 
+          rewriter.getI32Type(),
+          rewriter.getI32IntegerAttr(i));
+
+        rewriter.create<LLVM::CallOp>(
+          loc,
+          TypeRange{},
+          "set_task_arg_ptr",
+          ValueRange{taskArgsAlloca.getResult(), idx, loadoperand, sizeConstant});        
       }
-      sizeConstant = rewriter.create<LLVM::ConstantOp>(
+      else {
+        sizeConstant = rewriter.create<LLVM::ConstantOp>(
             loc, rewriter.getI64Type(), 
             rewriter.getI64IntegerAttr(8));
-      auto idx = rewriter.create<LLVM::ConstantOp>(
+            auto idx = rewriter.create<LLVM::ConstantOp>(
           loc, 
           rewriter.getI32Type(),
           rewriter.getI32IntegerAttr(i));
@@ -298,6 +314,10 @@ public:
           TypeRange{},
           "set_task_arg_ptr",
           ValueRange{taskArgsAlloca.getResult(), idx, alloca_new, sizeConstant});
+        
+      }
+      
+      
     }
 
     // Create task name global string
