@@ -68,7 +68,7 @@ function(add_dag_generation_target TARGET_NAME SOURCE_FILE)
                 ${OUTPUT_DIR}/${TARGET_NAME}.kernel_located.bc 
                 -S -o ${OUTPUT_DIR}/${TARGET_NAME}.canonicalized.bc
         # Generate and run first tracer
-        COMMAND ${LLVM_9_PATH}/bin/clang++-9 ${INCLUDES} -fuse-ld=lld 
+        COMMAND ${LLVM_9_PATH}/bin/clang++-9 -O2 ${INCLUDES} -fuse-ld=lld 
                 ${OUTPUT_DIR}/${TARGET_NAME}.canonicalized.bc 
                 -lm -lz -lpthread -lgsl -lgslcblas 
                 ${TRACEATLAS_PASS_BACKEND_STATIC} 
@@ -196,7 +196,7 @@ function(add_task_merging_target TARGET_NAME)
 
         # Final compilation with Taskflow
         COMMAND ${LLVM_19_PATH}/bin/clang 
-                -g 
+                -O2 
                 -I ${CEDR_PATH}/libdash
                 ${OUTPUT_DIR}/${TARGET_NAME}-llvm.ll
                 ${OUTPUT_DIR}/${TARGET_NAME}-deleted-main.bc

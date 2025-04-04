@@ -51,14 +51,7 @@ static inline void execute_task(tile_t *tile_out, tile_t **tile_in_array, size_t
     input_bytes.push_back(graph.output_bytes_per_task);
   }
 
-  // For task1 case (no dependencies), add its own buffer as "input"
-  if (num_inputs == 0) {
-      input_ptrs.push_back((const char*)tile_out->output_buff);
-      input_bytes.push_back(graph.output_bytes_per_task);
-      printf("execute_task (no deps) timestep: %d, point: %d\n", payload.y, payload.x);
-  } else {
-      printf("execute_task (%zu deps) timestep: %d, point: %d\n", num_inputs, payload.y, payload.x);
-  }
+  
 
 
   graph.execute_point(payload.y, payload.x, output_ptr, output_bytes,
@@ -244,7 +237,7 @@ void SerialApp::execute_main_loop()
     current_payload.graph = g; // Assign graph once per timestep
 
     int bound = width;
-    printf("Timestep %ld, Width: %ld, Offset: %ld, Bound: %d\n", y, width, offset, bound);
+    // printf("Timestep %ld, Width: %ld, Offset: %ld, Bound: %d\n", y, width, offset, bound);
 
     for (int x_i = 0; x_i < bound; x_i++) {
         NonKernelSplit();
@@ -302,7 +295,7 @@ void SerialApp::execute_main_loop()
         current_payload.x = x;
         current_payload.y = y;
 
-        printf("Preparing task: timestep=%ld, x=%ld, num_deps=%zu\n", y, x, private_num_inputs[current_private_idx]); // Use privatized count
+        // printf("Preparing task: timestep=%ld, x=%ld, num_deps=%zu\n", y, x, private_num_inputs[current_private_idx]); // Use privatized count
 
         int row_idx = y % nb_fields;
         long output_array_idx = row_idx * matrix[graph_idx].N + x;
@@ -343,7 +336,7 @@ void SerialApp::execute_main_loop()
 
 
   // --- Cleanup ---
-  printf("Cleaning up private resources...\n");
+  // printf("Cleaning up private resources...\n");
   if (private_tile != NULL) {
       for (size_t i = 0; i < task_counter; i++) { // Clean up only allocated buffers
         if (private_tile[i] != NULL) {
@@ -396,7 +389,7 @@ void SerialApp::debug_printf(int verbose_level, const char *format, ...)
 int main(int argc, char ** argv)
 {
   //-steps 10 -width 10 -type fft -kernel compute_bound -iter 1024 -worker 1
-  argc = 8;
+  argc = 14;
   argv[0] = "-steps";
   argv[1] = "10";
   argv[2] = "-width";
@@ -406,7 +399,11 @@ int main(int argc, char ** argv)
   argv[6] = "-kernel";
   argv[7] = "compute_bound";
   argv[8] = "-iter";
-  argv[9] = "4096";
+  argv[9] = "10000";
+  argv[10] = "-worker";
+  argv[11] = "10";
+  argv[12] = "-sample";
+  argv[13] = "10000";
 
   SerialApp app(argc, argv);
   app.execute_main_loop();
